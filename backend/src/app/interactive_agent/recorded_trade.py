@@ -69,6 +69,26 @@ def is_current_setup_request(message: str) -> bool:
     return bool(_CURRENT_SETUP.search(message))
 
 
+def trade_scope(message: str) -> dict[str, str | None]:
+    demo = bool(re.search(r"\bdemo\b", message, re.I))
+    blofin = bool(re.search(r"\bblo\s*fin\b", message, re.I))
+    manual = bool(re.search(r"\bmanual\b", message, re.I))
+    simulator = bool(re.search(r"\b(?:simulator|internal paper)\b", message, re.I))
+    real = bool(re.search(r"\b(?:real|live)\b", message, re.I))
+    return {
+        "execution_venue": "BLOFIN_DEMO"
+        if demo and (blofin or manual)
+        else "BLOFIN_REAL"
+        if blofin and real
+        else "BLOFIN"
+        if blofin
+        else "PAPER_INTERNAL"
+        if simulator
+        else None,
+        "trade_origin": "manual_demo_test" if manual and demo else "manual" if manual else None,
+    }
+
+
 def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest | None:
     if is_current_setup_request(message):
         return None
@@ -76,9 +96,14 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
     historical_position = position is not None and bool(
         re.search(r"\b(?:qualified|executed|filled|taken|traded)\b", message, re.I)
     )
-    if not (re.search(r"\btrades?\b", message, re.I) or historical_position) or not _READ.search(
-        message
-    ):
+    scoped_demo = trade_scope(message)["trade_origin"] == "manual_demo_test"
+    has_record = bool(re.search(r"\btrades?\b", message, re.I)) or historical_position
+    if scoped_demo and re.search(r"\b(?:orders?|positions?)\b", message, re.I):
+        has_record = True
+    has_read = bool(_READ.search(message)) or (
+        scoped_demo and bool(re.search(r"\b(?:what|why|how|show|summari[sz]e)\b", message, re.I))
+    )
+    if not has_record or not has_read:
         return None
     if _MUTATE.search(message):
         return None
@@ -99,9 +124,12 @@ def route_recorded_trade(message: str, *, symbol: str | None) -> ActionRequest |
     )
     if market_name in {"SHORT", "LONG", "PAPER", "TRADE"}:
         market_name = None
+    if market_name in {"MANUAL", "DEMO", "BLOFIN", "SIMULATOR", "INTERNAL"}:
+        market_name = None
     return ActionRequest(
         name="paper_trade.read_recorded",
         arguments={
+            **trade_scope(message),
             "symbol": extract_symbol(message) or (None if market_name else symbol),
             "market_name": market_name if extract_symbol(message) is None else None,
             "direction": extract_direction(message),
@@ -119,6 +147,7 @@ class RecordedTradeRead:
     recorded_evidence: str
     connections: list[ConnectionRef] = field(default_factory=list)
     warnings: tuple[str, ...] = ()
+    allow_model: bool = True
 
 
 @dataclass
@@ -154,6 +183,18 @@ def read_recorded_trade(
     user_id: UUID,
 ) -> RecordedTradeRead:
     with session.no_autoflush:
+        if inputs.execution_venue == "BLOFIN":
+            reason = (
+                "BloFin venue selection is incomplete. Specify BloFin demo or real; no other "
+                "trade is substituted."
+            )
+            return RecordedTradeRead(reason, reason)
+        if inputs.trade_origin == "manual_demo_test" and inputs.journal_trade_id is None:
+            from app.interactive_agent.manual_demo_evidence import select_manual_demo
+
+            return select_manual_demo(
+                session, inputs, organization_id=organization_id, user_id=user_id
+            )
         selected = _select_trade(session, inputs, organization_id=organization_id, user_id=user_id)
         if isinstance(selected, RecordedTradeRead):
             return selected
@@ -207,6 +248,30 @@ def _select_trade(
         filters.append(JournalTrade.direction == inputs.direction)
     if inputs.paper_only:
         filters.append(JournalTrade.source == JournalTradeSource.PAPER_EXECUTION)
+    if inputs.trade_origin:
+        filters.append(JournalTrade.source == JournalTradeSource(inputs.trade_origin))
+    if inputs.execution_venue:
+        # Require the immutable plan venue too when linked; never infer venue from
+        # a same-market trade, account execution_mode=PAPER, or narrative text.
+        matching_plan = (
+            select(TradePlanRevision.id)
+            .where(
+                TradePlanRevision.id == JournalTrade.trade_plan_revision_id,
+                TradePlanRevision.organization_id == organization_id,
+                TradePlanRevision.user_id == user_id,
+                TradePlanRevision.account_id == JournalTrade.account_id,
+                TradePlanRevision.execution_venue == inputs.execution_venue,
+            )
+            .exists()
+        )
+        legacy_manual = (
+            (JournalTrade.source == JournalTradeSource.MANUAL_DEMO_TEST)
+            & (JournalTrade.exchange == "BLOFIN_DEMO")
+            & JournalTrade.trade_plan_revision_id.is_(None)
+        )
+        filters.append(
+            matching_plan | (legacy_manual if inputs.execution_venue == "BLOFIN_DEMO" else False)
+        )
     accounts = list(
         session.scalars(select(JournalTrade.account_id).where(*filters).distinct().limit(2))
     )
@@ -250,7 +315,13 @@ def _select_trade(
         )
     )
     if not trades:
-        reason = "No recorded Journal trade matches your selection in your authenticated scope."
+        reason = (
+            "No recorded Journal trade matches your selection in your authenticated scope. "
+            f"Requested venue: {inputs.execution_venue or 'unspecified'}; "
+            f"origin: {inputs.trade_origin or 'unspecified'}. "
+            "Matching fill evidence is unavailable; no trade from another venue or origin is "
+            "substituted."
+        )
         return RecordedTradeRead(reason, reason)
     if len(trades) > 1 and (
         not inputs.latest
@@ -318,6 +389,10 @@ def _journal_target_evidence(
 
 
 def _read_lineage(session: Session, trade: JournalTrade) -> RecordedTradeRead:
+    if trade.source == JournalTradeSource.MANUAL_DEMO_TEST:
+        from app.interactive_agent.manual_demo_evidence import read_manual_journal
+
+        return read_manual_journal(session, trade)
     evidence = _Evidence()
     journal_targets, normalized_targets = _journal_target_evidence(trade.planned_targets, evidence)
     evidence.add(

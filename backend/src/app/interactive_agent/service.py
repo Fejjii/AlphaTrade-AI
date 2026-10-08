@@ -464,7 +464,10 @@ class InteractiveAgentService:
             self._responder is not None
             and not learning_read
             and not explanation_read
-            and (recorded_trade is None or bool(recorded_trade.connections))
+            and (
+                recorded_trade is None
+                or (bool(recorded_trade.connections) and recorded_trade.allow_model)
+            )
             and daily_review is None
             and not (action is not None and action[0].name == "paper_trade.prepare_execution")
         ):

@@ -59,6 +59,15 @@ export type ManualDemoStatus = {
   protection: string;
   journal_trade_id: string | null;
   missing_evidence: string[];
+  reconciliation_diagnostics?: {
+    stage: string;
+    reason_code: string;
+    error_type: string;
+    endpoint_name: string;
+    http_status?: number | null;
+    venue_error_code?: string | null;
+    field_name?: string | null;
+  }[];
 };
 export const manualDemo = {
   instrument: () => apiFetch<ManualDemoInstrument>("/execution/manual-demo/instrument", { auth: true }),

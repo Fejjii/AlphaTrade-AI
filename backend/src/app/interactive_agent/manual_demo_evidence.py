@@ -1,0 +1,368 @@
+"""Read one manual demo identity from stored native facts, without provider IO."""
+
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db.models import (
+    ApprovalAuthorization,
+    AuditLog,
+    ExecutionAccount,
+    ExecutionCommand,
+    ExecutionFillFact,
+    ExecutionReceipt,
+    JournalTrade,
+    TradePlanRevision,
+    VenueSubmitEffect,
+)
+from app.interactive_agent.actions import RecordedTradeInput
+from app.interactive_agent.recorded_trade import RecordedTradeRead, _Evidence, _finish, _require
+from app.schemas.common import AuditEventType, JournalTradeSource
+from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
+from app.services.canonical_serialization import canonical_sha256
+from app.services.manual_demo_plan import MANUAL_DEMO_ORIGIN
+from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
+
+
+def select_manual_demo(
+    session: Session, inputs: RecordedTradeInput, *, organization_id: UUID, user_id: UUID
+) -> RecordedTradeRead:
+    filters = [
+        ExecutionCommand.organization_id == organization_id,
+        ExecutionCommand.user_id == user_id,
+        TradePlanRevision.organization_id == organization_id,
+        TradePlanRevision.user_id == user_id,
+        TradePlanRevision.account_id == ExecutionCommand.account_id,
+        TradePlanRevision.schema_version == "ManualDemoTradePlanV1",
+        TradePlanRevision.plan_authority == MANUAL_DEMO_ORIGIN,
+        TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+        ExecutionAccount.organization_id == organization_id,
+        ExecutionAccount.user_id == user_id,
+    ]
+    if inputs.paper_only or inputs.execution_venue not in {None, "BLOFIN_DEMO"}:
+        return _missing()
+    if inputs.account_id:
+        filters.append(ExecutionCommand.account_id == inputs.account_id)
+    if inputs.symbol:
+        filters.append(
+            func.replace(TradePlanRevision.execution_instrument, "-", "")
+            == inputs.symbol.replace("-", "").replace("/", "")
+        )
+    if inputs.market_name:
+        filters.append(
+            TradePlanRevision.semantic_payload["instrument_rules"]["base_currency"].as_string()
+            == inputs.market_name.upper()
+        )
+    if inputs.direction:
+        filters.append(
+            TradePlanRevision.semantic_payload["side"].as_string()
+            == ("BUY" if inputs.direction.value == "long" else "SELL")
+        )
+    query = (
+        select(ExecutionCommand)
+        .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
+        .join(ExecutionAccount, ExecutionAccount.id == ExecutionCommand.account_id)
+        .where(*filters)
+    )
+    accounts = list(
+        session.scalars(query.with_only_columns(ExecutionCommand.account_id).distinct().limit(2))
+    )
+    if len(accounts) > 1:
+        text = (
+            "Matching manual BloFin demo orders exist in multiple accounts. Select an "
+            "account; no identities are merged."
+        )
+        return RecordedTradeRead(text, text)
+    commands = list(
+        session.scalars(
+            query.order_by(ExecutionCommand.created_at.desc(), ExecutionCommand.id.desc()).limit(2)
+        )
+    )
+    if not commands:
+        return _missing()
+    if len(commands) == 2 and (
+        not inputs.latest or commands[0].created_at == commands[1].created_at
+    ):
+        text = (
+            "Multiple manual BloFin demo orders match. Select a trade or ask for the "
+            "latest matching order; no identities are merged."
+        )
+        return RecordedTradeRead(text, text)
+    command = commands[0]
+    trade = session.scalar(
+        select(JournalTrade).where(
+            JournalTrade.organization_id == organization_id,
+            JournalTrade.user_id == user_id,
+            JournalTrade.account_id == command.account_id,
+            JournalTrade.execution_lifecycle_id == command.id,
+            JournalTrade.source == JournalTradeSource.MANUAL_DEMO_TEST,
+            JournalTrade.exchange == "BLOFIN_DEMO",
+        )
+    )
+    return _read(session, command, trade)
+
+
+def _missing() -> RecordedTradeRead:
+    text = (
+        "No matching recorded manual BloFin demo order or fill is available in your authenticated "
+        "account scope. Reconcile the existing command to obtain native evidence. "
+        "No internal simulator or different-origin trade is substituted."
+    )
+    return RecordedTradeRead(text, text)
+
+
+def read_manual_journal(session: Session, trade: JournalTrade) -> RecordedTradeRead:
+    command = session.scalar(
+        select(ExecutionCommand).where(
+            ExecutionCommand.id == trade.execution_lifecycle_id,
+            ExecutionCommand.organization_id == trade.organization_id,
+            ExecutionCommand.user_id == trade.user_id,
+            ExecutionCommand.account_id == trade.account_id,
+        )
+    )
+    if command is None:
+        return _missing()
+    _require(trade.exchange == "BLOFIN_DEMO", "manual Journal venue")
+    return _read(session, command, trade)
+
+
+def _read(
+    session: Session, command: ExecutionCommand, trade: JournalTrade | None
+) -> RecordedTradeRead:
+    row = session.scalar(
+        select(TradePlanRevision).where(
+            TradePlanRevision.id == command.revision_id,
+            TradePlanRevision.organization_id == command.organization_id,
+            TradePlanRevision.user_id == command.user_id,
+            TradePlanRevision.account_id == command.account_id,
+            TradePlanRevision.plan_authority == MANUAL_DEMO_ORIGIN,
+            TradePlanRevision.execution_venue == "BLOFIN_DEMO",
+        )
+    )
+    _require(row is not None, "manual command/plan")
+    assert row is not None
+    plan = trade_plan_revision_to_schema(row)
+    semantic = TradePlanRevisionSemantic.model_validate(row.semantic_payload)
+    _require(
+        plan.schema_version == "ManualDemoTradePlanV1"
+        and canonical_sha256(semantic) == command.plan_content_hash == plan.content_hash
+        and command.plan_id == plan.plan_id,
+        "manual immutable plan",
+    )
+    evidence = _Evidence()
+    if trade:
+        _require(
+            trade.trade_plan_revision_id in {None, row.id}
+            and trade.symbol.replace("-", "") == plan.execution_instrument.replace("-", "")
+            and trade.direction.value == ("long" if plan.side.value == "BUY" else "short"),
+            "manual Journal/plan",
+        )
+        evidence.add(
+            trade.id,
+            "Journal",
+            f"source manual_demo_test; exchange BLOFIN_DEMO; account {trade.account_id}; "
+            f"execution lifecycle {command.id}; projected size {trade.size} BTC.",
+            journal=True,
+        )
+    else:
+        evidence.missing.append(
+            "Journal fill projection; a submitted order is not a filled position"
+        )
+    evidence.add(
+        command.id,
+        "Manual demo execution command",
+        f"origin manual_demo_test; outcome {command.outcome.value}; "
+        f"account {command.account_id}; revision {row.id}; hash {plan.content_hash}.",
+    )
+    evidence.add(
+        row.id,
+        "Manual demo plan",
+        f"planned venue BLOFIN_DEMO; planned entry {plan.entry_zone.lower} to "
+        f"{plan.entry_zone.upper}; "
+        f"quantity {plan.quantity.value} contracts; multiplier "
+        f"{plan.instrument_rules.contract_multiplier} BTC per contract; "
+        f"planned stop {plan.risk_and_exits.stop.value}; planned target "
+        f"{plan.risk_and_exits.targets[0].price.value}.",
+    )
+    authorization = session.scalar(
+        select(ApprovalAuthorization).where(
+            ApprovalAuthorization.id == command.authorization_id,
+            ApprovalAuthorization.organization_id == command.organization_id,
+            ApprovalAuthorization.user_id == command.user_id,
+            ApprovalAuthorization.account_id == command.account_id,
+        )
+    )
+    if authorization:
+        _require(
+            authorization.revision_id == row.id
+            and authorization.plan_content_hash == plan.content_hash
+            and authorization.execution_venue == "BLOFIN_DEMO"
+            and authorization.execution_instrument == plan.execution_instrument
+            and (
+                authorization.state != AuthorizationState.CONSUMED
+                or authorization.consumed_by_execution_command_id == command.id
+            ),
+            "manual authorization",
+        )
+        evidence.add(
+            authorization.id,
+            "Authorization",
+            f"state {authorization.state.value}; exact manual plan; channel "
+            f"{authorization.channel.value}.",
+        )
+        evidence.allowed.append(
+            "The owner confirmed this exact manual demo plan. Strategy qualification and minimum "
+            "1R do not apply to this connectivity test."
+        )
+    else:
+        evidence.missing.append("stored exact manual plan authorization")
+    effect = session.scalar(
+        select(VenueSubmitEffect).where(VenueSubmitEffect.command_id == command.id)
+    )
+    receipt = session.scalar(
+        select(ExecutionReceipt).where(
+            ExecutionReceipt.command_id == command.id,
+            ExecutionReceipt.organization_id == command.organization_id,
+            ExecutionReceipt.user_id == command.user_id,
+            ExecutionReceipt.account_id == command.account_id,
+        )
+    )
+    fills = list(
+        session.scalars(
+            select(ExecutionFillFact)
+            .where(
+                ExecutionFillFact.command_id == command.id,
+                ExecutionFillFact.organization_id == command.organization_id,
+            )
+            .order_by(ExecutionFillFact.occurred_at, ExecutionFillFact.id)
+            .limit(101)
+        )
+    )
+    _require(len(fills) <= 100, "manual bounded fill evidence")
+    if receipt:
+        _require(
+            receipt.authorization_id == command.authorization_id
+            and effect is not None
+            and effect.receipt_id == receipt.id,
+            "manual receipt/command",
+        )
+    _require(
+        all(
+            receipt is not None
+            and fill.receipt_id == receipt.id
+            and fill.venue_source == "blofin_demo"
+            and fill.unit == "CONTRACTS"
+            for fill in fills
+        ),
+        "manual fill venue/receipt",
+    )
+    native = session.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.organization_id == command.organization_id,
+            AuditLog.user_id == command.user_id,
+            AuditLog.resource_type == "manual_demo_test",
+            AuditLog.resource_id == str(command.id),
+            AuditLog.action == AuditEventType.EXCHANGE_DEMO_ORDER_CREATED,
+            AuditLog.redacted_metadata["operation"].as_string()
+            == "manual_demo_native_order_receipt",
+        )
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(1)
+    )
+    protection = "unverified"
+    order_id = None
+    if native:
+        facts = dict(native.redacted_metadata)
+        native_hash = facts.pop("receipt_hash", None)
+        facts.pop("operation", None)
+        _require(
+            canonical_sha256(facts) == native_hash
+            and facts.get("origin") == MANUAL_DEMO_ORIGIN
+            and facts.get("plan_content_hash") == plan.content_hash
+            and effect is not None
+            and facts.get("client_order_id") == effect.client_order_id
+            and facts.get("instrument") == plan.execution_instrument,
+            "manual native receipt",
+        )
+        order_id = facts.get("venue_order_id")
+        _require(
+            bool(order_id)
+            and set(facts.get("fill_identities", [])) == {f.source_fill_identity for f in fills}
+            and all(f.source_fill_identity.startswith(f"{order_id}:") for f in fills),
+            "manual native order/fills",
+        )
+        assert effect is not None
+        protection = str(facts.get("protection_status", "unverified"))
+        evidence.add(
+            native.id,
+            "Native demo receipt",
+            f"order {order_id}; client {effect.client_order_id}; native state "
+            f"{facts.get('native_state')}; "
+            f"recorded protection {protection}; protection identities "
+            f"{facts.get('protection_order_ids', [])}; observed {native.created_at}.",
+        )
+    elif fills:
+        evidence.missing.append("matching native order/protection receipt")
+    for fill in fills:
+        evidence.add(
+            fill.id,
+            "BloFin demo fill",
+            f"identity {fill.source_fill_identity}; {fill.quantity} contracts at {fill.price}; "
+            f"occurred {fill.occurred_at}; venue_source blofin_demo.",
+        )
+    latest_failure = session.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.organization_id == command.organization_id,
+            AuditLog.user_id == command.user_id,
+            AuditLog.resource_type == "manual_demo_test",
+            AuditLog.resource_id == str(command.id),
+            AuditLog.action == AuditEventType.TOOL_FAILED,
+            AuditLog.redacted_metadata["operation"].as_string()
+            == "manual_demo_reconciliation_failed",
+        )
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(1)
+    )
+    if latest_failure and (native is None or latest_failure.created_at >= native.created_at):
+        protection = "latest read unavailable"
+        evidence.missing.append(
+            "latest native reconciliation; previously recorded facts do not prove current "
+            "protection"
+        )
+    if protection != "verified":
+        evidence.missing.append("verified stop and target protection for this native order")
+    total = sum((fill.quantity for fill in fills), Decimal("0"))
+    average = (
+        sum((fill.quantity * fill.price for fill in fills), Decimal("0")) / total if total else None
+    )
+    if not fills:
+        evidence.missing.append(
+            "actual BloFin demo fills; the user's position report is not recorded fill proof"
+        )
+    average_text = format(average.normalize(), "f") if average is not None else "unavailable"
+    summary = (
+        f"Manual BloFin demo {plan.execution_instrument} "
+        f"{'long' if plan.side.value == 'BUY' else 'short'}. "
+        f"Origin: manual demo test; command {command.id}; native order "
+        f"{order_id or 'not verified'}. "
+        f"Recorded filled position: {format(total.normalize(), 'f')} contracts = "
+        f"{format((total * plan.instrument_rules.contract_multiplier).normalize(), 'f')} BTC; "
+        f"average fill price {average_text}. "
+        f"Planned stop {plan.risk_and_exits.stop.value}; planned target "
+        f"{plan.risk_and_exits.targets[0].price.value}. "
+        f"Recorded protection: {protection}. No detected strategy is claimed. "
+        "The account remains held for operator review; no new order is authorized."
+    )
+    evidence.required.append(
+        "This is a manual BloFin demo connectivity test, excluded from strategy validation; "
+        "submitted orders, actual fills and verified protection are separate evidence."
+    )
+    result = _finish(summary, evidence)
+    # A previous simulator turn cannot supply missing economic facts for this
+    # manual venue identity. The complete bounded answer is deterministic.
+    result.allow_model = False
+    return result

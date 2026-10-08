@@ -58,6 +58,20 @@ def _first_order_error(data: Any) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _http_venue_code(response: httpx.Response) -> str:
+    """Keep a returned numeric venue code distinct from the HTTP status."""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            inner, _ = _first_order_error(payload.get("data"))
+            code = inner or str(payload.get("code", ""))
+            if code != "0" and code.isascii() and code.isdecimal() and 0 < len(code) <= 16:
+                return code
+    except (ValueError, TypeError):
+        pass
+    return str(response.status_code)  # Preserve legacy non-JSON HTTP error behavior.
+
+
 def _signed_request_path(path: str, params: dict[str, Any] | None) -> str:
     """Return the request path used in the BloFin signature prehash.
 
@@ -269,7 +283,7 @@ class BloFinClient:
             raise ExchangeAuthError(
                 self._last_error,
                 details=VenueErrorDetails(
-                    venue_error_code=str(status),
+                    venue_error_code=_http_venue_code(response),
                     venue_error_message=self._last_error,
                     http_status=status,
                     endpoint_name=endpoint,
@@ -280,7 +294,7 @@ class BloFinClient:
             raise ExchangeRequestError(
                 self._last_error,
                 details=VenueErrorDetails(
-                    venue_error_code=str(status),
+                    venue_error_code=_http_venue_code(response),
                     venue_error_message=self._last_error,
                     http_status=status,
                     endpoint_name=endpoint,

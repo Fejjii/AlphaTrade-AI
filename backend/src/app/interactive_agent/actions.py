@@ -98,6 +98,8 @@ class RecordedTradeInput(StrictModel):
     journal_trade_id: UUID | None = None
     latest: bool = False
     paper_only: bool = False
+    execution_venue: Literal["PAPER_INTERNAL", "BLOFIN_DEMO", "BLOFIN_REAL", "BLOFIN"] | None = None
+    trade_origin: Literal["manual_demo_test", "paper_execution", "manual"] | None = None
 
 
 class PaperExecutionExplanationInput(StrictModel):

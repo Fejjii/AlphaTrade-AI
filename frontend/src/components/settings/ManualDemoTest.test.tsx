@@ -86,6 +86,30 @@ it("partial fills expose actual facts and allow cancellation and reconciliation"
   expect(manualDemo.reconcile).toHaveBeenCalledExactlyOnceWith("command");
 });
 
+it("shows safe native reconciliation diagnostics and refreshes only the same command", async () => {
+  vi.mocked(manualDemo.confirm).mockResolvedValueOnce({
+    ...status, status: "reconciliation_unavailable_operator_hold", protection: "unverified",
+    filled_quantity: "0", average_fill_price: null, journal_trade_id: null,
+    reconciliation_diagnostics: [{
+      stage: "fill_lookup", reason_code: "venue_request_rejected", error_type: "ExchangeRequestError",
+      endpoint_name: "GET /api/v1/trade/fills-history", http_status: 400, venue_error_code: "51000",
+    }],
+  });
+  await prepare();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and submit demo market order" }));
+  const diagnostic = await screen.findByRole("alert");
+  expect(diagnostic).toHaveTextContent("fill_lookup — venue_request_rejected");
+  expect(diagnostic).toHaveTextContent("GET /api/v1/trade/fills-history; HTTP 400; venue code 51000");
+  expect(diagnostic).toHaveTextContent("Do not resubmit");
+  expect(screen.queryByRole("button", { name: "Confirm and submit demo market order" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh venue evidence" }));
+  await screen.findByText("Manual demo test: filled protected");
+  expect(manualDemo.reconcile).toHaveBeenCalledExactlyOnceWith("command");
+  expect(manualDemo.confirm).toHaveBeenCalledTimes(1);
+  expect(manualDemo.preview).toHaveBeenCalledTimes(1);
+});
+
 it("allows below-1R connectivity preview only with explicit exact confirmation", async () => {
   const connectivityPreview = { ...preview, gross_reward_risk: "0.375" };
   vi.mocked(manualDemo.preview).mockResolvedValueOnce(connectivityPreview);
