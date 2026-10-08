@@ -8,8 +8,9 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from app.core.blofin_readonly_access import get_readonly_account_provider
+from app.core.blofin_readonly_access import BloFinReadOnlyClient, get_readonly_account_provider
 from app.core.config import ExchangeMode
+from app.core.errors import ExchangeDemoInactiveError
 from app.db.models import BloFinDemoSyncSnapshot, JournalTrade
 from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
@@ -39,6 +40,9 @@ def transport(seen, *, positions=None, fail=False, instruments=None, metadata_fa
     def handle(request):
         seen.append((request.method, request.url.path))
         assert request.url.host == "demo-trading-openapi.blofin.com"
+        if request.url.path == "/api/v1/market/instruments":
+            assert not request.url.query
+            assert "access-key" not in request.headers
         if fail:
             return httpx.Response(200, json={"code": "51000", "msg": "opaque secret error"})
         if metadata_fail and request.url.path == "/api/v1/market/instruments":
@@ -437,3 +441,20 @@ def test_malformed_equity_is_not_replaced_by_balance(field, value):
         data[field] = value
     with pytest.raises(ExchangeRequestError):
         native_provider(data).get_balances()
+
+
+def test_public_bulk_metadata_is_unsigned_and_readonly_transport_stays_bounded():
+    seen = []
+    provider = get_readonly_account_provider(readonly_settings(), transport=transport(seen))
+    assert provider.get_position_metadata({"BTC-USDT"})["BTC-USDT"]["contract_value"] == "0.001"
+    assert seen == [("GET", "/api/v1/market/instruments")]
+    safe_client = BloFinReadOnlyClient(
+        base_url="https://demo-trading-openapi.blofin.com",
+        api_key="fixture-key",
+        api_secret="fixture-secret",
+        api_passphrase="fixture-pass",
+        transport=httpx.MockTransport(lambda _: pytest.fail("Forbidden metadata request sent")),
+    )
+    for options in ({"signed": True}, {"params": {"instType": "SWAP"}}, {"body": {}}):
+        with pytest.raises(ExchangeDemoInactiveError):
+            safe_client.request("GET", "/api/v1/market/instruments", **options)

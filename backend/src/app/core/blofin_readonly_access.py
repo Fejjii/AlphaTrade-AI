@@ -38,8 +38,8 @@ class BloFinReadOnlyClient(BloFinClient):
     ) -> Any:
         if method.upper() != "GET" or path not in _ACCOUNT_PATHS or body is not None:
             raise ExchangeDemoInactiveError("BloFin sync permits account GET requests only.")
-        if path == "/api/v1/market/instruments" and (signed or params != {"instType": "SWAP"}):
-            raise ExchangeDemoInactiveError("BloFin sync permits only public SWAP metadata reads.")
+        if path == "/api/v1/market/instruments" and (signed or params):
+            raise ExchangeDemoInactiveError("BloFin sync permits only public bulk metadata reads.")
         data = super().request(method, path, params=params, signed=signed, before_send=before_send)
         if not isinstance(data, list | dict) or (
             path == "/api/v1/account/positions" and not isinstance(data, list)

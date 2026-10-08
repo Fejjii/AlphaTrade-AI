@@ -257,9 +257,9 @@ class BloFinAccountProvider:
         Kept separate from execution's existing permissive instrument adapter.
         Missing, ambiguous or unsupported metadata never implies a multiplier.
         """
-        data = self._client.request(
-            "GET", "/api/v1/market/instruments", params={"instType": "SWAP"}
-        )
+        # BloFin documents only optional instId; an unfiltered read is the
+        # documented bulk form. Verify the returned type rather than guessing a query.
+        data = self._client.request("GET", "/api/v1/market/instruments")
         if not isinstance(data, list):
             raise ExchangeRequestError("Invalid BloFin instruments response.")
         result: dict[str, dict[str, str]] = {}

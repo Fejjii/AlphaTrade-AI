@@ -66,8 +66,9 @@ exchange/source contracts are reused. No migration, credential or activation cha
   reconciliation sync retain their request sequence. Metadata failure degrades
   conversion while preserving native account evidence. Metadata and instrument
   IDs are saved in existing bounded JSON.
-- The read-only transport permits the exact unsigned public SWAP metadata GET
-  alongside existing account GETs; order/transfer/withdrawal calls remain forbidden.
+- The read-only transport permits the exact unsigned public instruments GET
+  without query parameters alongside existing account GETs. Returned metadata
+  must pass SWAP/linear validation; order/transfer/withdrawal calls remain forbidden.
   Its signature includes merged main's `before_send` hook.
 - `latest(successful_only=False)` and its repository query gain an optional
   organization-scoped success filter for Dashboard preservation. Defaults stay
@@ -91,7 +92,8 @@ Local verification uses authenticated SQLite/tenant fixtures,
 
 - 123 focused backend account/acceptance/probe/Dashboard checks passed without
   skips; three additional precision/malformed-equity checks passed.
-- Final account suite passed all 43 cases using CI's locked dependencies.
+- Final account suite passed all 44 cases using CI's locked dependencies,
+  including the documented unsigned bulk instruments lookup and its restrictions.
 - Broader sync/provider regression: 154 passed, 62 existing PostgreSQL-only
   governed/reconciliation cases skipped because PostgreSQL is unavailable.
 - 36 frontend tests passed across card, account API, Dashboard page and helpers:
@@ -108,6 +110,12 @@ A production build passed using Next's local font response fixture. Existing
 Google Fonts downloads are restricted by this environment's network policy;
 repository font/network configuration was not changed. Full backend CI was not
 manually dispatched. Existing test-key/deprecation warnings are unrelated.
+
+The normal PR CI run [802](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/37816224281)
+passed on `ba29e25`: 131 focused backend tests, all 1,434 frontend tests, normal
+production build, all 41 Chromium cases, deployment safety, Docker and evaluations.
+The final native query correction is covered by the 44-case local account suite
+and triggers another ordinary PR CI run on push.
 
 ## Remaining live gate
 
