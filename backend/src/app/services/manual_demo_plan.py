@@ -46,7 +46,10 @@ def build_manual_plan(
     worst = upper if request.side.value == "BUY" else lower
     notional = base * upper
     if base * lower < Decimal("5"):
-        raise TradingPolicyError("Demo entry notional is below 5 USDT.")
+        raise TradingPolicyError(
+            "Manual demo limit: entry notional is below the 5 USDT test minimum.",
+            details={"reason": "manual_demo_minimum_notional", "category": "manual_demo_limits"},
+        )
     gross_loss = base * abs(worst - request.stop)
     fee = notional * Decimal("0.001")
     slippage = notional * Decimal("0.001")

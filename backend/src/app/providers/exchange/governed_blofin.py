@@ -39,6 +39,7 @@ class DemoVenueSnapshot:
     available: Decimal
     maximum: Decimal
     book: DemoOrderBook
+    account_observed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -135,11 +136,19 @@ class GovernedBloFinDemoProvider:
             leverage = self._account.get_leverage_info(inst_id=instrument, margin_mode="cross")
             if leverage.leverage != Decimal("1"):
                 raise ValueError("Demo account must already use leverage 1; no leverage mutation.")
+        account_observed_at = self._clock()
         self.verify_flat_account()
         with preflight_stage("balance", "GET /api/v1/account/balance"):
             balances = self._account.get_balances()
             balance = next((b for b in balances if b.asset == "USDT"), None)
-            if balance is None or balance.available <= 0 or balance.total <= 0:
+            if (
+                balance is None
+                or len([b for b in balances if b.asset == "USDT"]) != 1
+                or not balance.available.is_finite()
+                or not balance.total.is_finite()
+                or balance.available <= 0
+                or balance.total <= 0
+            ):
                 raise ValueError("Demo USDT equity unavailable.")
         with preflight_stage("quote", "GET /api/v1/market/books"):
             started = monotonic()
@@ -172,6 +181,7 @@ class GovernedBloFinDemoProvider:
             available=balance.available,
             maximum=maximum,
             book=book,
+            account_observed_at=account_observed_at,
         )
 
     def verify_flat_account(self) -> None:
@@ -262,12 +272,9 @@ class GovernedBloFinDemoProvider:
         ):
             raise ValueError("Demo cross-venue basis moved beyond the authorized bound.")
         if plan.schema_version == "ManualDemoTradePlanV1":
-            equity = min(snapshot.equity, snapshot.available)
-            notional = plan.quantity.value * snapshot.multiplier * plan.entry_zone.upper
-            if plan.risk_and_exits.maximum_loss.value > equity * Decimal(
-                "0.01"
-            ) or notional > equity * Decimal("0.05"):
-                raise ValueError("Fresh demo balance no longer supports the authorized risk/size.")
+            from app.services.manual_demo_policy import validate_manual_demo
+
+            validate_manual_demo(plan, snapshot, now=self._clock())
         body = {
             "instId": plan.execution_instrument,
             "marginMode": "cross",
@@ -288,6 +295,8 @@ class GovernedBloFinDemoProvider:
                 raise ValueError("Demo plan expired during dispatch preflight.")
             if not 0 <= (now - snapshot.observed_at).total_seconds() < 10:
                 raise ValueError("Demo quote stale or future dated.")
+            if plan.schema_version == "ManualDemoTradePlanV1":
+                validate_manual_demo(plan, snapshot, now=now)
 
         verify_deadline()
         before_post()

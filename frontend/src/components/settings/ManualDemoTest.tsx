@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ApiError } from "@/lib/api/client";
-import { manualDemo, type ManualDemoPreview, type ManualDemoStatus } from "@/lib/api/manual-demo";
+import { manualDemo, type ManualDemoInstrument, type ManualDemoPreview, type ManualDemoStatus } from "@/lib/api/manual-demo";
+import { validateManualDemoInput } from "@/lib/manual-demo-validation";
 
 type DemoFailure = {
   message: string;
@@ -12,6 +13,7 @@ type DemoFailure = {
   stage?: string;
   reason?: string;
   rewardRisk?: number;
+  category?: string;
 };
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -46,6 +48,7 @@ function demoFailure(failure: unknown): DemoFailure {
   return {
     message: failure.message,
     code: diagnosticCode(envelope?.code),
+    category: diagnosticCode(details?.category),
     stage: diagnosticCode(preflight?.stage),
     reason:
       diagnosticCode(preflight?.reason_code) ?? diagnosticCode(details?.reason),
@@ -58,6 +61,7 @@ function demoFailure(failure: unknown): DemoFailure {
 
 export function ManualDemoTest() {
   const [open, setOpen] = useState(false);
+  const [instrument, setInstrument] = useState<ManualDemoInstrument | null>(null);
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [quantity, setQuantity] = useState("");
   const [stop, setStop] = useState("");
@@ -69,6 +73,32 @@ export function ManualDemoTest() {
   const [error, setError] = useState<DemoFailure | null>(null);
   const pending = useRef(false);
   const [sent, setSent] = useState(false);
+
+  const input = { symbol: "BTCUSDT" as const, side, order_type: "MARKET" as const, quantity, stop, target };
+  const inputError = instrument && quantity && stop && target ? validateManualDemoInput(input, instrument) : null;
+
+  async function loadInstrument() {
+    setInstrument(null);
+    setPreview(null);
+    setConfirmed(false);
+    setInstrument(await manualDemo.instrument());
+  }
+
+  async function submitConfirmed(plan: ManualDemoPreview) {
+    setSent(true);
+    try {
+      setResult(await manualDemo.confirm(plan));
+    } catch (failure) {
+      // Only explicit server proof of pre-claim refusal permits a fresh plan.
+      // Network loss and post-submit errors retain the exact recovery identity.
+      if (failure instanceof ApiError && object(object(object(failure.body)?.error)?.details)?.submission === "not_started") {
+        setSent(false);
+        setPreview(null);
+        setConfirmed(false);
+      }
+      throw failure;
+    }
+  }
 
   async function act(operation: () => Promise<void>) {
     if (pending.current) return;
@@ -90,13 +120,22 @@ export function ManualDemoTest() {
     <CardContent className="space-y-3">
       <p className="text-sm text-text-muted">Owner only · BTC market entry · demo funds. Preview and exact confirmation are required. This does not approve a strategy. The server capability must be separately armed after review.</p>
       <p className="text-sm text-text-muted">Manual connectivity exception: minimum 1R does not apply; excluded from strategy performance. Strategy plans still require minimum 1R.</p>
-      {!open ? <Button onClick={() => setOpen(true)}>Prepare manual demo test</Button> : <>
+      <p className="text-sm text-text-muted">Manual demo limits: fresh demo funds only · maximum test notional 5% and planned loss 1% of available demo equity · 1× leverage · flat demo account with no pending orders. Strategy daily PnL, trade count and green day rules do not apply.</p>
+      {!open ? <Button onClick={() => { setOpen(true); void act(loadInstrument); }}>Prepare manual demo test</Button> : <>
         {!sent && <div className="space-y-2">
-          <label className="block">Side <select aria-label="Demo side" value={side} onChange={(e) => changed(() => setSide(e.target.value as "BUY" | "SELL"))}><option value="BUY">Long</option><option value="SELL">Short</option></select></label>
-          <label className="block">Quantity in contracts <input aria-label="Quantity in contracts" inputMode="decimal" value={quantity} onChange={(e) => changed(() => setQuantity(e.target.value))} /></label>
-          <label className="block">Stop (USDT) <input aria-label="Stop (USDT)" inputMode="decimal" value={stop} onChange={(e) => changed(() => setStop(e.target.value))} /></label>
-          <label className="block">Target (USDT) <input aria-label="Target (USDT)" inputMode="decimal" value={target} onChange={(e) => changed(() => setTarget(e.target.value))} /></label>
-          <Button disabled={busy || !quantity || !stop || !target} onClick={() => void act(async () => { setPreview(null); setConfirmed(false); setPreview(await manualDemo.preview({ symbol: "BTCUSDT", side, order_type: "MARKET", quantity, stop, target })); })}>Preview demo entry</Button>
+          {instrument ? <div aria-label="Exchange contract limits">
+            <p>Exchange minimum: {instrument.minimum_quantity} contracts · lot increment: {instrument.lot_increment} contracts · price increment: {instrument.tick_size} USDT</p>
+            <p>1 contract = {instrument.contract_multiplier} BTC. Contracts are exchange units; quantity is not BTC.</p>
+            <p>BTC equivalent: {Number.isFinite(Number(quantity)) ? Number(quantity) * Number(instrument.contract_multiplier) : "—"} BTC · approximate notional: {Number.isFinite(Number(quantity)) ? (Number(quantity) * Number(instrument.contract_multiplier) * Number(instrument.reference_price)).toFixed(2) : "—"} USDT</p>
+            <p>Indicative entry: {instrument.reference_price} USDT · minimum test notional {instrument.minimum_notional} USDT. Preview rechecks fresh executable depth and account capacity.</p>
+          </div> : <p>Exchange instrument limits must be loaded before preview.</p>}
+          <Button disabled={busy} onClick={() => void act(loadInstrument)}>Refresh instrument limits</Button>
+          <label className="block">Side <select aria-label="Demo side" disabled={busy} value={side} onChange={(e) => changed(() => setSide(e.target.value as "BUY" | "SELL"))}><option value="BUY">Long</option><option value="SELL">Short</option></select></label>
+          <label className="block">Quantity in contracts <input aria-label="Quantity in contracts" inputMode="decimal" disabled={busy} value={quantity} onChange={(e) => changed(() => setQuantity(e.target.value))} /></label>
+          <label className="block">Stop (USDT) <input aria-label="Stop (USDT)" inputMode="decimal" disabled={busy} value={stop} onChange={(e) => changed(() => setStop(e.target.value))} /></label>
+          <label className="block">Target (USDT) <input aria-label="Target (USDT)" inputMode="decimal" disabled={busy} value={target} onChange={(e) => changed(() => setTarget(e.target.value))} /></label>
+          {inputError && <p role="alert">{inputError}</p>}
+          <Button disabled={busy || !instrument || !quantity || !stop || !target || Boolean(inputError)} onClick={() => void act(async () => { setPreview(null); setConfirmed(false); setPreview(await manualDemo.preview(input)); })}>Preview demo entry</Button>
         </div>}
         {preview && <div className="space-y-2" aria-label="Manual demo entry preview">
           <p>{preview.instrument} · {preview.side === "BUY" ? "Long" : "Short"} · Market</p>
@@ -108,12 +147,9 @@ export function ManualDemoTest() {
           {preview.warnings.map((warning) => <p className="text-sm text-text-muted" key={warning}>{warning}</p>)}
           {!sent && <>
             <label className="block"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> I confirm this exact manual demo test plan.</label>
-            <Button disabled={busy || !confirmed} onClick={() => void act(async () => {
-              setSent(true);
-              setResult(await manualDemo.confirm(preview));
-            })}>Confirm and submit demo market order</Button>
+            <Button disabled={busy || !confirmed} onClick={() => void act(() => submitConfirmed(preview))}>Confirm and submit demo market order</Button>
           </>}
-          {sent && !result && <Button disabled={busy} onClick={() => void act(async () => { setResult(await manualDemo.confirm(preview)); })}>Recover this exact confirmation (no resend)</Button>}
+          {sent && !result && <Button disabled={busy} onClick={() => void act(() => submitConfirmed(preview))}>Recover this exact confirmation (no resend)</Button>}
         </div>}
         {result && <div role="status" className="space-y-2">
           <p>Manual demo test: {result.status.replaceAll("_", " ")}</p>
@@ -128,6 +164,7 @@ export function ManualDemoTest() {
       </>}
       {error && <div role="alert" className="space-y-1">
         <p>{error.message}</p>
+        {error.category && <p>Policy group: {error.category.replaceAll("_", " ")}</p>}
         {error.code && <p>Error code: {error.code}</p>}
         {error.stage && <p>Blocked stage: {error.stage}</p>}
         {error.reason && <p>Blocking reason: {error.reason}</p>}

@@ -54,6 +54,9 @@ describe("buildSecurityHeaders", () => {
     expect(keys).toContain("Strict-Transport-Security");
     expect(headers.find((h) => h.key === "X-Frame-Options")?.value).toBe("DENY");
     expect(headers.find((h) => h.key === "X-Content-Type-Options")?.value).toBe("nosniff");
+    expect(headers.find((h) => h.key === "Permissions-Policy")?.value).toBe(
+      "camera=(), microphone=(self), geolocation=()",
+    );
   });
 
   it("omits HSTS in dev", () => {

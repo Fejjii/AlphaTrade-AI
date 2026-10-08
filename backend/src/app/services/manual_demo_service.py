@@ -12,11 +12,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.errors import ForbiddenError, NotFoundError, TradingPolicyError
+from app.core.errors import ForbiddenError, NotFoundError, TradingPolicyError, ValidationAppError
 from app.core.execution_credentials import blofin_execution_authorized, manual_demo_access_requested
 from app.db.models import (
     AuditLog,
@@ -24,13 +24,22 @@ from app.db.models import (
     ExecutionCommand,
     ExecutionProjection,
     JournalTrade,
+    RiskReservation,
     TradeProposal,
     VenueSubmitEffect,
 )
 from app.db.models import TradePlanRevision as PlanRow
-from app.providers.exchange.demo_preflight import failure_diagnostics, preflight_message
+from app.providers.exchange.demo_preflight import (
+    failure_diagnostics,
+    preflight_category,
+    preflight_message,
+)
 from app.providers.exchange.factory import build_blofin_client
-from app.providers.exchange.governed_blofin import DemoFill, GovernedBloFinDemoProvider
+from app.providers.exchange.governed_blofin import (
+    DemoFill,
+    DemoVenueSnapshot,
+    GovernedBloFinDemoProvider,
+)
 from app.schemas.audit import AuditRecordCreate
 from app.schemas.common import (
     ActorType,
@@ -40,7 +49,6 @@ from app.schemas.common import (
     JournalTradeStatus,
     MembershipRole,
     ProposalStatus,
-    RiskAction,
     RiskSeverity,
     TradeDirection,
 )
@@ -51,14 +59,16 @@ from app.schemas.execution_protocol import (
 )
 from app.schemas.manual_demo import (
     ManualDemoConfirmation,
+    ManualDemoInstrument,
     ManualDemoPreview,
     ManualDemoPreviewRequest,
     ManualDemoStatus,
 )
-from app.schemas.risk import KillSwitchMutationRequest, RiskCheckRequest
+from app.schemas.risk import KillSwitchMutationRequest
 from app.schemas.trade_plan import (
     AuthorizationChannel,
     AuthorizationDecision,
+    EntrySide,
     TradePlanRevision,
     TradePlanRevisionSemantic,
 )
@@ -69,12 +79,10 @@ from app.services.canonical_serialization import canonical_sha256
 from app.services.execution_account_service import ExecutionAccountService
 from app.services.execution_claim import ExecutionClaimHooks, PaperPlanClaimService
 from app.services.manual_demo_plan import MANUAL_DEMO_ORIGIN, build_manual_plan
+from app.services.manual_demo_policy import validate_manual_demo
 from app.services.mappers.trade_plan_mapper import trade_plan_revision_to_schema
 from app.services.planned_reward_risk import PlannedRewardRiskError, execution_reward_risk
-from app.services.risk.daily_risk_accounting import DailyRiskAccounting
-from app.services.risk.engine import RiskEngine
 from app.services.risk.kill_switch import KillSwitchService
-from app.services.risk.rules import RiskEvaluationContext
 from app.services.risk.settings_service import RiskSettingsService
 from app.services.safety_epoch import SafetyEpochService
 from app.services.venue_submit_dispatcher import VenueSubmitDispatcher
@@ -152,63 +160,61 @@ class ManualDemoService:
             raise TradingPolicyError("Manual demo plan integrity failed.")
         return plan
 
-    def _risk(self, tenant: TenantContext, plan: TradePlanRevisionSemantic) -> None:
+    def _risk(
+        self, tenant: TenantContext, plan: TradePlanRevisionSemantic, snapshot: DemoVenueSnapshot
+    ) -> None:
+        # The venue must prove a flat account. Pending/uncertain local demo
+        # reservations still consume capacity, even if the venue has no order yet.
+        reserved, loss = self.session.execute(
+            select(
+                func.coalesce(func.sum(RiskReservation.remaining_reserved_notional), 0),
+                func.coalesce(func.sum(RiskReservation.daily_loss_allocation), 0),
+            )
+            .join(ExecutionCommand, ExecutionCommand.id == RiskReservation.command_id)
+            .join(PlanRow, PlanRow.id == ExecutionCommand.revision_id)
+            .where(
+                RiskReservation.organization_id == tenant.organization_id,
+                RiskReservation.account_id == plan.account_id,
+                PlanRow.execution_venue == "BLOFIN_DEMO",
+                RiskReservation.release_state != "RELEASED",
+            )
+        ).one()
+        if self.epochs.organization_kill_active(tenant.organization_id):
+            raise TradingPolicyError(
+                "Manual demo is held by the kill switch. Review the hold before continuing.",
+                details={"reason": "safety_epoch_blocking", "category": "manual_demo_limits"},
+            )
+        validate_manual_demo(
+            plan, snapshot, now=self.clock(), reserved_notional=reserved, reserved_loss=loss
+        )
+
+    def _snapshot(self, *, side: EntrySide, quantity: Decimal | None = None) -> DemoVenueSnapshot:
         try:
-            execution_reward_risk(plan)
-        except PlannedRewardRiskError as exc:
-            raise TradingPolicyError(str(exc), details={"reason": exc.reason}) from exc
-        daily = DailyRiskAccounting(
-            self.session, self.risk_settings, clock=self.clock
-        ).sync_from_portfolio(organization_id=tenant.organization_id, user_id=tenant.user_id)
-        user = self.risk_settings.get(
-            organization_id=tenant.organization_id, user_id=tenant.user_id
-        )
-        observed = {item.name: item.result_value for item in plan.calculation_inputs}
-        equity = min(daily.account_equity, observed["venue_equity"], observed["venue_available"])
-        if (
-            equity <= 0
-            or plan.risk_and_exits.maximum_loss.value
-            > equity * min(user.max_risk_per_trade_percent, Decimal("1")) / 100
-        ):
+            return self._provider().snapshot(
+                symbol="BTCUSDT", now=self.clock(), side=side, quantity=quantity
+            )
+        except Exception as exc:
+            diagnostics = failure_diagnostics(exc, stage="snapshot")
             raise TradingPolicyError(
-                "Manual demo maximum planned loss exceeds the per-trade risk limit.",
-                details={"reason": "manual_demo_per_trade_risk_limit"},
-            )
-        notional = (
-            plan.quantity.value * plan.instrument_rules.contract_multiplier * plan.entry_zone.upper
+                preflight_message(diagnostics),
+                details={"preflight": diagnostics, "category": preflight_category(diagnostics)},
+            ) from exc
+
+    def instrument(self, tenant: TenantContext) -> ManualDemoInstrument:
+        account_id = self._scope(tenant).id
+        self.session.commit()
+        snapshot = self._snapshot(side=EntrySide.BUY)
+        return ManualDemoInstrument(
+            account_id=account_id,
+            instrument=snapshot.instrument,
+            minimum_quantity=snapshot.minimum,
+            maximum_quantity=snapshot.maximum,
+            lot_increment=snapshot.lot,
+            tick_size=snapshot.tick,
+            contract_multiplier=snapshot.multiplier,
+            reference_price=snapshot.price,
+            observed_at=snapshot.observed_at,
         )
-        if notional > equity * Decimal("0.05"):
-            raise TradingPolicyError(
-                "Manual demo entry notional exceeds 5% of available demo equity.",
-                details={"reason": "manual_demo_notional_limit"},
-            )
-        result = RiskEngine().evaluate(
-            RiskCheckRequest(
-                symbol="BTCUSDT",
-                direction=TradeDirection.LONG if plan.side.value == "BUY" else TradeDirection.SHORT,
-                entry_price=plan.entry_zone.upper,
-                stop_loss=plan.risk_and_exits.stop.value,
-                position_size=plan.quantity.value * plan.instrument_rules.contract_multiplier,
-                leverage=plan.risk_and_exits.leverage,
-                account_equity=equity,
-            ),
-            context=RiskEvaluationContext(
-                daily_locked=daily.daily_locked,
-                realized_pnl_today=daily.realized_pnl,
-                daily_loss_limit=daily.daily_loss_limit,
-                trades_today=daily.trade_count,
-                kill_switch_active=self.epochs.organization_kill_active(tenant.organization_id),
-                protect_green_day=user.green_day_protection_enabled,
-                open_exposure_notional=daily.open_exposure_notional,
-                is_weekend=self.clock().weekday() >= 5,
-                overtrading=daily.trade_count >= user.max_trades_per_day,
-            ),
-        )
-        if result.action is RiskAction.BLOCK:
-            blocked = next(
-                rule for rule in result.triggered_rules if rule.action is RiskAction.BLOCK
-            )
-            raise TradingPolicyError(result.explanation, details={"reason": blocked.rule_id.value})
 
     def preview(
         self, tenant: TenantContext, request: ManualDemoPreviewRequest
@@ -236,7 +242,7 @@ class ManualDemoService:
             )
             raise TradingPolicyError(
                 preflight_message(diagnostics),
-                details={"preflight": diagnostics},
+                details={"preflight": diagnostics, "category": preflight_category(diagnostics)},
             ) from exc
         try:
             semantic = build_manual_plan(
@@ -247,11 +253,18 @@ class ManualDemoService:
                 account_id=account_id,
                 now=self.clock(),
             )
-        except (PlannedRewardRiskError, ValueError) as exc:
-            raise TradingPolicyError(str(exc)) from exc
+        except PlannedRewardRiskError as exc:
+            raise TradingPolicyError(
+                f"Manual demo geometry: {exc}",
+                details={"reason": exc.reason, "category": "manual_demo_geometry"},
+            ) from exc
+        except ValueError as exc:
+            raise TradingPolicyError(
+                str(exc), details={"category": "exchange_constraints"}
+            ) from exc
         reward_risk = execution_reward_risk(semantic)
         try:
-            self._risk(tenant, semantic)
+            self._risk(tenant, semantic, snapshot)
         except TradingPolicyError as exc:
             raise TradingPolicyError(
                 exc.message,
@@ -351,6 +364,35 @@ class ManualDemoService:
             raise TradingPolicyError("Explicit manual demo test confirmation is required.")
         if confirmation.content_hash != plan.content_hash:
             raise TradingPolicyError("Confirmation must match the exact preview hash.")
+        existing_query = select(ExecutionCommand).where(
+            ExecutionCommand.organization_id == tenant.organization_id,
+            ExecutionCommand.user_id == tenant.user_id,
+            ExecutionCommand.account_id == plan.account_id,
+            ExecutionCommand.revision_id == plan.revision_id,
+        )
+        existing = self.session.scalar(existing_query)
+        if existing is not None:
+            command_id = existing.id
+            self.session.commit()
+            return self.reconcile(tenant, command_id)
+        self.session.commit()
+        if self.clock() >= plan.valid_until:
+            raise ValidationAppError(
+                "Manual demo plan expired. Create and confirm a fresh preview.",
+                details={"submission": "not_started"},
+            )
+        try:
+            snapshot = self._snapshot(side=plan.side, quantity=plan.quantity.value)
+        except TradingPolicyError as exc:
+            # A concurrent exact confirmation may have submitted while we read.
+            existing = self.session.scalar(existing_query)
+            if existing is None:
+                raise TradingPolicyError(
+                    exc.message, details={**exc.details, "submission": "not_started"}
+                ) from exc
+            command_id = existing.id
+            self.session.commit()
+            return self.reconcile(tenant, command_id)
         # Serialize duplicate owner confirmations on this immutable revision.
         # The shared claim service then locks idempotency → account epoch → risk,
         # retaining the same lock order as automatic strategy claims.
@@ -375,7 +417,12 @@ class ManualDemoService:
             command_id = existing.id
             self.session.commit()
             return self.reconcile(tenant, command_id)  # Never resend a replay/restarted command.
-        self._risk(tenant, plan)
+        try:
+            self._risk(tenant, plan, snapshot)
+        except TradingPolicyError as exc:
+            raise TradingPolicyError(
+                exc.message, details={**exc.details, "submission": "not_started"}
+            ) from exc
         approval = ApprovalService(self.session, self.audit, clock=self.clock)
         pending = approval.create_for_plan_revision(
             revision_id=plan.revision_id,
@@ -407,7 +454,9 @@ class ManualDemoService:
             self.settings,
             self.epochs,
             clock=self.clock,
-            hooks=ExecutionClaimHooks(revalidate=lambda **kw: self._revalidate(tenant, kw["plan"])),
+            hooks=ExecutionClaimHooks(
+                manual_demo_capacity=lambda **kw: self._revalidate(tenant, kw["plan"], snapshot)
+            ),
         ).claim(
             ExecutePaperPlanRequest(
                 organization_id=tenant.organization_id,
@@ -440,12 +489,14 @@ class ManualDemoService:
             self.session.commit()
         return self.reconcile(tenant, command_id)
 
-    def _revalidate(self, tenant: TenantContext, plan: TradePlanRevision) -> str | None:
+    def _revalidate(
+        self, tenant: TenantContext, plan: TradePlanRevision, snapshot: DemoVenueSnapshot
+    ) -> str | None:
         try:
             self._scope(tenant)
-            self._risk(tenant, plan)
-        except TradingPolicyError:
-            return "manual_demo_risk_or_scope_refused"
+            self._risk(tenant, plan, snapshot)
+        except TradingPolicyError as exc:
+            return str(exc.details.get("reason", "manual_demo_risk_or_scope_refused"))
         return None
 
     def _dispatcher(self) -> VenueSubmitDispatcher:

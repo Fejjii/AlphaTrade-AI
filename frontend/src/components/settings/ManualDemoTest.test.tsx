@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import { ManualDemoTest } from "./ManualDemoTest";
-import { manualDemo, type ManualDemoPreview, type ManualDemoStatus } from "@/lib/api/manual-demo";
+import { manualDemo, type ManualDemoInstrument, type ManualDemoPreview, type ManualDemoStatus } from "@/lib/api/manual-demo";
 
 const preview: ManualDemoPreview = {
   origin: "manual demo test", account_id: "account", revision_id: "revision", content_hash: "a".repeat(64),
@@ -12,28 +12,35 @@ const preview: ManualDemoPreview = {
   maximum_planned_loss: "2.6004", gross_reward_risk: "1.727", valid_until: "2026-10-07T12:00:00Z",
   warnings: ["Excluded from strategy validation."],
 };
+const instrument: ManualDemoInstrument = {
+  account_id: "account", instrument: "BTC-USDT", quantity_unit: "CONTRACTS", base_currency: "BTC",
+  minimum_quantity: "0.1", maximum_quantity: "1000000", lot_increment: "0.1", tick_size: "0.1",
+  contract_multiplier: "0.001", minimum_notional: "5", reference_price: "100000", observed_at: "2026-10-08T12:00:00Z",
+};
 const status: ManualDemoStatus = {
   origin: "manual demo test", revision_id: "revision", command_id: "command", client_order_id: "durable-client",
   status: "filled_protected", filled_quantity: "2", remaining_quantity: "0", average_fill_price: "100001",
   fees: "0.02", protection: "verified", journal_trade_id: "journal", missing_evidence: ["Exit is not reconciled."],
 };
 beforeEach(() => {
+  vi.spyOn(manualDemo, "instrument").mockResolvedValue(instrument);
   vi.spyOn(manualDemo, "preview").mockResolvedValue(preview);
   vi.spyOn(manualDemo, "confirm").mockResolvedValue(status);
   vi.spyOn(manualDemo, "reconcile").mockResolvedValue(status);
   vi.spyOn(manualDemo, "cancel").mockResolvedValue(status);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-function enterPlan() {
+async function enterPlan() {
   render(<ManualDemoTest />);
   fireEvent.click(screen.getByRole("button", { name: "Prepare manual demo test" }));
+  await screen.findByText(/Exchange minimum:/);
   for (const [label, value] of [["Quantity in contracts", "2"], ["Stop (USDT)", "99000"], ["Target (USDT)", "102000"]]) {
     fireEvent.change(screen.getByRole("textbox", { name: label }), { target: { value } });
   }
   fireEvent.click(screen.getByRole("button", { name: "Preview demo entry" }));
 }
 async function prepare() {
-  enterPlan();
+  await enterPlan();
   await screen.findByText(/Maximum planned loss/);
 }
 it("confirmation is explicit and uses the displayed hash", async () => {
@@ -126,7 +133,7 @@ it("shows calculated RR and precise blocking reason for a refused preview", asyn
       },
     ),
   );
-  enterPlan();
+  await enterPlan();
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent(
     "Manual demo maximum planned loss exceeds the per-trade risk limit.",
@@ -160,7 +167,7 @@ it("shows quote preflight stage and reason without copying raw venue details", a
       },
     ),
   );
-  enterPlan();
+  await enterPlan();
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Blocked stage: quote");
   expect(alert).toHaveTextContent("Blocking reason: quote_depth_insufficient");
@@ -168,4 +175,77 @@ it("shows quote preflight stage and reason without copying raw venue details", a
   expect(alert).not.toHaveTextContent("NaN");
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(manualDemo.confirm).not.toHaveBeenCalled();
+});
+
+it("displays native contract metadata and BTC/notional estimates before preview", async () => {
+  await enterPlan();
+  expect(screen.getByText(/Exchange minimum: 0.1 contracts · lot increment: 0.1 contracts/)).toBeInTheDocument();
+  expect(screen.getByText(/1 contract = 0.001 BTC/)).toBeInTheDocument();
+  expect(screen.getByText(/BTC equivalent: 0.002 BTC · approximate notional: 200.00 USDT/)).toBeInTheDocument();
+});
+
+it.each([
+  ["Quantity in contracts", "0.001", "Quantity is contracts, not BTC"],
+  ["Quantity in contracts", "0.15", "increments of 0.1"],
+  ["Stop (USDT)", "100010", "long needs stop below"],
+  ["Target (USDT)", "100000", "long needs stop below"],
+  ["Stop (USDT)", "99000.01", "price increment"],
+])("rejects invalid %s %s before sending preview", async (label, value, message) => {
+  await prepare();
+  vi.mocked(manualDemo.preview).mockClear();
+  fireEvent.change(screen.getByRole("textbox", { name: label }), { target: { value } });
+  expect(screen.getByRole("alert")).toHaveTextContent(message);
+  expect(screen.getByRole("button", { name: "Preview demo entry" })).toBeDisabled();
+  expect(manualDemo.preview).not.toHaveBeenCalled();
+  expect(manualDemo.confirm).not.toHaveBeenCalled();
+});
+
+it("keeps preview disabled and offers metadata refresh after an unknown account read", async () => {
+  vi.mocked(manualDemo.instrument).mockRejectedValueOnce(new ApiError("Demo account state is unknown", 403, null));
+  render(<ManualDemoTest />);
+  fireEvent.click(screen.getByRole("button", { name: "Prepare manual demo test" }));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "Preview demo entry" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh instrument limits" }));
+  await screen.findByText(/Exchange minimum:/);
+  expect(manualDemo.instrument).toHaveBeenCalledTimes(2);
+  expect(manualDemo.preview).not.toHaveBeenCalled();
+});
+
+it("permits a fresh preview only when the server proves confirmation never started", async () => {
+  vi.mocked(manualDemo.confirm).mockRejectedValueOnce(new ApiError("Demo available funds changed", 403, {
+    error: { details: { submission: "not_started", category: "manual_demo_limits" } },
+  }));
+  await prepare();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and submit demo market order" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Policy group: manual demo limits");
+  expect(screen.getByRole("button", { name: "Preview demo entry" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Recover this exact confirmation (no resend)" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+});
+
+it("retains exact recovery for post-submit policy errors without a not-started proof", async () => {
+  vi.mocked(manualDemo.confirm).mockRejectedValueOnce(new ApiError("Fill fee conflicts; operator review", 403, {
+    error: { details: { reason: "fill_conflict" } },
+  }));
+  await prepare();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and submit demo market order" }));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "Recover this exact confirmation (no resend)" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Preview demo entry" })).not.toBeInTheDocument();
+});
+
+it("keeps form values stable while the preview request is pending", async () => {
+  let finish!: (plan: ManualDemoPreview) => void;
+  vi.mocked(manualDemo.preview).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  await enterPlan();
+  expect(screen.getByRole("textbox", { name: "Quantity in contracts" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "Stop (USDT)" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "Target (USDT)" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Demo side" })).toBeDisabled();
+  finish(preview);
+  await screen.findByText(/Maximum planned loss/);
+  expect(screen.getByRole("textbox", { name: "Stop (USDT)" })).toBeEnabled();
 });

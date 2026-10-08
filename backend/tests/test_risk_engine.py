@@ -66,3 +66,26 @@ def test_schema_rejects_invalid_leverage(bad_leverage: Decimal) -> None:
 
     with pytest.raises(ValidationError):
         _request(leverage=bad_leverage)
+
+
+@pytest.mark.parametrize(
+    "context,rule,action",
+    [
+        (RiskEvaluationContext(daily_locked=True), RiskRuleId.MAX_DAILY_LOSS, RiskAction.BLOCK),
+        (RiskEvaluationContext(trades_today=20), RiskRuleId.OVERTRADING, RiskAction.WARN),
+        (
+            RiskEvaluationContext(protect_green_day=True),
+            RiskRuleId.STRONG_GREEN_DAY,
+            RiskAction.WARN,
+        ),
+        (
+            RiskEvaluationContext(open_exposure_notional=Decimal("864.19")),
+            RiskRuleId.MAX_POSITION_SIZE,
+            RiskAction.BLOCK,
+        ),
+    ],
+)
+def test_strategy_discipline_and_portfolio_rules_remain_enforced(context, rule, action):
+    result = RiskEngine().evaluate(_request(), context=context)
+    assert result.action is action
+    assert any(trigger.rule_id is rule for trigger in result.triggered_rules)

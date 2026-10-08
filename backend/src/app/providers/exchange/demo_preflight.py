@@ -45,9 +45,30 @@ _VALIDATION_REASONS = {
 }
 
 
+def preflight_category(diagnostics: dict[str, Any]) -> str:
+    if diagnostics.get("stage") in {"positions", "pending_orders", "pending_protection", "balance"}:
+        return "manual_demo_limits"
+    return "exchange_constraints"
+
+
 def preflight_message(diagnostics: dict[str, Any]) -> str:
     """Actionable fixed copy; never reflect arbitrary provider text into the UI."""
     reason = diagnostics.get("reason_code")
+    if reason in {"account_state_incomplete", "usdt_balance_unavailable"}:
+        return (
+            "Demo account state is unknown or incomplete. Verify positions, pending orders and "
+            "USDT equity in the selected BloFin demo account, then refresh; no entry is permitted."
+        )
+    if reason in {"account_not_flat", "pending_orders_present"}:
+        return (
+            "Manual demo capacity: the selected demo account has an open position, pending order "
+            "or protection. Reconcile it in BloFin demo before preparing another test."
+        )
+    if diagnostics.get("stage") in {"positions", "pending_orders", "pending_protection", "balance"}:
+        return (
+            "Demo account state could not be verified. Check the reported account endpoint, "
+            "positions, pending orders and available USDT in BloFin demo, then refresh."
+        )
     if reason == "quote_stale_or_future":
         if diagnostics.get("freshness_status") == "future":
             return (

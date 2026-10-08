@@ -4,8 +4,31 @@
 
 On 8 October 2026 the user verified recording on iPhone Safari and on Safari on
 the affected Mac. Chrome on that Mac failed despite enabled Chrome site and macOS
-microphone permissions. That device is inaccessible from this cloud task; its
-recognition error code and root cause remain UNKNOWN.
+microphone permissions. Both speech recognition and basic capture were reported
+to fail with permission errors; capture reports `NotAllowedError`. The affected device is inaccessible
+from this cloud task; actual post-deployment Chrome/macOS acceptance remains pending.
+
+A demonstrated application cause is the global Next.js response header
+`Permissions-Policy: camera=(), microphone=(), geolocation=()`, defined in
+`frontend/src/lib/security-headers.ts` and applied to every path by
+`frontend/next.config.ts`. Chrome enforces this document policy independently of
+site/macOS permission toggles. It is changed to `microphone=(self)`. Camera and
+geolocation remain denied, and CSP `frame-ancestors` plus `X-Frame-Options` still
+refuse embedding. `frontend/vercel.json` defines no separate policy override.
+
+The provider now checks `document.permissionsPolicy` or Chrome
+`document.featurePolicy` before starting capture/recognition. A detected denial
+explains the deployed header/iframe issue and directs the user to open the app in
+a top-level HTTPS tab. Browsers without either API use the existing capture path.
+
+Two real Chromium tests against the running Next.js app passed with a synthetic
+microphone: the actual repaired response permits capture and every track ends; a
+control document with the former header produces `NotAllowedError` despite the
+allowed device. This isolates the application policy cause; it does not verify the
+affected Mac's microphone, Chrome speech service, Safari, or current deployment.
+The deployed-header fetch was blocked by automatic approval review because the
+Vercel tool may create a temporary authentication-bypass link and follow redirects.
+No bypass was created, and current deployment headers remain unverified.
 
 The previous provider conflated `not-allowed` and `service-not-allowed` and claimed
 microphone denial. Recognition rejection alone does not establish capture denial.
@@ -38,7 +61,7 @@ Final transcripts remain visible for review and require explicit **Send transcri
 Partial/canceled/failed recognition never sends. A synchronous send lock additionally
 prevents two clicks before React updates from creating duplicate sends.
 
-## Focused automated verification (mocked)
+## Focused automated verification
 
 Run from `frontend/`:
 
@@ -48,8 +71,24 @@ npx eslint src/lib/voice/types.ts src/lib/voice/browser-voice-provider.ts src/li
 npm run typecheck
 ```
 
-Cloud result: both focused files passed, **49 tests passed**; scoped ESLint and
-frontend TypeScript checks passed. No full backend CI was run.
+The original PR227 voice suite contained 49 mocked cases. This repair adds policy
+refusal coverage and a separate real Chromium policy/capture test. The complete
+focused form/header/voice selection passed 74 unit tests; scoped ESLint and frontend
+TypeScript checks passed. The two Chromium policy checks passed. No full backend
+CI was dispatched.
+
+Run the browser checks against a local Next.js server (no backend or exchange
+submission is needed):
+
+```sh
+PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+npx playwright test e2e/microphone-policy.spec.ts --project=chromium --workers=1
+```
+
+Set the executable path only when using a system Chromium; otherwise use the
+Playwright-installed browser. The device is synthetic, and speech recognition is
+not exercised by these browser checks.
 
 Tests mock recognition, synthesis, capture and React interactions. They cover safe
 error classification, fresh-session recovery, final transcription, prefixed API,
@@ -60,7 +99,14 @@ operating-system permissions, selected input device or Safari recognition behavi
 
 ## Required real-device acceptance after review and deployment
 
-1. On the affected Mac, open the deployed Agent page over HTTPS in Chrome. Record
+1. After deployment, open the deployed Agent page directly over HTTPS in Chrome.
+   In DevTools Network, reload and inspect the **document** response (not the API).
+   Require one effective `Permissions-Policy` with `microphone=(self)` and no
+   additional denying header. In Console, record `window.isSecureContext`,
+   `window.top === window.self`, and
+   `(document.permissionsPolicy ?? document.featurePolicy)?.allowsFeature("microphone")`.
+   An iframe/parent policy can further restrict the document and cannot be repaired
+   by site permission toggles. Then record
    Chrome/macOS versions, page origin, browser language, selected microphone and whether
    the profile is managed (`chrome://management`). Record only non-sensitive metadata.
 2. Click **Start recording**, say “Review my strategy risk”, then **Stop recording**.
@@ -75,7 +121,12 @@ operating-system permissions, selected input device or Safari recognition behavi
    network. For `language-not-supported`, record the configured language. Do not infer a
    root cause merely from these possibilities. For `not-allowed`, inspect both capture
    permissions/policy and speech-service restrictions. For capture denial/device errors,
-   check the selected input and existing site/system permission settings.
+   confirm the effective document policy first. If it allows capture in a top-level
+   secure document but `NotAllowedError` persists, inspect `chrome://policy` for
+   `AudioCaptureAllowed` and `AudioCaptureAllowedUrls`, and `chrome://management`.
+   Record the actual policy values and origins, then compare a clean Chrome profile
+   with extensions disabled and the same selected microphone. These are remaining
+   diagnostics, not a claim that external policy is the cause.
 5. Retry by clicking **Start recording** again after addressing the observed cause
    (reload if browser settings require it). Verify final text appears only for review,
    **Send transcript** sends once, and repeated clicks do not send duplicates. Use a

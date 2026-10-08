@@ -8,6 +8,20 @@ export type ManualDemoInput = {
   stop: string;
   target: string;
 };
+export type ManualDemoInstrument = {
+  account_id: string;
+  instrument: string;
+  quantity_unit: "CONTRACTS";
+  base_currency: "BTC";
+  minimum_quantity: string;
+  maximum_quantity: string;
+  lot_increment: string;
+  tick_size: string;
+  contract_multiplier: string;
+  minimum_notional: string;
+  reference_price: string;
+  observed_at: string;
+};
 export type ManualDemoPreview = {
   origin: "manual demo test";
   account_id: string;
@@ -47,6 +61,7 @@ export type ManualDemoStatus = {
   missing_evidence: string[];
 };
 export const manualDemo = {
+  instrument: () => apiFetch<ManualDemoInstrument>("/execution/manual-demo/instrument", { auth: true }),
   preview: (body: ManualDemoInput) => apiFetch<ManualDemoPreview>("/execution/manual-demo/preview", { auth: true, method: "POST", body: JSON.stringify(body) }),
   confirm: (preview: ManualDemoPreview) => apiFetch<ManualDemoStatus>("/execution/manual-demo/confirm", { auth: true, method: "POST", body: JSON.stringify({ revision_id: preview.revision_id, content_hash: preview.content_hash, confirm: true, label: "manual demo test" }) }),
   reconcile: (command: string) => apiFetch<ManualDemoStatus>(`/execution/manual-demo/${encodeURIComponent(command)}/reconcile`, { auth: true, method: "POST" }),

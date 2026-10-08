@@ -7,8 +7,8 @@ Simulated venue tests are protocol evidence; they do not prove live venue accept
 
 ## Reviewed deployment and preflight gates
 
-1. Review this PR and its focused tests. Consolidate the release, run the supervising
-   final CI gate, then deploy **disarmed**. Migration head must be `a6manualdemo001`
+1. Review this PR and its focused acceptance evidence, then deploy **disarmed**.
+   This repair runs focused checks only; it does not dispatch full backend CI. Migration head must be `a6manualdemo001`
    (parent `a5demolifecycle001`); preserve missing/multiple revision refusals.
 2. A supervisor must explicitly authorize the acceptance window. Keep real trading
    disabled. Reuse the authenticated owner's existing enabled PAPER/NET execution
@@ -27,18 +27,21 @@ Simulated venue tests are protocol evidence; they do not prove live venue accept
 4. Preflight must verify read/trade permissions without withdrawal/transfer scope,
    NET position mode, **existing** cross margin/1x, the exact live linear BTC-USDT
    instrument, tick/lot/minimum/maximum contract size, USDT equity/available balance,
-   and account-wide absence of positions and normal/TPSL pending orders. Ticker age
-   must be under 10 seconds at receipt, never future dated. Unsupported/unreadable
+   and account-wide absence of positions and normal/TPSL pending orders. Executable order-book age
+   and the account-read window must be under 10 seconds, never future dated. Unsupported/unreadable
    data refuses the entry. Instrument substitution is forbidden.
 5. Review application history too: unresolved demo ALLOW commands hold this account;
-   internal paper history does not consume that demo slot but its actual exposure,
-   trade count and loss allocations still affect risk. Do not reset reservations,
+   internal paper history, equity, PnL, exposure and trade count do not govern this
+   manual connectivity test. Demo-scoped pending/uncertain reservations still consume
+   capacity. Existing automatic strategy risk accounting remains enforced. Do not reset reservations,
    delete receipts or manually manufacture lifecycle resolution to open the gate.
 
 ## Exact owner preview and confirmation
 
 Use **Settings → Account and system → Supervised manual BloFin demo test**.
-Opening the form performs no venue request and cannot place an order. Enter side,
+Opening the form performs read-only venue preflight and loads current minimum/lot
+limits, contract-to-BTC conversion and an indicative notional. It cannot place an
+order. Correct any local sizing/geometry error before preview. Enter side,
 quantity in **venue contracts**, stop and target in USDT. There is no limit entry,
 runner, multi-target or automatic sizing path in this capability.
 
@@ -54,10 +57,15 @@ shows allocation-weighted gross R using the worst price within the ±10bps entry
 range. Manual tests are excluded from strategy performance statistics. Fee/slippage allowances are reserved in the
 maximum planned loss (each 0.1% of conservative notional); this is not a net 1R or
 maximum realized loss guarantee. Funding allowance is zero for this bounded entry
-preview; actual funding is **unknown**, not recorded as zero. Per-trade planned
-loss is capped at the lesser of the existing user limit and 1% of conservative
-equity; existing risk engine/portfolio/daily/account reservation checks still apply.
-Fresh dispatch balance also rechecks the 1% loss and 5% notional ceilings.
+preview; actual funding is **unknown**, not recorded as zero. The explicit manual policy
+caps planned loss plus unresolved demo risk reservations at 1%, and entry notional
+plus demo reservations at 5%, of the lesser of fresh demo USDT equity and available
+funds. Available funds must also cover the entry and fee allowance. The minimum
+test notional is 5 USDT; it is a manual test bound. Simulator balances, PnL, trade
+counts, green day/weekend rules and strategy qualification are excluded. Actual
+venue positions and pending normal/TPSL orders still refuse a new test. Confirmation
+refreshes evidence before DB locks; the locked claim rechecks demo reservations,
+and final provider preflight rechecks fresh account/quote evidence and these limits.
 
 The preview expires in 60 seconds. Immediately before the POST, the provider must
 receive a fresh quote within 10bps of the reference, unchanged instrument rules,
@@ -72,6 +80,8 @@ Do not change settings or strategy authority as part of confirmation.
 
 HTTP equivalents (authenticated owner; no tenant/user/account IDs accepted):
 
+- `GET /execution/manual-demo/instrument` to load owner/account-scoped contract
+  limits and the indicative BTC conversion; read only.
 - `POST /execution/manual-demo/preview` with `symbol: "BTCUSDT"`, `side: "BUY"` or
   `"SELL"`, `order_type: "MARKET"`, and decimal strings `quantity`, `stop`, `target`.
 - `POST /execution/manual-demo/confirm` with the returned `revision_id`,
@@ -95,7 +105,12 @@ Verify in both the returned Stored evidence and BloFin demo UI:
 - Journal source `manual_demo_test`, label “Manual demo test”, the linked immutable
   plan and execution command, actual fill facts and fees;
 - no strategy/Candidate/assessment lineage or learning attribution; strategy
-  validation counts are unchanged. Manual demo exposure still counts for risk.
+  validation counts are unchanged. Verified manual demo fills still remain in shared accounting for automated risk;
+  the manual policy uses venue exposure evidence instead of that combined ledger.
+
+A confirmation error carrying `submission: not_started` proves this request refused
+before creating a command, so the form permits a fresh preview. Otherwise it retains
+the exact confirmation for recovery; a generic 403 is insufficient proof.
 
 If an entry response is lost, recover **the same exact confirmation** or command.
 The server never resends an existing command, including one interrupted before
