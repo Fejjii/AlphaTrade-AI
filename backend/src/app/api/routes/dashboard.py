@@ -24,7 +24,7 @@ from app.schemas.dashboard import DashboardSummary
 from app.schemas.dashboard_demo_account import DashboardDemoAccount
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep
-from app.services.dashboard.demo_account import demo_account_active, project_demo_account
+from app.services.dashboard.demo_account import demo_account_active, preserved_demo_account
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -60,7 +60,13 @@ def demo_account(
             can_refresh=can_refresh,
             message="No demo snapshot yet. Refresh to retrieve balances and open positions.",
         )
-    return project_demo_account(snapshot, settings=settings, can_refresh=can_refresh)
+    return preserved_demo_account(
+        snapshot,
+        service=service,
+        organization_id=tenant.organization_id,
+        settings=settings,
+        can_refresh=can_refresh,
+    )
 
 
 @router.post(
@@ -85,9 +91,19 @@ def refresh_demo_account(
     response.headers["Cache-Control"] = "private, no-store"
     if not demo_account_active(settings):
         raise ExchangeDemoInactiveError("BloFin demo account sync is not configured.")
-    result = service.sync(organization_id=tenant.organization_id, user_id=tenant.user_id)
+    result = service.sync(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        include_instrument_metadata=True,
+    )
     session.commit()
-    return project_demo_account(result.snapshot, settings=settings, can_refresh=True)
+    return preserved_demo_account(
+        result.snapshot,
+        service=service,
+        organization_id=tenant.organization_id,
+        settings=settings,
+        can_refresh=True,
+    )
 
 
 @router.get(

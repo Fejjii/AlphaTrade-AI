@@ -39,6 +39,7 @@ class ExchangeBalance:
     asset: str
     total: Decimal
     available: Decimal
+    equity: Decimal | None = None
 
 
 @dataclass(frozen=True)

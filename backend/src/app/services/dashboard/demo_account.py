@@ -2,10 +2,12 @@
 
 import re
 from datetime import UTC, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
+from uuid import UUID
 
 from app.core.config import ExchangeMode, ExecutionMode, Settings
+from app.core.errors import NotFoundError
 from app.core.exchange_safety import is_allowlisted_demo_host
 from app.schemas.blofin_sync import BloFinSyncSnapshotItem
 from app.schemas.dashboard_demo_account import (
@@ -13,6 +15,7 @@ from app.schemas.dashboard_demo_account import (
     DemoAccountBalance,
     DemoAccountPosition,
 )
+from app.services.blofin_sync_service import BloFinSyncService
 
 _TOKEN = re.compile(r"^[A-Za-z0-9_/-]{1,64}$")
 
@@ -56,6 +59,39 @@ def _required_number(value: Any) -> Decimal:
     return result
 
 
+def _base_quantity(
+    row: dict[str, Any], metadata: Any, size: Decimal
+) -> tuple[str | None, Decimal | None]:
+    """Convert only exact, verified native linear metadata saved with this sync."""
+    if not isinstance(metadata, dict):
+        return None, None
+    if not isinstance(row.get("inst_id"), str):
+        return None, None
+    info = metadata.get(row["inst_id"])
+    if not isinstance(info, dict):
+        return None, None
+    try:
+        base = _token(info.get("base_asset"))
+        quote = _token(info.get("quote_asset"))
+        inst_id = info.get("inst_id")
+        if (
+            inst_id != row.get("inst_id")
+            or inst_id not in {f"{base}-{quote}", f"{base}-{quote}-SWAP"}
+            or row.get("symbol") != f"{base}{quote}"
+            or info.get("contract_type") != "linear"
+            or info.get("source") != "/api/v1/market/instruments"
+        ):
+            return None, None
+        multiplier = _required_number(info.get("contract_value"))
+        if multiplier <= 0:
+            return None, None
+        with localcontext() as context:
+            context.prec = max(28, len(size.as_tuple().digits) + len(multiplier.as_tuple().digits))
+            return base, size.copy_abs() * multiplier
+    except ValueError:
+        return None, None
+
+
 def project_demo_account(
     snapshot: BloFinSyncSnapshotItem, *, settings: Settings, can_refresh: bool
 ) -> DashboardDemoAccount:
@@ -97,6 +133,7 @@ def project_demo_account(
                     asset=_token(row.get("asset")),
                     total=_required_number(row.get("total")),
                     available=_required_number(row.get("available")),
+                    equity=_number(row.get("equity")),
                 )
             )
         for row in position_rows[: settings.blofin_sync_max_positions]:
@@ -110,17 +147,23 @@ def project_demo_account(
                 side = "long" if size > 0 else "short"
             if side not in {"long", "short"}:
                 raise ValueError("Unknown position side")
+            base_asset, base_quantity = _base_quantity(
+                row, snapshot.positions_snapshot.get("instrument_metadata"), size
+            )
             positions.append(
                 DemoAccountPosition(
                     symbol=_token(row.get("symbol")),
                     side=side,
-                    contracts=abs(size),
+                    contracts=size.copy_abs(),
+                    base_asset=base_asset,
+                    base_quantity=base_quantity,
                     entry_price=_number(row.get("entry_price")),
                     mark_price=_number(row.get("mark_price")),
                     unrealized_pnl=_number(row.get("unrealized_pnl")),
                     leverage=_number(row.get("leverage")),
                 )
             )
+        base.total_equity_usd = _number(snapshot.account_snapshot.get("total_equity_usd"))
     except (ValueError, InvalidOperation):
         base.message = "Demo account evidence is incomplete. Refresh to retrieve current data."
         return base
@@ -141,3 +184,34 @@ def project_demo_account(
         else "Native demo account snapshot. Positions may include trades placed outside AlphaTrade."
     )
     return base
+
+
+def preserved_demo_account(
+    snapshot: BloFinSyncSnapshotItem,
+    *,
+    service: BloFinSyncService,
+    organization_id: UUID,
+    settings: Settings,
+    can_refresh: bool,
+) -> DashboardDemoAccount:
+    """Dashboard alone retains successful evidence after a failed saved attempt."""
+    current = project_demo_account(snapshot, settings=settings, can_refresh=can_refresh)
+    if current.status != "unavailable":
+        return current
+    try:
+        previous = service.latest(organization_id=organization_id, successful_only=True)
+    except NotFoundError:
+        return current
+    saved = project_demo_account(previous, settings=settings, can_refresh=can_refresh)
+    if (
+        saved.status not in {"ok", "degraded", "stale"}
+        or previous.exchange_mode != snapshot.exchange_mode
+    ):
+        return current
+    saved.status = "stale"
+    saved.last_attempt_at = current.synced_at
+    saved.refresh_error = (
+        "The latest demo account sync failed. Showing the last successful snapshot."
+    )
+    saved.message = saved.refresh_error
+    return saved

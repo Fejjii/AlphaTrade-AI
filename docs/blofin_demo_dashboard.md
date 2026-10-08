@@ -1,98 +1,124 @@
 # BloFin demo Dashboard integration
 
-Base: latest `main` at `28b7dab06f85daa05cb9bf04dbaee52bbf413994`.
-Branch: `codex/blofin-demo-dashboard`, isolated worktree.
-PR229 merged during implementation. The final branch is rebased onto merged
-`main` at `d9ebf87e9d50685da5078bdd4d590757b0a9c1c0`.
+PR [#230](https://github.com/Fejjii/AlphaTrade-AI/pull/230), branch
+`codex/blofin-demo-dashboard`, is based on merged main
+`d9ebf87e9d50685da5078bdd4d590757b0a9c1c0` (PR229).
+PR [#231](https://github.com/Fejjii/AlphaTrade-AI/pull/231) was inspected separately.
+Its reconciliation, recovery and Agent selection changes are not incorporated.
+Review and release reconciliation first, then this Dashboard PR.
 
-The Dashboard now presents the configured BloFin demo venue account above the
-paper portfolio. Balances remain in their individual assets; native positions
-show long/short direction, exact contract quantity, entry, mark, leverage and
-observed unrealized PnL. Missing optional values remain unavailable. Account
-snapshots do not establish order fills, protection linkage or realized results.
-They can include positions placed outside AlphaTrade. Recent Journal rows now
-show their recorded exchange/source so demo history is distinguishable.
+The Dashboard presents the configured native demo account above paper portfolio
+metrics: account equity, cash/available/asset equity, native position count,
+direction, contracts, verified base quantity, entry, mark, leverage and unrealized
+PnL. Unknown values remain `—`. Journal rows show their recorded exchange/source.
+Native snapshots may include outside trades and do not establish fills, SL/TP
+linkage, Journal evidence or realized results.
 
-## Retrieval and refresh contract
+## Field semantics
+
+| Field | Native evidence and units |
+| --- | --- |
+| Native account equity (USD) | `/api/v1/account/balance` top-level `totalEquity`, explicitly USD. Never inferred from cash, available funds, asset sums or paper equity. |
+| Cash / Available | `details[].balance` / `details[].available`, in that currency. `eq` is not a substitute for cash balance. |
+| Asset equity | `details[].equity` (legacy `eq` alias), in the asset. Missing equity is unknown; native zero stays zero. |
+| Contracts | Absolute native `positions`/`pos`; signed NET size determines long/short. Decimal strings retain precision. |
+| Base quantity | Absolute contracts × finite positive `contractValue`, from public instruments metadata saved with the same Dashboard sync. Requires a unique exact ID, matching base/quote, live SWAP/PERPETUAL and `contractType=linear`. Explicit conflicting contract-value currency is rejected. |
+| Unknown base quantity | Missing, duplicate, malformed, suspended, inverse or mismatched metadata yields `null`. No symbol-based multiplier, assumed unit contract or price conversion. Older snapshots without metadata stay unknown until Dashboard native refresh. |
+
+Field definitions were checked against BloFin's
+[balance](https://blofin.com/docs#get-balance) and
+[instruments](https://blofin.com/docs#get-instruments) documentation, using a
+[pinned source](https://github.com/Anonymous-fe/blofin-api-docs/blob/167da57aec7751207d6b53248d002435a397b234/index.md)
+and an independent native account shape in
+[CCXT](https://github.com/ccxt/ccxt/blob/f0aca06eb7482f083bed8406fadfcc0c05e45b1c/python/ccxt/blofin.py).
+With verified `0.001 BTC/contract`, `0.1 contracts` is `0.0001 BTC`.
+This is a fixture example, not a live account claim.
+
+## Retrieval and refresh
 
 | Action | Behavior |
 | --- | --- |
-| Open Dashboard / Dashboard Refresh | Authenticated `GET /dashboard/demo-account`: read the latest saved snapshot for this organization, with no venue request. |
-| Refresh demo account | Owner-only `POST /dashboard/demo-account/refresh`: reuse `BloFinSyncService.sync`, persist its snapshot/audit, return the typed projection. Rate limited to 30 refreshes per organization/user/hour. |
-| Organization trader/viewer | May read their organization snapshot; cannot fetch native account data. |
-| Native refresh | Existing account provider only: GET API-key permissions, balances and positions. Existing separate read-only credential mode and governed demo-account mode are both supported. |
-| Expiry | Server applies the configured freshness window; the browser also changes the label to stale when `expires_at` passes, without a venue poll. |
-| Failure | Latest failed sync is unavailable, with no older success fallback. HTTP failure clears the displayed account values and permits a saved-read retry. Errors/provenance payloads are excluded from the Dashboard response. |
-| Bounded result | Truncated balance/position lists are explicit. An incomplete position list has no full account count. |
+| Open / Dashboard Refresh | Authenticated organization-scoped `GET /dashboard/demo-account`. Saved evidence only; no venue request. |
+| Visible owner Dashboard | Native `POST /dashboard/demo-account/refresh` every 180 seconds, scheduled after completion. One native request at a time; saved reads cannot overtake it. |
+| Visible trader/viewer | Saved GET every 180 seconds. Native refresh retains owner-only authorization. |
+| Hidden page | Stops scheduled polling. Visibility return performs at most one overdue request, respecting due time/backoff. Existing in-flight requests may complete. |
+| Failure | Retry delays are 360, 720, then capped at 900 seconds. HTTP/timeouts and unavailable responses retain successful evidence and its timestamp with stale/error status. Success clears the error and restores 180 seconds. |
+| Timeout / navigation | A 30-second deadline and AbortSignal bound browser work. Superseded reads/unmount cancel requests; late results cannot overwrite state. A server read already started may finish after browser cancellation. |
+| Explicit native refresh | Owner-only; repeated clicks and automatic refresh are deduplicated in the card. Dashboard-wide Refresh remains a saved read. |
+| Failed saved attempt / reload | Failure remains persisted/audited. Dashboard retrieves this organization's last valid successful snapshot, marks it stale and exposes the failed attempt timestamp/generic error. Other sync consumers still read the actual latest attempt. |
+| First failure / no snapshot | Unavailable / not synced / inactive never claim an invented flat account. |
+| Limits | At most 20 automatic attempts/hour/tab; native endpoint enforces 30/organization/user/hour. Multiple tabs share that server limit and independently back off. Lists retain configured bounds; truncated positions have no full count. |
 
-Both new endpoints use `Cache-Control: private, no-store`. Account reads require
-the existing safe demo configuration. Inactive and never-synced states do not
-claim zero balances or no positions. The browser prevents duplicate native
-refresh clicks, drops late saved reads, and prevents a Dashboard read from
-overtaking an in-flight native refresh. During loading it explicitly identifies
-the prior saved snapshot. Refreshing account data does not refresh execution
-commands, reconcile fills/protection, update Journal, or authorize a trade.
+Both endpoints return `Cache-Control: private, no-store`. Server freshness
+(default 300 seconds) and browser expiry still apply. Errors/provenance payloads
+are excluded. Refresh does not reconcile orders, write Journal or authorize trades.
 
-## Shared changes and dependency
+## Shared changes and dependencies
 
-Reconciliation PR [#229](https://github.com/Fejjii/AlphaTrade-AI/pull/229), branch
-`codex/manual-demo-reconciliation`, was inspected at
-`02f233d7ed131a7b819dc9d86d197334151c64a7`. Its order/fill/protection parsing,
-manual command service, Journal projection and Agent venue selection are owned
-there. None of those files is changed by this PR. Only the completed, merged
-main change was incorporated by rebase; no unfinished branch was merged.
+No new dependency on PR231. Existing sync, snapshot JSON, RBAC and Journal
+exchange/source contracts are reused. No migration, credential or activation change.
 
-There is **no new interface dependency on PR229**. This integration uses existing main
-interfaces: `BloFinSyncService.sync/latest`, `BloFinSyncSnapshotItem`,
-`BloFinDemoSyncSnapshot`, the account provider and Journal list `exchange/source`.
-The native account section works even when an existing execution command remains
-on hold or lacks a Journal entry. **Review and release reconciliation first;
-release this separate Dashboard PR afterward.** PR229 is merged; its deployed
-same-order acceptance remains separate. If account credentials are rotated, fetch a new account snapshot
-before interpreting saved historical data; the existing sync schema has one
-configured demo account and no account-selector/fingerprint contract.
+- `ExchangeBalance` gains optional equity. The native provider exposes optional
+  USD total equity from the same balance read. Required quantities stay strict;
+  missing metrics never become zero.
+- `sync(include_instrument_metadata=False)` adds an optional public instruments
+  GET only when the Dashboard opts in and positions exist. Existing settings and
+  reconciliation sync retain their request sequence. Metadata failure degrades
+  conversion while preserving native account evidence. Metadata and instrument
+  IDs are saved in existing bounded JSON.
+- The read-only transport permits the exact unsigned public SWAP metadata GET
+  alongside existing account GETs; order/transfer/withdrawal calls remain forbidden.
+  Its signature includes merged main's `before_send` hook.
+- `latest(successful_only=False)` and its repository query gain an optional
+  organization-scoped success filter for Dashboard preservation. Defaults stay
+  unchanged for other consumers.
 
-The only shared provider change is in `blofin_account.py`: account quantities and
-response rows no longer silently become zero or disappear when malformed. Required
-balance/size fields must be finite; absent optional position metrics remain `None`.
-Signed net sizes are preserved. This affects read-only sync and other existing
-account consumers; valid provider, exchange-probe and integration cases were
-included in regression verification. Instrument, permission, leverage-setting,
-transport and execution interfaces remain unchanged. No schema migration or new
-credential/activation flag is introduced.
+The configuration represents one demo account without an account fingerprint
+or selector. After rotating credentials, fetch a new snapshot before interpreting
+saved historical account data.
 
-## Verification and acceptance
+## CI failure and verification
 
-Verification uses authenticated SQLite fixtures with foreign keys and
-`httpx.MockTransport` native account responses, plus component/API tests and
-Chromium desktop/mobile fixtures. Browser fixtures are presentation evidence,
-not native exchange proof.
+Job `113374298672` failed at `0.1 contracts` for both widths because the whole
+card was absent. Reproduction on `localhost` showed Sign in: the fixture installed
+`alphatrade_session` for `127.0.0.1`, while CI opens `localhost`. Middleware
+redirected before the Dashboard/account request. The fixture now derives cookie
+and frontend origin from Playwright's base URL. Navigation, bearer authentication
+and the account GET are asserted; the contracts assertion remains intact.
 
-On the final rebased main: **165 backend tests passed**, no skips, across
-`test_dashboard_demo_account`, `test_blofin_provider`, `test_exchange_probes`,
-`test_external_integrations_acceptance`, `test_at037_tradingview_blofin` and
-`test_dashboard_slice_44`. **28 frontend tests passed** across the demo card/API,
-Dashboard page and Dashboard helpers. **Two Chromium checks passed**, at 1280px
-and 390px, for saved refresh versus native refresh, precision/unknown fields,
-unchanged paper equity and no horizontal overflow. Scoped Ruff lint/format,
-mypy, ESLint and TypeScript passed. Existing JWT test-key length and SQLAlchemy
-deprecation warnings remain in the existing Dashboard tests.
+Local verification uses authenticated SQLite/tenant fixtures,
+`httpx.MockTransport` native payloads and Chromium presentation fixtures:
 
-The ordinary `npm run build` cannot fetch the repository's existing Google Fonts
-under this environment's network policy. A production build using Next's local
-`NEXT_FONT_GOOGLE_MOCKED_RESPONSES` fixtures passed compilation, type/lint checks
-and page generation. Font-download readiness is not verified. No font or network
-configuration was changed in the repository.
+- 123 focused backend account/acceptance/probe/Dashboard checks passed without
+  skips; three additional precision/malformed-equity checks passed.
+- Final account suite passed all 43 cases using CI's locked dependencies.
+- Broader sync/provider regression: 154 passed, 62 existing PostgreSQL-only
+  governed/reconciliation cases skipped because PostgreSQL is unavailable.
+- 36 frontend tests passed across card, account API, Dashboard page and helpers:
+  backoff cap/recovery, visibility, timeout, unmount, races, reader/owner behavior
+  and preserved evidence.
+- Both Chromium widths (1280/390) passed on CI-default `localhost`, using CI's
+  dev frontend/backend webServer configuration and a production server. Checks
+  retain `0.1 contracts`, exercise automatic failure/backoff/manual recovery,
+  equity/base quantity, separate paper equity and no horizontal overflow.
+- Repository Ruff lint/format passed with CI's locked 0.15.15; scoped mypy,
+  frontend ESLint and TypeScript passed.
 
-After reconciliation releases and this PR deploys, an owner can open Dashboard,
-fetch the existing configured demo account, and compare balances and the existing
-BTC position with BloFin. Check timestamp, contracts (not BTC units), direction,
-mark and PnL. Dashboard Refresh should only reread the saved snapshot; Refresh demo
-account should fetch a new one. Confirm a second organization cannot read this
-organization's snapshot, and readers cannot refresh it. Age a saved snapshot or
-wait for its configured expiry to check the stale label. A failed sync must show
-unavailable, never an invented flat account. Review command reconciliation and
-SL/TP in their existing workflow independently.
+A production build passed using Next's local font response fixture. Existing
+Google Fonts downloads are restricted by this environment's network policy;
+repository font/network configuration was not changed. Full backend CI was not
+manually dispatched. Existing test-key/deprecation warnings are unrelated.
 
-No live exchange reads/orders, deployment, credential changes, activation or
-reconciliation hold changes were performed for this PR.
+## Remaining live gate
+
+After review, required checks and deployment, an owner must compare equity **in
+USD**, asset equity/cash/available and the existing native position with BloFin at
+the snapshot timestamp. Compare contracts with contracts and verify current
+instrument metadata before comparing BTC quantity. Leave Dashboard visible to
+confirm a native timestamp advance, hide it to check polling pauses, and verify
+failure preserves stale evidence before recovery. Confirm tenant isolation and
+reader restrictions. Reconciliation/SL/TP evidence stays in its separate workflow.
+
+No live exchange reads/orders, deployment, credentials, activation or hold changes
+were performed. This environment has no BloFin credentials; native field
+availability, live refresh and account comparison remain unverified.

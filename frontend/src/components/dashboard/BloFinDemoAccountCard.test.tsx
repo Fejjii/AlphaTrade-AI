@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BloFinDemoAccountCard } from "./BloFinDemoAccountCard";
+import { DEMO_REFRESH_INTERVAL_MS, DEMO_REQUEST_TIMEOUT_MS, DEMO_MAX_BACKOFF_MS } from "./useDemoAccountSnapshot";
 import {
   demoAccountApi,
   type DashboardDemoAccount,
@@ -31,12 +32,17 @@ function account(
     snapshot_id: "fixture-snapshot",
     synced_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 300_000).toISOString(),
-    balances: [{ asset: "USDT", total: "1000.25", available: "900.125" }],
+    total_equity_usd: "1001.50",
+    refresh_error: null,
+    last_attempt_at: null,
+    balances: [{ asset: "USDT", total: "1000.25", available: "900.125", equity: "1002.25" }],
     positions: [
       {
         symbol: "BTCUSDT",
         side: "long",
         contracts: "0.1",
+        base_asset: "BTC",
+        base_quantity: "0.0001",
         entry_price: "82894",
         mark_price: null,
         unrealized_pnl: null,
@@ -59,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("BloFin demo Dashboard", () => {
@@ -66,6 +73,9 @@ describe("BloFin demo Dashboard", () => {
     render(<BloFinDemoAccountCard />);
     expect(await screen.findByText("USDT balance")).toBeInTheDocument();
     expect(screen.getByText(/0.1 contracts/)).toBeInTheDocument();
+    expect(screen.getByText("1001.50 USD")).toBeInTheDocument();
+    expect(screen.getByText("Equity: 1002.25 USDT")).toBeInTheDocument();
+    expect(screen.getByText("Base quantity: 0.0001 BTC")).toBeInTheDocument();
     expect(screen.getByText(/Unrealized PnL —/)).toBeInTheDocument();
     expect(screen.getByText("BLOFIN_DEMO")).toBeInTheDocument();
     expect(
@@ -74,7 +84,7 @@ describe("BloFin demo Dashboard", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("retrieves native data only on explicit refresh and ignores repeated clicks", async () => {
+  it("deduplicates repeated explicit refresh clicks", async () => {
     let resolve!: (data: DashboardDemoAccount) => void;
     refresh.mockReturnValue(
       new Promise((done) => {
@@ -150,7 +160,7 @@ describe("BloFin demo Dashboard", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps a failure explicit and clears successful values", async () => {
+  it("keeps native failure explicit and preserves successful values", async () => {
     render(<BloFinDemoAccountCard />);
     await screen.findByText("USDT balance");
     refresh.mockResolvedValue(
@@ -165,16 +175,15 @@ describe("BloFin demo Dashboard", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Refresh demo account" }),
     );
-    expect(
-      await screen.findByText("The latest demo account sync failed."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("USDT balance")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("refresh failed");
+    expect(screen.getByText("USDT balance")).toBeInTheDocument();
+    expect(screen.getByText("Stale snapshot")).toBeInTheDocument();
     expect(
       screen.queryByText(/No native open positions/),
     ).not.toBeInTheDocument();
   });
 
-  it("clears values on HTTP failure, uses safe error text and supports retry", async () => {
+  it("preserves values on HTTP failure, uses safe error text and supports retry", async () => {
     render(<BloFinDemoAccountCard />);
     await screen.findByText("USDT balance");
     refresh.mockRejectedValue(new Error("opaque raw error"));
@@ -182,12 +191,15 @@ describe("BloFin demo Dashboard", () => {
       screen.getByRole("button", { name: "Refresh demo account" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "could not be loaded",
+      "refresh failed",
     );
-    expect(screen.queryByText("USDT balance")).not.toBeInTheDocument();
+    expect(screen.getByText("USDT balance")).toBeInTheDocument();
+    expect(screen.getByText("Stale snapshot")).toBeInTheDocument();
     expect(screen.queryByText("opaque raw error")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry account" }));
-    expect(await screen.findByText("USDT balance")).toBeInTheDocument();
+    refresh.mockResolvedValue(account());
+    fireEvent.click(screen.getByRole("button", { name: "Refresh demo account" }));
+    expect(await screen.findByText("Fresh snapshot")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it.each(["inactive", "not_synced"] as const)(
@@ -247,4 +259,111 @@ describe("BloFin demo Dashboard", () => {
     expect(latest).toHaveBeenCalledTimes(1);
     expect(refresh).not.toHaveBeenCalled();
   });
+  it("automatically refreshes native evidence while visible and pauses when hidden", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    render(<BloFinDemoAccountCard />);
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS); });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("hidden");
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS * 4); });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // Repeated visibility events do not create a burst of native requests.
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("backs off failures up to fifteen minutes and recovers to normal cadence", async () => {
+    vi.useFakeTimers();
+    refresh.mockRejectedValue(new Error("raw upstream failure"));
+    render(<BloFinDemoAccountCard />);
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS); });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("USDT balance")).toBeInTheDocument();
+    expect(screen.getByText("Stale snapshot")).toBeInTheDocument();
+    for (const [delay, count] of [[360_000, 2], [720_000, 3], [DEMO_MAX_BACKOFF_MS, 4]]) {
+      await act(async () => { vi.advanceTimersByTime(delay - 1); });
+      expect(refresh).toHaveBeenCalledTimes(count - 1);
+      await act(async () => { vi.advanceTimersByTime(1); });
+      expect(refresh).toHaveBeenCalledTimes(count);
+    }
+    refresh.mockImplementation(async () => account());
+    await act(async () => { vi.advanceTimersByTime(DEMO_MAX_BACKOFF_MS); });
+    expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS); });
+    expect(refresh).toHaveBeenCalledTimes(6);
+  });
+
+  it("times out a hung request, aborts transport and ignores its late result", async () => {
+    vi.useFakeTimers();
+    let late!: (value: DashboardDemoAccount) => void;
+    refresh.mockReturnValue(new Promise((done) => { late = done; }));
+    render(<BloFinDemoAccountCard />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Refresh demo account" }));
+    await act(async () => { vi.advanceTimersByTime(DEMO_REQUEST_TIMEOUT_MS); });
+    expect(refresh.mock.calls[0][0]?.aborted).toBe(true);
+    expect(screen.getByRole("button", { name: "Refresh demo account" })).toBeEnabled();
+    expect(screen.getByText("Stale snapshot")).toBeInTheDocument();
+    await act(async () => late(account({ positions: [], position_count: 0 })));
+    expect(screen.getByText(/0.1 contracts/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("deduplicates automatic sync against manual and Dashboard refresh and cancels on unmount", async () => {
+    vi.useFakeTimers();
+    refresh.mockReturnValue(new Promise(() => {}));
+    const view = render(<BloFinDemoAccountCard />);
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS); });
+    fireEvent.click(screen.getByRole("button", { name: "Refreshing…" }));
+    view.rerender(<BloFinDemoAccountCard refreshKey={1} />);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(latest).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(refresh.mock.calls[0][0]?.aborted).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(DEMO_MAX_BACKOFF_MS); });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("polls saved snapshots for readers without requesting owner-only native sync", async () => {
+    vi.useFakeTimers();
+    latest.mockResolvedValue(account({ can_refresh: false }));
+    render(<BloFinDemoAccountCard />);
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(DEMO_REFRESH_INTERVAL_MS * 2); });
+    expect(latest).toHaveBeenCalledTimes(2);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("retains server-preserved evidence on reload after a failed native attempt", async () => {
+    latest.mockResolvedValue(account({ status: "stale", refresh_error: "Latest sync failed." }));
+    render(<BloFinDemoAccountCard />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("refresh failed");
+    expect(screen.getByText(/0.1 contracts/)).toBeInTheDocument();
+    expect(screen.getByText("Stale snapshot")).toBeInTheDocument();
+  });
+
+  it("shows unknown equity and base quantity without inventing values", async () => {
+    const data = account();
+    latest.mockResolvedValue(account({
+      total_equity_usd: null,
+      balances: data.balances.map((b) => ({ ...b, equity: null })),
+      positions: data.positions.map((p) => ({ ...p, base_asset: null, base_quantity: null })),
+    }));
+    render(<BloFinDemoAccountCard />);
+    expect(await screen.findByText("— USD")).toBeInTheDocument();
+    expect(screen.getByText("Equity: — USDT")).toBeInTheDocument();
+    expect(screen.getByText(/Base quantity: — \(unverified instrument metadata\)/)).toBeInTheDocument();
+  });
+
 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -13,7 +14,12 @@ from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.blofin_client import BloFinClient
 
 _ACCOUNT_PATHS = frozenset(
-    {"/api/v1/account/balance", "/api/v1/account/positions", "/api/v1/user/query-apikey"}
+    {
+        "/api/v1/account/balance",
+        "/api/v1/account/positions",
+        "/api/v1/user/query-apikey",
+        "/api/v1/market/instruments",
+    }
 )
 
 
@@ -28,10 +34,13 @@ class BloFinReadOnlyClient(BloFinClient):
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         signed: bool = False,
+        before_send: Callable[[], None] | None = None,
     ) -> Any:
         if method.upper() != "GET" or path not in _ACCOUNT_PATHS or body is not None:
             raise ExchangeDemoInactiveError("BloFin sync permits account GET requests only.")
-        data = super().request(method, path, params=params, signed=signed)
+        if path == "/api/v1/market/instruments" and (signed or params != {"instType": "SWAP"}):
+            raise ExchangeDemoInactiveError("BloFin sync permits only public SWAP metadata reads.")
+        data = super().request(method, path, params=params, signed=signed, before_send=before_send)
         if not isinstance(data, list | dict) or (
             path == "/api/v1/account/positions" and not isinstance(data, list)
         ):

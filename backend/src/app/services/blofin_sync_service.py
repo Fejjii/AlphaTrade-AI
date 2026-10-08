@@ -21,7 +21,12 @@ from app.core.exchange_demo_access import ensure_demo_exchange_access, get_demo_
 from app.db.models import BloFinDemoSyncSnapshot as SnapshotModel
 from app.guardrails.redaction import redact_text
 from app.providers.base import ProviderHealth
-from app.providers.exchange.base import ExchangeBalance, ExchangePositionData
+from app.providers.exchange.base import (
+    ExchangeAccountProvider,
+    ExchangeBalance,
+    ExchangePositionData,
+)
+from app.providers.exchange.blofin_account import BloFinAccountProvider
 from app.providers.exchange.errors import ExchangeError
 from app.repositories.blofin_sync import BloFinSyncRepository
 from app.schemas.audit import AuditRecordCreate
@@ -53,6 +58,7 @@ class BloFinSyncService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         request_id: str | None = None,
+        include_instrument_metadata: bool = False,
     ) -> BloFinSyncResult:
         """Fetch demo account state and persist a bounded snapshot."""
         now = datetime.now(UTC)
@@ -80,6 +86,7 @@ class BloFinSyncService:
         }
 
         try:
+            provider: ExchangeAccountProvider
             if self._settings.blofin_readonly_sync_enabled:
                 provider = get_readonly_account_provider(self._settings)
             else:
@@ -92,6 +99,26 @@ class BloFinSyncService:
                 raise ValueError("BloFin sync requires read access without money-movement scopes.")
             balances = provider.get_balances()
             open_positions = provider.get_positions()
+            metadata: dict[str, dict[str, str]] = {}
+            metadata_failed = False
+            if (
+                include_instrument_metadata
+                and isinstance(provider, BloFinAccountProvider)
+                and open_positions
+            ):
+                try:
+                    metadata = provider.get_position_metadata(
+                        {
+                            p.inst_id
+                            for p in open_positions[: self._settings.blofin_sync_max_positions]
+                        }
+                    )
+                except Exception as exc:
+                    # Optional conversion must not discard valid native account evidence.
+                    metadata_failed = True
+                    logger.warning(
+                        "blofin_instrument_metadata_failed", error_type=type(exc).__name__
+                    )
             provider_status = provider.status()
 
             max_balances = self._settings.blofin_sync_max_balances
@@ -102,6 +129,11 @@ class BloFinSyncService:
             position_count = len(position_items)
 
             account = {
+                "total_equity_usd": (
+                    _dec(provider.total_equity_usd)
+                    if isinstance(provider, BloFinAccountProvider)
+                    else None
+                ),
                 "balances": balance_items,
                 "balances_truncated": len(balances) > max_balances,
                 "permissions": {
@@ -137,6 +169,8 @@ class BloFinSyncService:
             positions = {
                 "items": position_items,
                 "truncated": len(open_positions) > max_positions,
+                "instrument_metadata": metadata,
+                "metadata_unavailable": metadata_failed,
             }
             symbols = sorted(
                 {symbol for item in position_items if (symbol := item.get("symbol")) is not None}
@@ -151,6 +185,7 @@ class BloFinSyncService:
             if (
                 provider_status.health is not ProviderHealth.HEALTHY
                 or provider_status.using_fallback
+                or metadata_failed
             ):
                 health = BloFinSyncHealthStatus.DEGRADED
                 error_summary = "Demo account provider is degraded or using fallback."
@@ -217,8 +252,9 @@ class BloFinSyncService:
         self,
         *,
         organization_id: uuid.UUID,
+        successful_only: bool = False,
     ) -> BloFinSyncSnapshotItem:
-        row = self._snapshots.latest_for_org(organization_id)
+        row = self._snapshots.latest_for_org(organization_id, successful_only=successful_only)
         if row is None:
             raise NotFoundError("No BloFin demo sync snapshot found for this organization.")
         return self._to_item(row, mark_stale=True)
@@ -274,17 +310,19 @@ def _dec(value: Decimal | None) -> str | None:
     return format(value, "f")
 
 
-def _balance_dict(item: ExchangeBalance) -> dict[str, str]:
+def _balance_dict(item: ExchangeBalance) -> dict[str, str | None]:
     return {
         "asset": item.asset,
         "total": _dec(item.total) or "0",
         "available": _dec(item.available) or "0",
+        "equity": _dec(item.equity),
     }
 
 
 def _position_dict(item: ExchangePositionData) -> dict[str, str | None]:
     return {
         "symbol": item.symbol,
+        "inst_id": item.inst_id,
         "side": item.side,
         "size": _dec(item.size),
         "entry_price": _dec(item.entry_price),

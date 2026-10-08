@@ -188,6 +188,7 @@ class BloFinAccountProvider:
         self._client = client
         self._is_demo = is_demo
         self._permissions_verified_at: datetime | None = None
+        self.total_equity_usd: Decimal | None = None
 
     def get_instruments(self) -> list[ExchangeInstrument]:
         data = self._client.request(
@@ -220,6 +221,7 @@ class BloFinAccountProvider:
         return instruments
 
     def get_balances(self) -> list[ExchangeBalance]:
+        self.total_equity_usd = None
         data = self._client.request("GET", "/api/v1/account/balance", signed=True)
         rows = self._coerce_rows(data, key="details")
         if (
@@ -228,6 +230,10 @@ class BloFinAccountProvider:
             or (isinstance(data, dict) and "details" not in data)
         ):
             raise ExchangeRequestError("Invalid BloFin balance response.")
+        wrapper = data[0] if isinstance(data, list) and len(data) == 1 else data
+        if isinstance(wrapper, dict) and "details" in wrapper:
+            # BloFin totalEquity is USD; details[].equity is in that asset.
+            self.total_equity_usd = _optional_account_number(wrapper.get("totalEquity"))
         balances: list[ExchangeBalance] = []
         for row in rows:
             if not isinstance(row, dict):
@@ -238,11 +244,60 @@ class BloFinAccountProvider:
             balances.append(
                 ExchangeBalance(
                     asset=asset,
-                    total=_account_number(row.get("balance", row.get("eq"))),
+                    total=_account_number(row.get("balance")),
                     available=_account_number(row.get("available", row.get("availBal"))),
+                    equity=_optional_account_number(row.get("equity", row.get("eq"))),
                 )
             )
         return balances
+
+    def get_position_metadata(self, inst_ids: set[str]) -> dict[str, dict[str, str]]:
+        """Verify base-valued linear contracts using one public instruments read.
+
+        Kept separate from execution's existing permissive instrument adapter.
+        Missing, ambiguous or unsupported metadata never implies a multiplier.
+        """
+        data = self._client.request(
+            "GET", "/api/v1/market/instruments", params={"instType": "SWAP"}
+        )
+        if not isinstance(data, list):
+            raise ExchangeRequestError("Invalid BloFin instruments response.")
+        result: dict[str, dict[str, str]] = {}
+        for inst_id in inst_ids:
+            matches = [
+                row for row in data if isinstance(row, dict) and row.get("instId") == inst_id
+            ]
+            if len(matches) != 1:
+                continue
+            row = matches[0]
+            base, quote = row.get("baseCurrency"), row.get("quoteCurrency")
+            if (
+                not isinstance(base, str)
+                or not base.isalnum()
+                or not isinstance(quote, str)
+                or not quote.isalnum()
+                or inst_id not in {f"{base}-{quote}", f"{base}-{quote}-SWAP"}
+                or row.get("instType") not in {"SWAP", "PERPETUAL"}
+                or row.get("contractType") != "linear"
+                or row.get("state") != "live"
+                or row.get("contractValueCurrency", base) != base
+            ):
+                continue
+            try:
+                multiplier = _account_number(row.get("contractValue"))
+            except ExchangeRequestError:
+                continue
+            if multiplier <= 0:
+                continue
+            result[inst_id] = {
+                "inst_id": inst_id,
+                "base_asset": base,
+                "quote_asset": quote,
+                "contract_type": "linear",
+                "contract_value": format(multiplier, "f"),
+                "source": "/api/v1/market/instruments",
+            }
+        return result
 
     def get_positions(self) -> list[ExchangePositionData]:
         data = self._client.request("GET", "/api/v1/account/positions", signed=True)

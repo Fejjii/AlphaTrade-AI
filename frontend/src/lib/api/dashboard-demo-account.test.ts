@@ -8,10 +8,22 @@ it("uses authenticated reads and an explicit POST for native account refresh", a
   await demoAccountApi.latest();
   expect(apiFetch).toHaveBeenCalledWith("/dashboard/demo-account", {
     auth: true,
+    signal: undefined,
   });
   await demoAccountApi.refresh();
   expect(apiFetch).toHaveBeenCalledWith("/dashboard/demo-account/refresh", {
     method: "POST",
     auth: true,
+    signal: undefined,
+  });
+});
+
+it("passes the abort signal through both saved reads and native refresh", async () => {
+  const { signal } = new AbortController();
+  await demoAccountApi.latest(signal);
+  expect(apiFetch).toHaveBeenLastCalledWith("/dashboard/demo-account", { auth: true, signal });
+  await demoAccountApi.refresh(signal);
+  expect(apiFetch).toHaveBeenLastCalledWith("/dashboard/demo-account/refresh", {
+    method: "POST", auth: true, signal,
   });
 });

@@ -1,15 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  demoAccountApi,
-  type DashboardDemoAccount,
-} from "@/lib/api/dashboard-demo-account";
+import { useDemoAccountSnapshot } from "./useDemoAccountSnapshot";
 import { formatCount, formatDateTime, formatPrice } from "@/lib/format";
 
 const statusLabel = {
@@ -26,70 +22,8 @@ export function BloFinDemoAccountCard({
 }: {
   refreshKey?: number;
 }) {
-  const [account, setAccount] = useState<DashboardDemoAccount | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  const generation = useRef(0);
-  const syncing = useRef(false);
-
-  const load = useCallback(async (refresh = false) => {
-    // Dashboard reads cannot overtake or duplicate an explicit venue refresh.
-    if (syncing.current) return;
-    syncing.current = refresh;
-    const request = ++generation.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await (refresh
-        ? demoAccountApi.refresh()
-        : demoAccountApi.latest());
-      if (request === generation.current) {
-        setAccount(result);
-        setNow(Date.now());
-      }
-    } catch {
-      if (request === generation.current) {
-        setAccount(null);
-        setError(
-          "Demo account data could not be loaded. Retry or check Exchange settings.",
-        );
-      }
-    } finally {
-      if (refresh) syncing.current = false;
-      if (request === generation.current) setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load, refreshKey]);
-
-  useEffect(() => {
-    return () => {
-      generation.current += 1;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!account?.expires_at) return;
-    const expires = Date.parse(account.expires_at);
-    if (!Number.isFinite(expires)) return;
-    const timer = window.setTimeout(
-      () => setNow(Date.now()),
-      Math.max(0, expires - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [account?.expires_at]);
-
-  const expired =
-    !!account?.expires_at && now >= Date.parse(account.expires_at);
-  const status =
-    account && expired && ["ok", "degraded"].includes(account.status)
-      ? "stale"
-      : account?.status;
-  const hasData =
-    account && ["ok", "degraded", "stale"].includes(account.status);
+  const { account, busy, error, status, hasData, load } =
+    useDemoAccountSnapshot(refreshKey);
 
   return (
     <Card data-testid="dashboard-demo-account">
@@ -133,6 +67,9 @@ export function BloFinDemoAccountCard({
       <CardContent className="space-y-4">
         <p className="text-xs text-text-secondary">
           Configured demo venue account · balances and native open positions.
+          {account?.can_refresh
+            ? " Native data refreshes every 3 minutes while visible; retries slow down after failures."
+            : " Saved snapshots reload every 3 minutes while visible."}
           Paper portfolio and performance metrics below have their own scope.
         </p>
         {busy ? (
@@ -165,6 +102,11 @@ export function BloFinDemoAccountCard({
                 As of {formatDateTime(account.synced_at)}
               </p>
             ) : null}
+            {account.last_attempt_at ? (
+              <p className="text-xs text-text-secondary">
+                Last refresh attempt {formatDateTime(account.last_attempt_at)}
+              </p>
+            ) : null}
             {!account.can_refresh && account.status !== "inactive" ? (
               <p className="text-xs text-text-secondary">
                 An organization owner can refresh the demo account.
@@ -172,6 +114,12 @@ export function BloFinDemoAccountCard({
             ) : null}
             {hasData ? (
               <>
+                <dl className="rounded-control border border-border-subtle p-3 text-sm">
+                  <dt className="font-medium text-text-primary">Native account equity (USD)</dt>
+                  <dd className="mt-2 break-words text-text-secondary">
+                    {account.total_equity_usd ?? "—"} USD
+                  </dd>
+                </dl>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {account.balances.map((balance) => (
                     <dl
@@ -182,10 +130,13 @@ export function BloFinDemoAccountCard({
                         {balance.asset} balance
                       </dt>
                       <dd className="mt-2 break-words text-text-secondary">
-                        Total: {balance.total} {balance.asset}
+                        Cash balance: {balance.total} {balance.asset}
                       </dd>
                       <dd className="break-words text-text-secondary">
                         Available: {balance.available} {balance.asset}
+                      </dd>
+                      <dd className="break-words text-text-secondary">
+                        Equity: {balance.equity ?? "—"} {balance.asset}
                       </dd>
                     </dl>
                   ))}
@@ -218,6 +169,9 @@ export function BloFinDemoAccountCard({
                       <p className="mt-1 text-text-secondary">
                         {position.contracts} contracts · Leverage{" "}
                         {position.leverage ?? "—"}x
+                      </p>
+                      <p className="break-words text-text-secondary">
+                        Base quantity: {position.base_quantity ?? "—"} {position.base_asset ?? "(unverified instrument metadata)"}
                       </p>
                       <p className="text-text-secondary">
                         Entry {formatPrice(position.entry_price)} · Mark{" "}

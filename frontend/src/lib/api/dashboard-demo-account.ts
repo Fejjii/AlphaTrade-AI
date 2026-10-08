@@ -9,11 +9,16 @@ export interface DashboardDemoAccount {
   snapshot_id: string | null;
   synced_at: string | null;
   expires_at: string | null;
-  balances: Array<{ asset: string; total: string; available: string }>;
+  total_equity_usd: string | null;
+  refresh_error: string | null;
+  last_attempt_at: string | null;
+  balances: Array<{ asset: string; total: string; available: string; equity: string | null }>;
   positions: Array<{
     symbol: string;
     side: "long" | "short";
     contracts: string;
+    base_asset: string | null;
+    base_quantity: string | null;
     entry_price: string | null;
     mark_price: string | null;
     unrealized_pnl: string | null;
@@ -26,11 +31,12 @@ export interface DashboardDemoAccount {
 }
 
 export const demoAccountApi = {
-  latest: () =>
-    apiFetch<DashboardDemoAccount>("/dashboard/demo-account", { auth: true }),
-  refresh: () =>
+  latest: (signal?: AbortSignal) =>
+    apiFetch<DashboardDemoAccount>("/dashboard/demo-account", { auth: true, signal }),
+  refresh: (signal?: AbortSignal) =>
     apiFetch<DashboardDemoAccount>("/dashboard/demo-account/refresh", {
       method: "POST",
       auth: true,
+      signal,
     }),
 };
