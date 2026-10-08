@@ -8,7 +8,7 @@ can move funds (withdraw/transfer) - see :func:`resolve_exchange_provider`.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import structlog
@@ -23,6 +23,7 @@ from app.providers.exchange.base import (
     ExchangePositionData,
 )
 from app.providers.exchange.blofin_client import BloFinClient
+from app.providers.exchange.errors import ExchangeRequestError
 from app.providers.exchange.mapping import from_blofin_inst_id
 
 logger = structlog.get_logger(__name__)
@@ -61,6 +62,21 @@ def _to_decimal(value: Any, default: str = "0") -> Decimal:
         return Decimal(str(value))
     except Exception:
         return Decimal(default)
+
+
+def _account_number(value: Any) -> Decimal:
+    """Account evidence must never turn a missing or malformed quantity into zero."""
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ExchangeRequestError("Invalid BloFin account quantity.") from exc
+    if not result.is_finite():
+        raise ExchangeRequestError("Invalid BloFin account quantity.")
+    return result
+
+
+def _optional_account_number(value: Any) -> Decimal | None:
+    return None if value in (None, "") else _account_number(value)
 
 
 def _truthy(value: Any) -> bool:
@@ -172,6 +188,7 @@ class BloFinAccountProvider:
         self._client = client
         self._is_demo = is_demo
         self._permissions_verified_at: datetime | None = None
+        self.total_equity_usd: Decimal | None = None
 
     def get_instruments(self) -> list[ExchangeInstrument]:
         data = self._client.request(
@@ -204,45 +221,112 @@ class BloFinAccountProvider:
         return instruments
 
     def get_balances(self) -> list[ExchangeBalance]:
+        self.total_equity_usd = None
         data = self._client.request("GET", "/api/v1/account/balance", signed=True)
         rows = self._coerce_rows(data, key="details")
+        if (
+            not isinstance(data, list | dict)
+            or not isinstance(rows, list)
+            or (isinstance(data, dict) and "details" not in data)
+        ):
+            raise ExchangeRequestError("Invalid BloFin balance response.")
+        wrapper = data[0] if isinstance(data, list) and len(data) == 1 else data
+        if isinstance(wrapper, dict) and "details" in wrapper:
+            # BloFin totalEquity is USD; details[].equity is in that asset.
+            self.total_equity_usd = _optional_account_number(wrapper.get("totalEquity"))
         balances: list[ExchangeBalance] = []
         for row in rows:
             if not isinstance(row, dict):
-                continue
-            asset = str(row.get("currency", row.get("ccy", "")))
-            if not asset:
-                continue
+                raise ExchangeRequestError("Invalid BloFin balance row.")
+            asset = row.get("currency", row.get("ccy"))
+            if not isinstance(asset, str) or not asset:
+                raise ExchangeRequestError("Missing BloFin balance asset.")
             balances.append(
                 ExchangeBalance(
                     asset=asset,
-                    total=_to_decimal(row.get("balance", row.get("eq", "0"))),
-                    available=_to_decimal(row.get("available", row.get("availBal", "0"))),
+                    total=_account_number(row.get("balance")),
+                    available=_account_number(row.get("available", row.get("availBal"))),
+                    equity=_optional_account_number(row.get("equity", row.get("eq"))),
                 )
             )
         return balances
 
+    def get_position_metadata(self, inst_ids: set[str]) -> dict[str, dict[str, str]]:
+        """Verify base-valued linear contracts using one public instruments read.
+
+        Kept separate from execution's existing permissive instrument adapter.
+        Missing, ambiguous or unsupported metadata never implies a multiplier.
+        """
+        # BloFin documents only optional instId; an unfiltered read is the
+        # documented bulk form. Verify the returned type rather than guessing a query.
+        data = self._client.request("GET", "/api/v1/market/instruments")
+        if not isinstance(data, list):
+            raise ExchangeRequestError("Invalid BloFin instruments response.")
+        result: dict[str, dict[str, str]] = {}
+        for inst_id in inst_ids:
+            matches = [
+                row for row in data if isinstance(row, dict) and row.get("instId") == inst_id
+            ]
+            if len(matches) != 1:
+                continue
+            row = matches[0]
+            base, quote = row.get("baseCurrency"), row.get("quoteCurrency")
+            if (
+                not isinstance(base, str)
+                or not base.isalnum()
+                or not isinstance(quote, str)
+                or not quote.isalnum()
+                or inst_id not in {f"{base}-{quote}", f"{base}-{quote}-SWAP"}
+                or row.get("instType") not in {"SWAP", "PERPETUAL"}
+                or row.get("contractType") != "linear"
+                or row.get("state") != "live"
+                or row.get("contractValueCurrency", base) != base
+            ):
+                continue
+            try:
+                multiplier = _account_number(row.get("contractValue"))
+            except ExchangeRequestError:
+                continue
+            if multiplier <= 0:
+                continue
+            result[inst_id] = {
+                "inst_id": inst_id,
+                "base_asset": base,
+                "quote_asset": quote,
+                "contract_type": "linear",
+                "contract_value": format(multiplier, "f"),
+                "source": "/api/v1/market/instruments",
+            }
+        return result
+
     def get_positions(self) -> list[ExchangePositionData]:
         data = self._client.request("GET", "/api/v1/account/positions", signed=True)
-        rows = data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            raise ExchangeRequestError("Invalid BloFin positions response.")
+        rows = data
         positions: list[ExchangePositionData] = []
         for row in rows:
             if not isinstance(row, dict):
+                raise ExchangeRequestError("Invalid BloFin position row.")
+            inst_id = row.get("instId")
+            size = _account_number(row.get("positions", row.get("pos")))
+            if size == 0:
                 continue
-            inst_id = str(row.get("instId", ""))
-            size = _to_decimal(row.get("positions", row.get("pos", "0")))
-            if not inst_id or size == 0:
-                continue
+            side = str(row.get("positionSide", row.get("posSide", "")))
+            if not isinstance(inst_id, str) or not inst_id or side not in {"long", "short", "net"}:
+                raise ExchangeRequestError("Invalid BloFin position identity.")
             positions.append(
                 ExchangePositionData(
                     symbol=from_blofin_inst_id(inst_id),
                     inst_id=inst_id,
-                    side=str(row.get("positionSide", row.get("posSide", ""))),
+                    side=side,
                     size=size,
-                    entry_price=_to_decimal(row.get("averagePrice", row.get("avgPx", "0"))),
-                    mark_price=_to_decimal(row.get("markPrice", row.get("markPx", "0"))),
-                    unrealized_pnl=_to_decimal(row.get("unrealizedPnl", row.get("upl", "0"))),
-                    leverage=_to_decimal(row.get("leverage", "0")),
+                    entry_price=_optional_account_number(row.get("averagePrice", row.get("avgPx"))),
+                    mark_price=_optional_account_number(row.get("markPrice", row.get("markPx"))),
+                    unrealized_pnl=_optional_account_number(
+                        row.get("unrealizedPnl", row.get("upl"))
+                    ),
+                    leverage=_optional_account_number(row.get("leverage")),
                 )
             )
         return positions
@@ -283,14 +367,16 @@ class BloFinAccountProvider:
 
     @staticmethod
     def _coerce_rows(data: Any, *, key: str) -> list[Any]:
+        rows = data
         if isinstance(data, list):
             # Either a list of detail rows, or a list wrapping a dict with details.
             if data and isinstance(data[0], dict) and key in data[0]:
-                return data[0][key]
-            return data
-        if isinstance(data, dict):
-            return data.get(key, [])
-        return []
+                rows = data[0][key]
+        elif isinstance(data, dict):
+            rows = data.get(key)
+        if not isinstance(rows, list):
+            raise ExchangeRequestError("Invalid BloFin balance response.")
+        return rows
 
     def status(self) -> ProviderStatus:
         verified = self._permissions_verified_at is not None

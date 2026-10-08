@@ -12,7 +12,7 @@ The vision is a **personal AI trading operating system**: an assistant that unde
 
 | Workspace | What it helps the trader do |
 | --- | --- |
-| **Dashboard** | See the paper account, daily review, monitoring state and items needing attention. |
+| **Dashboard** | See the BloFin demo account snapshot, paper portfolio, daily review, monitoring state and items needing attention. |
 | **Agent** | Discuss stored rules and trades, inspect supporting evidence, and review structured action drafts. |
 | **Journal** | Follow planned entries, stops and targets alongside recorded fills, outcomes, observations and lessons. |
 | **Strategies** | Inspect strategy versions, rules, detected setups, research and approval state. |

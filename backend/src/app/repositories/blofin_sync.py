@@ -19,11 +19,15 @@ class BloFinSyncRepository:
         self._session.flush()
         return row
 
-    def latest_for_org(self, organization_id: uuid.UUID) -> SnapshotModel | None:
+    def latest_for_org(
+        self, organization_id: uuid.UUID, *, successful_only: bool = False
+    ) -> SnapshotModel | None:
         stmt = (
             select(SnapshotModel)
             .where(SnapshotModel.organization_id == organization_id)
             .order_by(SnapshotModel.synced_at.desc())
             .limit(1)
         )
+        if successful_only:
+            stmt = stmt.where(SnapshotModel.health_status.in_(["ok", "degraded", "stale"]))
         return self._session.scalars(stmt).first()

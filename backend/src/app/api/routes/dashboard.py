@@ -9,19 +9,101 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.attention.contracts import AttentionQueue
 from app.attention.reader import AttentionQueueService
-from app.core.dependencies import DashboardSummaryServiceDep, SessionDep
+from app.core.dependencies import (
+    BloFinSyncServiceDep,
+    DashboardSummaryServiceDep,
+    SessionDep,
+    SettingsDep,
+)
+from app.core.errors import ExchangeDemoInactiveError, NotFoundError
 from app.daily_review.contracts import DailyReview
 from app.daily_review.reader import DailyReviewService
 from app.daily_review.service import daily_window
+from app.schemas.common import MembershipRole
 from app.schemas.dashboard import DashboardSummary
+from app.schemas.dashboard_demo_account import DashboardDemoAccount
 from app.security.rate_limit import tenant_rate_limit_dependency
-from app.security.rbac import ReaderDep
+from app.security.rbac import OwnerDep, ReaderDep
+from app.services.dashboard.demo_account import demo_account_active, preserved_demo_account
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 _DASHBOARD_READ_LIMIT = Depends(
     tenant_rate_limit_dependency("dashboard:read", limit=120, window_seconds=3600, user_limit=120)
 )
+
+
+@router.get(
+    "/demo-account",
+    response_model=DashboardDemoAccount,
+    summary="Latest saved BloFin demo account snapshot",
+    dependencies=[_DASHBOARD_READ_LIMIT],
+)
+def demo_account(
+    tenant: ReaderDep,
+    service: BloFinSyncServiceDep,
+    settings: SettingsDep,
+    response: Response,
+) -> DashboardDemoAccount:
+    response.headers["Cache-Control"] = "private, no-store"
+    if not demo_account_active(settings):
+        return DashboardDemoAccount(
+            status="inactive",
+            message="BloFin demo sync is not configured. Configure it in Exchange settings.",
+        )
+    can_refresh = tenant.membership_role is MembershipRole.OWNER
+    try:
+        snapshot = service.latest(organization_id=tenant.organization_id)
+    except NotFoundError:
+        return DashboardDemoAccount(
+            status="not_synced",
+            can_refresh=can_refresh,
+            message="No demo snapshot yet. Refresh to retrieve balances and open positions.",
+        )
+    return preserved_demo_account(
+        snapshot,
+        service=service,
+        organization_id=tenant.organization_id,
+        settings=settings,
+        can_refresh=can_refresh,
+    )
+
+
+@router.post(
+    "/demo-account/refresh",
+    response_model=DashboardDemoAccount,
+    summary="Fetch and save BloFin demo balances and positions",
+    dependencies=[
+        Depends(
+            tenant_rate_limit_dependency(
+                "dashboard:demo-refresh", limit=30, window_seconds=3600, user_limit=30
+            )
+        )
+    ],
+)
+def refresh_demo_account(
+    tenant: OwnerDep,
+    service: BloFinSyncServiceDep,
+    settings: SettingsDep,
+    session: SessionDep,
+    response: Response,
+) -> DashboardDemoAccount:
+    response.headers["Cache-Control"] = "private, no-store"
+    if not demo_account_active(settings):
+        raise ExchangeDemoInactiveError("BloFin demo account sync is not configured.")
+    result = service.sync(
+        organization_id=tenant.organization_id,
+        user_id=tenant.user_id,
+        include_instrument_metadata=True,
+    )
+    session.commit()
+    return preserved_demo_account(
+        result.snapshot,
+        service=service,
+        organization_id=tenant.organization_id,
+        settings=settings,
+        can_refresh=True,
+    )
 
 
 @router.get(

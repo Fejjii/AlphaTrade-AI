@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import {
   TraderDashboardView,
@@ -13,6 +13,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
 
 export default function DashboardPage() {
+  const [demoRefreshKey, setDemoRefreshKey] = useState(0);
   const { executionMode, realTradingEnabled } = useSafetyPosture();
 
   const loader = useCallback(async (): Promise<TraderDashboardData> => {
@@ -67,8 +68,12 @@ export default function DashboardPage() {
     <TraderDashboardView
       data={data}
       posture={posture}
-      onRetry={() => void reload()}
+      onRetry={() => {
+        setDemoRefreshKey((key) => key + 1);
+        void reload();
+      }}
       refreshing={loading}
+      demoRefreshKey={demoRefreshKey}
     />
   );
 }
