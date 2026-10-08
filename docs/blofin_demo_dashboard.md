@@ -66,7 +66,23 @@ credential/activation flag is introduced.
 Verification uses authenticated SQLite fixtures with foreign keys and
 `httpx.MockTransport` native account responses, plus component/API tests and
 Chromium desktop/mobile fixtures. Browser fixtures are presentation evidence,
-not native exchange proof. Exact test results are recorded in the PR.
+not native exchange proof.
+
+On the final rebased main: **165 backend tests passed**, no skips, across
+`test_dashboard_demo_account`, `test_blofin_provider`, `test_exchange_probes`,
+`test_external_integrations_acceptance`, `test_at037_tradingview_blofin` and
+`test_dashboard_slice_44`. **28 frontend tests passed** across the demo card/API,
+Dashboard page and Dashboard helpers. **Two Chromium checks passed**, at 1280px
+and 390px, for saved refresh versus native refresh, precision/unknown fields,
+unchanged paper equity and no horizontal overflow. Scoped Ruff lint/format,
+mypy, ESLint and TypeScript passed. Existing JWT test-key length and SQLAlchemy
+deprecation warnings remain in the existing Dashboard tests.
+
+The ordinary `npm run build` cannot fetch the repository's existing Google Fonts
+under this environment's network policy. A production build using Next's local
+`NEXT_FONT_GOOGLE_MOCKED_RESPONSES` fixtures passed compilation, type/lint checks
+and page generation. Font-download readiness is not verified. No font or network
+configuration was changed in the repository.
 
 After reconciliation releases and this PR deploys, an owner can open Dashboard,
 fetch the existing configured demo account, and compare balances and the existing
