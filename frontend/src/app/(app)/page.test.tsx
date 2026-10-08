@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
@@ -23,6 +23,12 @@ const safetyPosture = {
 
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => safetyPosture,
+}));
+
+vi.mock("@/components/dashboard/BloFinDemoAccountCard", () => ({
+  BloFinDemoAccountCard: ({ refreshKey }: { refreshKey: number }) => (
+    <section data-testid="dashboard-demo-account" data-refresh-key={refreshKey}>BloFin demo account</section>
+  ),
 }));
 
 function portfolio(
@@ -133,6 +139,13 @@ afterEach(() => {
 });
 
 describe("Trader dashboard", () => {
+  it("refreshes the saved demo snapshot together with the Dashboard", () => {
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute("data-refresh-key", "0");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute("data-refresh-key", "1");
+    expect(asyncState.reload).toHaveBeenCalled();
+  });
   it("shows confirmed paper posture only when verified", () => {
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent(
@@ -265,6 +278,18 @@ describe("Trader dashboard", () => {
     expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("PAPER_INTERNAL");
     expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("Unrealized PnL unavailable");
     expect(screen.getByText(/these scopes can differ/)).toBeInTheDocument();
+  });
+
+  it("labels demo Journal provenance separately from paper account metrics", () => {
+    const data = dashboardData();
+    asyncState.data = dashboardData({ journal: okSource({
+      ...data.journal.data!, items: [{ ...data.journal.data!.items[0],
+        exchange: "BLOFIN_DEMO", source: "manual_demo_test", net_pnl: null,
+      }],
+    }) });
+    render(<DashboardPage />);
+    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent("BLOFIN_DEMO");
+    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(formatCurrency("1000.50"));
   });
 
   it("never falls back to legacy positions when canonical open records fail", () => {

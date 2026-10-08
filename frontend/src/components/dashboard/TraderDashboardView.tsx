@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AttentionCard } from "./AttentionCard";
 import { DailyReviewCard } from "./DailyReviewCard";
+import { BloFinDemoAccountCard } from "./BloFinDemoAccountCard";
 
 import {
   bucketWinRate,
@@ -85,6 +86,10 @@ function TradeLine({ entry }: { entry: CanonicalJournalTradeListItem }) {
             )} ·{" "}
             {formatDateTime(entry.entry_time ?? entry.created_at)}
           </p>
+          <p className="mt-1 text-xs text-text-muted">
+            {entry.exchange ?? "Venue unavailable"}
+            {entry.source ? ` · ${humanizeToken(entry.source)}` : ""}
+          </p>
         </div>
         <DataNumber value={formatMonetary(entry.net_pnl)} className="shrink-0" />
       </Link>
@@ -97,11 +102,13 @@ export function TraderDashboardView({
   posture,
   onRetry,
   refreshing = false,
+  demoRefreshKey = 0,
 }: {
   data: TraderDashboardData;
   posture: SafetyPostureDisplay;
   onRetry?: () => void;
   refreshing?: boolean;
+  demoRefreshKey?: number;
 }) {
   const winRate = portfolioWinRate(data.portfolio);
   const expectancy = portfolioExpectancy(data.portfolio);
@@ -134,7 +141,7 @@ export function TraderDashboardView({
     <div className="space-y-5" data-testid="trader-dashboard">
       <PageHeader
         title="Dashboard"
-        description="Your paper account, trading day, and next review."
+        description="Your demo account, paper portfolio, and next review."
         meta={
           <>
             <PaperModeIndicator active={posture.paperConfirmed} />
@@ -209,6 +216,8 @@ export function TraderDashboardView({
           Refreshing dashboard; showing the previous snapshot.
         </p>
       ) : null}
+
+      <BloFinDemoAccountCard refreshKey={demoRefreshKey} />
 
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
