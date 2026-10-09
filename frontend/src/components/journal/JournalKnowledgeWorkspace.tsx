@@ -162,6 +162,7 @@ export function JournalKnowledgeWorkspace() {
   const documentId = params.get("document_id");
   const page = Math.max(0, Number(params.get("page")) || 0);
   const sourcePage = Math.max(0, Number(params.get("source_page")) || 0);
+  const chunkPage = Math.max(0, Number(params.get("chunk_page")) || 0);
   const loader = useCallback(async () => {
     const [entries, trades, documents, linked, chunks] =
       await Promise.allSettled([
@@ -180,7 +181,11 @@ export function JournalKnowledgeWorkspace() {
           : Promise.resolve(null),
         savedId ? savedEntries.get(savedId) : Promise.resolve(null),
         documentId
-          ? api.knowledge.listChunks({ document_id: documentId, limit: 50 })
+          ? api.knowledge.listChunks({
+              document_id: documentId,
+              limit: 50,
+              offset: chunkPage * 50,
+            })
           : Promise.resolve(null),
       ]);
     return {
@@ -204,7 +209,16 @@ export function JournalKnowledgeWorkspace() {
       linked: linked.status === "fulfilled" ? linked.value : null,
       chunks: chunks.status === "fulfilled" ? chunks.value : null,
     };
-  }, [knowledge, category, query, savedId, documentId, page, sourcePage]);
+  }, [
+    knowledge,
+    category,
+    query,
+    savedId,
+    documentId,
+    page,
+    sourcePage,
+    chunkPage,
+  ]);
   const { data, loading, reload } = useAsyncData(loader, [
     knowledge,
     category,
@@ -213,6 +227,7 @@ export function JournalKnowledgeWorkspace() {
     documentId,
     page,
     sourcePage,
+    chunkPage,
   ]);
   const returnKey = journalReturnKey(user?.id, organization?.id);
   useEffect(() => {
@@ -242,12 +257,19 @@ export function JournalKnowledgeWorkspace() {
     const q = new URLSearchParams(params);
     q.delete("saved");
     q.delete("document_id");
+    q.delete("chunk_page");
     if (key !== "page" && key !== "source_page" && key !== "document_id") {
       q.delete("page");
       q.delete("source_page");
     }
     if (value) q.set(key, value);
     else q.delete(key);
+    router.replace(`${pathname}?${q}`, { scroll: false });
+  }
+  function changeChunkPage(next: number) {
+    const q = new URLSearchParams(params);
+    if (next) q.set("chunk_page", String(next));
+    else q.delete("chunk_page");
     router.replace(`${pathname}?${q}`, { scroll: false });
   }
   const native = data?.trades?.filter(isAlphaTradeBloFinExecution);
@@ -362,6 +384,33 @@ export function JournalKnowledgeWorkspace() {
                 loading={false}
                 onRetry={() => void reload()}
               />
+              {data?.chunks && data.chunks.total > 50 && (
+                <nav
+                  aria-label="Original document pages"
+                  className="flex items-center gap-3 text-sm"
+                >
+                  <Button
+                    variant="outline"
+                    disabled={loading || chunkPage === 0}
+                    onClick={() => changeChunkPage(chunkPage - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span>
+                    Text page {chunkPage + 1} of{" "}
+                    {Math.ceil(data.chunks.total / 50)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      loading || (chunkPage + 1) * 50 >= data.chunks.total
+                    }
+                    onClick={() => changeChunkPage(chunkPage + 1)}
+                  >
+                    Next
+                  </Button>
+                </nav>
+              )}
             </>
           )}
           {data?.entries == null && (

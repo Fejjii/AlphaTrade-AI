@@ -171,17 +171,33 @@ it("shows unavailable sources independently while preserving readable notes", as
 });
 it("retrieves an exact linked document without substituting another source", async () => {
   state.params.set("document_id", "exact-document");
+  vi.mocked(api.knowledge.listChunks).mockResolvedValue({
+    items: [],
+    total: 80,
+    limit: 50,
+    offset: 0,
+  });
   render(<Page />);
   await waitFor(() =>
     expect(api.knowledge.listChunks).toHaveBeenCalledWith({
       document_id: "exact-document",
       limit: 50,
+      offset: 0,
     }),
   );
   expect(
     screen.getByRole("link", { name: /Back to Journal/ }),
   ).toBeInTheDocument();
   expect(screen.queryByText("Confirmation rule")).not.toBeInTheDocument();
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Original document pages" }),
+    ).getByRole("button", { name: "Next" }),
+  );
+  expect(state.replace).toHaveBeenCalledWith(
+    "/knowledge?document_id=exact-document&chunk_page=1",
+    { scroll: false },
+  );
 });
 it("paginates preserved notes and sources without silently truncating history", async () => {
   vi.mocked(savedEntries.list).mockResolvedValue({ items: [entry], total: 80 });

@@ -361,8 +361,9 @@ describe("BloFin demo Dashboard", () => {
       positions: data.positions.map((p) => ({ ...p, base_asset: null, base_quantity: null })),
     }));
     render(<BloFinDemoAccountCard />);
-    expect(await screen.findByText("— USD")).toBeInTheDocument();
-    expect(screen.getByText("Equity: — USDT")).toBeInTheDocument();
+    // Missing equity is also rendered before load; wait for the native balance row.
+    expect(await screen.findByText("Equity: — USDT")).toBeInTheDocument();
+    expect(screen.getByText("— USD")).toBeInTheDocument();
     expect(screen.getByText(/Base quantity: — \(unverified instrument metadata\)/)).toBeInTheDocument();
   });
 
