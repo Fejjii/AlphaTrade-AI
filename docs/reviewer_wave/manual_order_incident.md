@@ -41,4 +41,12 @@ timestamp, HTTP status and sanitized error details/request ID; if submission beg
 provide the existing command ID and read-only native reconciliation evidence.
 Do not reproduce by sending another external order from this task. Account funds,
 credential readiness, pins, deployment version and native venue response remain
-unverified. Dedicated widget/browser regression execution is tracked separately.
+unverified.
+
+Dedicated retained-path checks also passed: `ManualDemoTest.test.tsx` and
+`ManualDemoHistory.test.tsx` (25 cases), and
+`e2e/manual-demo-recovery.spec.ts` with system Chromium (2 cases, no skips/retries).
+The browser exercises fake API/history reload/logout/reconciliation behavior and
+preserves command identity after a lost response. These checks establish local UI
+behavior, not authenticated external submission readiness or acceptance. No
+manual backend/widget production change was made.
