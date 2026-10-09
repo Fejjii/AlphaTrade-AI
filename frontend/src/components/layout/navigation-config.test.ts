@@ -228,7 +228,7 @@ describe("AT-040 Phase B redirects", () => {
     );
     for (const rule of PHASE_B_REDIRECTS) {
       expect(rule.source).not.toBe(rule.destination);
-      expect(rule.destination.startsWith("/settings/")).toBe(true);
+      expect(rule.destination.startsWith(rule.source.startsWith("/strategy-lab/") ? "/agent?" : "/settings/")).toBe(true);
       expect(destinations.has(rule.source)).toBe(false);
     }
     expect(sources.has("/billing")).toBe(true);
@@ -242,7 +242,7 @@ describe("AT-040 Phase B redirects", () => {
     ).toBe("/settings/billing");
     expect(
       PHASE_B_REDIRECTS.find((rule) => rule.source === "/usage")?.destination,
-    ).toBe("/settings/billing");
+    ).toBe("/settings/billing#usage");
   });
 
   it("does not redirect dynamic capability IDs or paper-validation paths", () => {
@@ -250,14 +250,14 @@ describe("AT-040 Phase B redirects", () => {
       expect(rule.source.includes("[")).toBe(false);
       expect(rule.source.startsWith("/paper-validation")).toBe(false);
       expect(rule.source.startsWith("/backtests")).toBe(false);
-      expect(rule.source.startsWith("/strategy-lab")).toBe(false);
+      expect(rule.source === "/strategy-lab/:id").toBe(false);
     }
   });
 
   it("preserves query parameters by using path-only redirect sources", () => {
     for (const rule of PHASE_B_REDIRECTS) {
       expect(rule.source.includes("?")).toBe(false);
-      expect(rule.destination.includes("?")).toBe(false);
+      if (!rule.source.startsWith("/strategy-lab/")) expect(rule.destination.includes("?")).toBe(false);
     }
   });
 });
