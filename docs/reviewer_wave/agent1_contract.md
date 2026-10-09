@@ -44,3 +44,46 @@ Deferred: broad redesign, React Compiler, integrated release and authenticated l
 Estimate: several hours for implementation and validation; revise after schema export and tests.
 Open PRs inspected through GitHub connector: 217,197,184,183,182,181,180 and older work;
 none is a reviewer-wave branch. CLI GitHub API returned Forbidden; Git transport works.
+
+## Baseline generated contracts (published before backend integration)
+
+Local full OpenAPI SHA256: `7696544c1abb69b05b694ea0f56ffd985d3a69003399b4fad379f81bc109e33c`.
+Exact per-component hashes and pilot hash: `frontend/src/lib/api/generated/hashes.json`.
+Regenerate: `cd frontend && npm run api:generate`; drift: `npm run api:check`.
+Both export fresh local code through `backend/scripts/export_openapi.py`, clear inherited
+configuration, disable Redis caches, use mock/replay paper settings and prohibit socket
+connections. No lifespan, database sessions, provider resolution or deployed credentials.
+Pinned dependency locks are required (`uv sync --extra dev`, `npm ci`).
+Generated pilot: strategy PATCH; Agent turn/confirm/reject; attention and daily review.
+AJV standalone validators and TypeScript/client derive from the same OpenAPI closure;
+no coercion, defaults or property stripping. Existing `apiFetch` owns all authentication/I/O.
+Integrator must regenerate after Agents 2 and 3 merge; do not treat this baseline as final.
+
+Sibling manifests read at Agent 2 `daa4f384` and Agent 3 `361d493b`. Agent 2 requests
+240-second waiting and an `Idempotency-Key` per intentional turn, durable timeout recovery.
+Agent 3 defines pending/ready/failed/unknown and SQL storage separately from indexing;
+concrete document response model is awaited before generation/UI integration.
+Revised estimate: core implementation is present; allow another 1–2 hours for browser
+journeys, integration fixes, schema/indexing handoff and delivery. No live acceptance claim.
+
+## Development phase status update
+
+Implemented: immediate stable-ID acknowledgment with independent cancellable history;
+all supported filter offset resets and first-page recovery; canonical usage fragment and
+Agent authoring handoffs; generated pilot boundaries; independent private Query sources,
+30-second freshness/5-minute GC, one transient read retry, no mutation retries, cache
+cancellation/clearing and transport session guards; one summary prefetch on tab intent.
+Agent waiting budget follows Agent 2's published 240-second contract.
+
+Evidence so far: 100 focused cases passed; export-only backend test passed; lint/typecheck
+passed; deterministic drift check passed. Six routed Chromium journeys passed with no
+skips/retries: usage URLs/query/fragment, authorized and denied authoring handoff, delayed
+acknowledgment. A 200ms response plus 5000ms stale-history fixture measured 352ms
+click-to-answer and 92ms acknowledgment-to-visible, one turn and one history request.
+Full frontend run: 1449 passed/one obsolete Create strategy label assertion; corrected
+assertion now verifies the Agent URL. Useful usage/billing state tests are retained on
+shared views after redundant route wrappers are deleted. Final checks still in progress.
+Normal build cannot fetch Google Fonts; existing test-only offline-font production
+build passed. This does not verify real font delivery or a deployed/live release.
+Revised estimate: roughly another 30–60 minutes for final checks, API persistence journey,
+logical commits and draft PR. Indexing waits for the Agent 3 response schema publication.
