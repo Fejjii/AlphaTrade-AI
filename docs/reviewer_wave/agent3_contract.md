@@ -30,10 +30,9 @@ Generate a new additive Alembic revision after `a8agentcapture001` using disposa
 PostgreSQL and repository autogeneration. Do not edit historical migrations.
 Upgrade schema before starting the bounded indexing runner; do not turn on trading.
 
-Agent 2 durable turn schema is currently unknown: its requested sibling branch
-returns 404. Please publish `docs/reviewer_wave/agent2_contract.md` and provide the
-proposed model/table ownership and revision. A consolidated linear chain must be
-reviewed before deployment; this branch will not invent Agent 2's schema.
+Agent 2's published manifest uses existing conversation messages and requests no
+new schema. The additive chain is `a8agentcapture001 -> a9knowledgeoutbox001`.
+Review the consolidated branch and its single head before deployment.
 
 ## Compatibility and visibility
 
@@ -73,13 +72,41 @@ Concrete response schemas are in `backend/src/app/schemas/rag.py`; document list
 contains the indexing observation, including job ID, attempts, retry time and error.
 Pending uploads return SQL storage true, status pending and null vector backend.
 No claim of embedding/vector fallback is made before provider work occurs.
+Agent 2 can use `retrieve_for_agent` (shared visibility enabled there) or explicitly
+set `RagQuery.include_shared=true`. Direct search defaults to private own scope.
+Search fetches at most the requested `top_k` (maximum 50); unverified SQL hits are
+discarded and mark the response degraded rather than claiming full coverage.
+
+Scoped failed-job recovery: `POST /knowledge/documents/{id}/retry-indexing`, using
+the existing authenticated transport and ingest rate limit. Retry preserves job
+and vector identities, returns pending and resets an exhausted attempt budget.
+Pending/processing/ready jobs are returned without starting duplicate work.
+Wrong-owner IDs are 404. `DELETE /knowledge/documents/{id}` commits a scoped
+tombstone and removes SQL content; remote cleanup follows through the same worker.
 
 The indexing worker is opt-in through `KNOWLEDGE_INDEXING_ENABLED`, default false,
 in the existing supervised paper worker. Review schema upgrade, Agent 1 UI/contracts
 and resource budget before enabling it. This task does not change runtime flags.
 
-`codex/reviewer-wave-agent` and `codex/reviewer-wave-frontend` do not yet exist on
-GitHub (connector 404 and git remote-ref failure). This manifest records requests
-without implying agreement. No authenticated failing order request, sanitized
-owner error, account/session or service log has been supplied. Incident root cause
-remains unknown; local fake-venue tests cannot prove external acceptance.
+No authenticated failing order request, sanitized owner error, account/session or
+service log has been supplied. Incident root cause remains unknown; local
+fake-venue tests cannot prove external acceptance. Rollout requirements are in
+`knowledge_indexing_rollout.md`; the measured store decision is in
+`pgvector_decision.md`.
+
+Cross-module compatibility for Agent 2: a composed `application_result` may retain
+`sql_chunks_stored=false` after the enclosing confirmation commits, because the
+RAG receipt was produced before that commit. Its `pending` state never implies
+search readiness. Refresh canonical document status after confirmation. Journal
+and Agent application integration tests advance the real local runner explicitly;
+provider outages retain committed content/application while indexing retries.
+No Agent production modules were edited. Preserve these semantics when rebasing
+the shared integration tests against Agent 2's branch.
+
+Quota/accounting compatibility: a zero-token `rag_ingest` admission event commits
+with each new content generation, including pending uploads. Duplicates add none.
+Provider usage is separately recorded as `rag_indexing`, with existing global
+budget checks before each batch; blocked budgets remain pending/failed. Both event
+types count in the existing daily request counter. No quota/Agent modules or SDK
+dependencies were edited. Agent 1 can label the two feature rows as content storage
+and embedding/indexing work without describing pending content as searchable.
