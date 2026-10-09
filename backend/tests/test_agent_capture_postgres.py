@@ -102,7 +102,9 @@ def test_concurrent_duplicate_capture_keeps_one_save_and_allows_unrelated_user_r
 
     assert first_result[1] == second_result[1] == "saved"
     assert first_result[0][0].id == second_result[0][0].id
-    assert len(model.calls) == 1
+    # These are distinct accepted contributions, not a replay. Both real model
+    # attempts must be accounted; only the canonical note is deduplicated.
+    assert len(model.calls) == 2
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(AgentSavedEntry)) == 1
         assert session.scalar(select(func.count()).select_from(AgentCaptureSource)) == 1

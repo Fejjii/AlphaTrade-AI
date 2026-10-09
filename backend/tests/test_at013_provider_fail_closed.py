@@ -176,11 +176,11 @@ class TestLLMFailClosed:
             model="gpt-4o-mini",
             fail_closed=True,
         )
-        with patch("httpx.Client") as client_cls:
+        with patch("app.providers.llm.OpenAI") as client_cls:
             client = MagicMock()
             client.__enter__.return_value = client
             client.__exit__.return_value = False
-            client.post.side_effect = RuntimeError("connection reset")
+            client.chat.completions.create.side_effect = RuntimeError("connection reset")
             client_cls.return_value = client
             with pytest.raises(ServiceUnavailableError, match="unavailable"):
                 p.complete(self._request())
@@ -230,11 +230,11 @@ class TestEmbeddingsFailClosed:
             dimensions=8,
             fail_closed=True,
         )
-        with patch("httpx.Client") as client_cls:
+        with patch("app.providers.embeddings.OpenAI") as client_cls:
             client = MagicMock()
             client.__enter__.return_value = client
             client.__exit__.return_value = False
-            client.post.side_effect = RuntimeError("openai 500")
+            client.embeddings.create.side_effect = RuntimeError("openai 500")
             client_cls.return_value = client
             with pytest.raises(ServiceUnavailableError, match="unavailable"):
                 p.embed(["hello"])
@@ -600,18 +600,18 @@ class TestRecoveryAfterRestore:
             model="gpt-4o-mini",
             fail_closed=True,
         )
-        with patch("httpx.Client") as client_cls:
+        with patch("app.providers.llm.OpenAI") as client_cls:
             client = MagicMock()
             client.__enter__.return_value = client
             client.__exit__.return_value = False
             response = MagicMock()
             response.raise_for_status = MagicMock()
-            response.json.return_value = {
+            response.model_dump.return_value = {
                 "model": "gpt-4o-mini",
                 "choices": [{"message": {"content": "ok"}}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1},
             }
-            client.post.return_value = response
+            client.chat.completions.create.return_value = response
             client_cls.return_value = client
             result = p.complete(
                 LLMCompletionRequest(
