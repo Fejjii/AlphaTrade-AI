@@ -220,7 +220,7 @@ PYTHONPATH=src:. .venv/bin/pytest -p tests.test_interactive_agent_foundation \
 PYTHONPATH=src:. .venv/bin/pytest tests/test_deployment_safety.py \
   tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q -o addopts=''
 PYTHONPATH=src:. .venv/bin/pytest tests/test_phase8_learning_persistence.py \
-  tests/test_journal_trades_alembic_empty_tenant.py tests/test_phase2_4_alembic_postgres.py -q -o addopts='' 
+  tests/test_journal_trades_alembic_empty_tenant.py tests/test_phase2_4_alembic_postgres.py -q -o addopts=''
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 cd ../frontend
