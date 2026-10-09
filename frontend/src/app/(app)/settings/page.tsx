@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { EmailVerificationNotice } from "@/components/account/EmailVerificationNotice";
 import { WatcherWatchlistSection } from "@/components/WatcherWatchlistSection";
 import { NotificationSettingsPanel } from "@/components/NotificationSettingsPanel";
@@ -16,6 +17,17 @@ export default function SettingsPage() {
   const { user, organization } = useAuth();
   const { health, providers, refreshStatus, loading } = useAppContext();
   const monitoring = useWatcherMonitoring();
+  useEffect(() => {
+    const openAnchor = () => {
+      const id = window.location.hash.slice(1);
+      if (!["markets", "notifications", "account-system"].includes(id)) return;
+      const target = document.getElementById(id);
+      if (target instanceof HTMLDetailsElement) target.open = true;
+    };
+    openAnchor();
+    window.addEventListener("hashchange", openAnchor);
+    return () => window.removeEventListener("hashchange", openAnchor);
+  }, []);
   return (
     <div className="space-y-4" data-testid="settings-workspace">
       <h1 className="text-2xl font-semibold">Settings</h1>

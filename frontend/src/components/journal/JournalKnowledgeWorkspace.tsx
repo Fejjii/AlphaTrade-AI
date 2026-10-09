@@ -159,7 +159,7 @@ export function JournalKnowledgeWorkspace() {
   const category = params.get("category") ?? "";
   const query = params.get("q") ?? "";
   const savedId = params.get("saved");
-  const documentId = params.get("document_id");
+  const documentId = params.get("document_id") ?? params.get("document");
   const page = Math.max(0, Number(params.get("page")) || 0);
   const sourcePage = Math.max(0, Number(params.get("source_page")) || 0);
   const chunkPage = Math.max(0, Number(params.get("chunk_page")) || 0);
@@ -257,6 +257,7 @@ export function JournalKnowledgeWorkspace() {
     const q = new URLSearchParams(params);
     q.delete("saved");
     q.delete("document_id");
+    q.delete("document");
     q.delete("chunk_page");
     if (key !== "page" && key !== "source_page" && key !== "document_id") {
       q.delete("page");
@@ -369,6 +370,12 @@ export function JournalKnowledgeWorkspace() {
           {documentId && (
             <>
               <JournalReturnLink />
+              {(!data?.chunks || data.chunks.total === 0) && (
+                <p role="alert" data-testid="knowledge-document-stale">
+                  Original document unavailable or has no readable text. No
+                  unrelated document was opened.
+                </p>
+              )}
               <KnowledgeDetailPanel
                 documentId={documentId}
                 chunks={

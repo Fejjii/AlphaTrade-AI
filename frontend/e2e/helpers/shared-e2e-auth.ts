@@ -42,5 +42,7 @@ export async function installSharedE2ESession(
 
 /** Prefer the accessible paper-mode label; avoid matching hidden duplicate chips. */
 export function paperModeActive(page: Page) {
-  return page.getByLabel("Paper mode active").first();
+  return page
+    .getByRole("status", { name: "Execution status" })
+    .getByText("PAPER", { exact: true });
 }

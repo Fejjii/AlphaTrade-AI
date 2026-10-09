@@ -148,7 +148,9 @@ class CaptureService:
         current = f"{message.content}\n{document}".strip()
         digest = hashlib.sha256(" ".join(current.split()).encode()).hexdigest()
         # Only serialize private note capture, never trading state. Locks span dedupe/write.
-        self.session.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        self.session.scalar(
+            select(User.id).where(User.id == user_id).with_for_update(key_share=True)
+        )  # PostgreSQL NO KEY UPDATE permits unrelated foreign-key references.
         prior = self.session.scalar(
             select(AgentCaptureSource).where(
                 AgentCaptureSource.organization_id == organization_id,
