@@ -9,6 +9,7 @@
  * protected shell HTML (AT-017). See docs/security.md.
  */
 
+import { sessionCleared } from "./session-events";
 import { SESSION_MARKER_COOKIE, SESSION_MARKER_VALUE } from "@/lib/auth/boundary";
 
 const ACCESS_KEY = "alphatrade_access_token";
@@ -56,6 +57,7 @@ export function setTokens(accessToken: string, refreshToken?: string): void {
 }
 
 export function clearTokens(): void {
+  sessionCleared();
   sessionStorage.removeItem(ACCESS_KEY);
   if (!usesCookieRefresh()) {
     sessionStorage.removeItem(REFRESH_KEY);

@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import BillingPage from "@/app/(app)/billing/page";
+import { BillingPageView as BillingPage } from "./BillingPageView";
 
 const billingData = {
   status: {
@@ -101,7 +101,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("BillingPage", () => {
+describe("BillingPageView states", () => {
   it("renders billing page with current plan", () => {
     render(<BillingPage />);
     expect(screen.getByRole("heading", { name: /billing/i })).toBeInTheDocument();

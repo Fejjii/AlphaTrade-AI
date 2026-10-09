@@ -1,11 +1,8 @@
-import type { AttentionQueue } from "./attention-types";
-import type { DailyReview } from "./daily-review-types";
+import * as generatedApi from "./generated/client";
 import type { BrainDraftBinding, BrainOverview, BrainSetup, SfpDraft } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
   AgentMessageResponse,
-  AgentStructuredProposal,
-  AgentTurnResult,
   ApprovalRequest,
   AuditRecord,
   AuthResponse,
@@ -380,36 +377,9 @@ export const api = {
       }),
   },
   agent: {
-    turn: (body: {
-      message: string;
-      source_document_id?: string;
-      conversation_id?: string;
-      strategy_id?: string;
-      symbol?: string;
-      timeframe?: string;
-      action?: { name: string; arguments: Record<string, unknown> };
-    }, options?: { signal?: AbortSignal }) =>
-      apiFetch<AgentTurnResult>("/agent/turns", {
-        method: "POST",
-        body: JSON.stringify(body),
-        signal: options?.signal,
-      }),
-    confirmProposal: (
-      proposalId: string,
-      body: { conversation_id: string; expected_content_hash: string; statement: string },
-    ) =>
-      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/confirm`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-    rejectProposal: (
-      proposalId: string,
-      body: { conversation_id: string; expected_content_hash: string; statement: string },
-    ) =>
-      apiFetch<AgentStructuredProposal>(`/agent/proposals/${proposalId}/reject`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+    turn: generatedApi.agentTurn,
+    confirmProposal: generatedApi.confirmProposal,
+    rejectProposal: generatedApi.rejectProposal,
   },
   conversations: {
     list: (params?: { strategy_id?: string; limit?: number; offset?: number }) =>
@@ -663,8 +633,8 @@ export const api = {
       }),
     delete: (id: string) =>
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
-    statistics: (params?: JournalStatsParams) =>
-      apiFetch<JournalStatsResponse>("/journal/statistics", { query: params }),
+    statistics: (params?: JournalStatsParams, options?: { signal?: AbortSignal }) =>
+      apiFetch<JournalStatsResponse>("/journal/statistics", { query: params, signal: options?.signal }),
     listTrades: (params?: { status?: string; source?: string; symbol?: string; limit?: number; offset?: number }) =>
       apiFetch<PaginatedCanonicalJournalTrades>("/journal/trades", { query: params }),
     importTrades: (body: JournalImportRequestBody) =>
@@ -685,23 +655,23 @@ export const api = {
       apiFetch<SetupAnalyticsResponse>("/analytics/setups", { query: params }),
     tradeReview: (params?: { start_date?: string; end_date?: string }) =>
       apiFetch<TradeReviewAnalytics>("/analytics/trade-review", { query: params }),
-    discipline: (params?: { start_date?: string; end_date?: string }) =>
-      apiFetch<DisciplineScoreResult>("/analytics/discipline", { query: params }),
-    riskBehavior: (params?: { start_date?: string; end_date?: string }) =>
-      apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior", { query: params }),
+    discipline: (params?: { start_date?: string; end_date?: string }, options?: { signal?: AbortSignal }) =>
+      apiFetch<DisciplineScoreResult>("/analytics/discipline", { query: params, signal: options?.signal }),
+    riskBehavior: (params?: { start_date?: string; end_date?: string }, options?: { signal?: AbortSignal }) =>
+      apiFetch<RiskBehaviorAnalytics>("/analytics/risk-behavior", { query: params, signal: options?.signal }),
   },
   learningAnalytics: {
-    summary: (params?: LearningAnalyticsParams) =>
+    summary: (params?: LearningAnalyticsParams, options?: { signal?: AbortSignal }) =>
       apiFetch<LearningAnalyticsSummaryResponse>("/learning-analytics/summary", {
-        query: params,
+        query: params, signal: options?.signal,
       }),
-    setupPerformance: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }) =>
+    setupPerformance: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }, options?: { signal?: AbortSignal }) =>
       apiFetch<SetupPerformanceResponse>("/learning-analytics/setup-performance", {
-        query: params,
+        query: params, signal: options?.signal,
       }),
-    discipline: (params?: LearningAnalyticsParams) =>
+    discipline: (params?: LearningAnalyticsParams, options?: { signal?: AbortSignal }) =>
       apiFetch<DisciplineAnalyticsResponse>("/learning-analytics/discipline", {
-        query: params,
+        query: params, signal: options?.signal,
       }),
     confidenceOutcome: (params?: LearningAnalyticsParams) =>
       apiFetch<ConfidenceOutcomeResponse>("/learning-analytics/confidence-outcome", {
@@ -715,9 +685,9 @@ export const api = {
       apiFetch<LessonThemesResponse>("/learning-analytics/lessons", {
         query: params,
       }),
-    setupRanking: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }) =>
+    setupRanking: (params?: LearningAnalyticsParams & { dimension?: SetupDimension }, options?: { signal?: AbortSignal }) =>
       apiFetch<SetupRankingResponse>("/learning-analytics/setup-ranking", {
-        query: params,
+        query: params, signal: options?.signal,
       }),
   },
   validationPriority: {
@@ -746,9 +716,9 @@ export const api = {
       apiFetch<StrategyQualityDetectorsResponse>("/strategy-quality/detectors", {
         query: params,
       }),
-    summary: (params?: StrategyQualityParams) =>
+    summary: (params?: StrategyQualityParams, options?: { signal?: AbortSignal }) =>
       apiFetch<StrategyQualitySummaryResponse>("/strategy-quality/summary", {
-        query: params,
+        query: params, signal: options?.signal,
       }),
     explain: (condition: string, params?: StrategyQualityParams) =>
       apiFetch<DetectorExplainResponse>(
@@ -784,9 +754,8 @@ export const api = {
       }),
   },
   dashboard: {
-    attention: () => apiFetch<AttentionQueue>("/dashboard/attention", { auth: true }),
-    dailyReview: (params?: { date?: string; timezone?: string }) =>
-      apiFetch<DailyReview>("/dashboard/daily-review", { query: params, auth: true }),
+    attention: generatedApi.attention,
+    dailyReview: generatedApi.dailyReview,
     summary: () => apiFetch<DashboardSummary>("/dashboard/summary"),
   },
   knowledge: {
@@ -1065,7 +1034,8 @@ export const api = {
   strategies: {
     list: (params?: { limit?: number; offset?: number }) =>
       apiFetch<PaginatedUserStrategies>("/strategies", { query: params, auth: true }),
-    get: (id: string) => apiFetch<UserStrategy>(`/strategies/${id}`, { auth: true }),
+    get: (id: string, options?: { signal?: AbortSignal }) =>
+      apiFetch<UserStrategy>(`/strategies/${id}`, { auth: true, signal: options?.signal }),
     create: (body: {
       name: string;
       setup_type: string;
@@ -1078,12 +1048,7 @@ export const api = {
         auth: true,
       }),
     modules: () => apiFetch<string[]>("/strategies/modules", { auth: true }),
-    update: (id: string, body: { name?: string; card?: Record<string, unknown> }) =>
-      apiFetch<UserStrategy>(`/strategies/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        auth: true,
-      }),
+    update: generatedApi.strategyPatch,
     createVersion: (id: string, body: { card: Record<string, unknown>; validation_status?: string }) =>
       apiFetch<{ id: string; version: number }>(`/strategies/${id}/versions`, {
         method: "POST",

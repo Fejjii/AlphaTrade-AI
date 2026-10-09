@@ -1634,51 +1634,10 @@ export interface AgentMessageResponse {
   history_injected?: number;
 }
 
-export interface AgentStructuredProposal {
-  proposal_id: string;
-  conversation_id: string;
-  kind: string;
-  artifact_kind: string;
-  status: "proposed" | "confirmed_unapplied" | "applied" | "rejected" | "refused" | string;
-  summary: string;
-  content_hash: string;
-  applied: boolean;
-  authority_mutated: boolean;
-  resulting_record_id?: string | null;
-}
-
-export interface AgentTurnResult {
-  model_usage?: Record<string, unknown>[];
-  saved_entries?: import("./saved-entries").SavedEntry[];
-  assistant_message_id?: string;
-  user_message_id?: string;
-  capture_status?:
-    "not_needed" | "saved" | "failed" | "clarification" | "unavailable";
-  capture_error?: string | null;
-  capture_source_message_id?: string | null;
-  capture_clarification?: string | null;
-  conversation_id: string;
-  reply: string;
-  recorded_evidence?: string | null;
-  full_reply?: string | null;
-  connections?: { record_id: string; title: string }[];
-  capability: string;
-  operation: string;
-  proposals: AgentStructuredProposal[];
-  limitations: string[];
-  market_quote?: {
-    symbol: string;
-    last_price: string;
-    source: string;
-    is_live: boolean;
-    is_stale: boolean;
-    fallback_used: boolean;
-    provider_name: string;
-  } | null;
-  authority_mutated: false;
-  execution_attempted: false;
-  real_trading_enabled: false;
-}
+export type AgentStructuredProposal = import("./generated/types").components["schemas"]["StructuredActionProposal"];
+export type AgentTurnRequest = import("./generated/types").components["schemas"]["AgentTurnRequest"];
+export type AgentTurnResult = import("./generated/types").components["schemas"]["AgentTurnResult"];
+export type UserStrategyUpdate = import("./generated/types").components["schemas"]["UserStrategyUpdate"];
 
 export type ConversationStatus = "active" | "archived";
 export type ConversationMessageRole = "user" | "assistant" | "system";

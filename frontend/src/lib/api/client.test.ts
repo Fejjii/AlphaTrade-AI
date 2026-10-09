@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("api client deployment config", () => {
   afterEach(() => {
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
     vi.resetModules();
     vi.unstubAllEnvs();
   });
@@ -112,5 +114,42 @@ describe("api client deployment config", () => {
 
     expect(refreshCalls).toBe(1);
     sessionStorage.clear();
+  });
+  it("discards a response arriving after logout instead of returning private data", async () => {
+    let finish!: (response: unknown) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(resolve => { finish = resolve; })));
+    const { apiFetch } = await import("@/lib/api/client");
+    const { clearTokens } = await import("@/lib/auth/session");
+    const pending = apiFetch("/private");
+    const checked = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    clearTokens();
+    finish({ ok: true, status: 200, text: async () => JSON.stringify({ private: "old-tenant" }) });
+    await checked;
+  });
+  it("a new identity refresh has its own flight and a late old refresh cannot overwrite tokens", async () => {
+    const completions: ((response: unknown) => void)[] = [];
+    sessionStorage.setItem("alphatrade_access_token", "old-stale");
+    sessionStorage.setItem("alphatrade_refresh_token", "old-refresh");
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+      if (url.includes("/auth/refresh")) return new Promise(resolve => completions.push(resolve));
+      if ((options.headers as Record<string, string>).Authorization === "Bearer new-fresh")
+        return { ok: true, status: 200, text: async () => "{}" };
+      return { ok: false, status: 401, text: async () => "" };
+    }));
+    const { apiFetch } = await import("@/lib/api/client");
+    const { clearTokens, setTokens } = await import("@/lib/auth/session");
+    const oldRequest = apiFetch("/old-identity");
+    const oldChecked = expect(oldRequest).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(completions).toHaveLength(1));
+    clearTokens();
+    setTokens("new-stale", "new-refresh");
+    const newRequest = apiFetch("/new-identity");
+    await vi.waitFor(() => expect(completions).toHaveLength(2));
+    completions[0]({ ok: true, json: async () => ({ access_token: "old-fresh" }) });
+    await oldChecked;
+    expect(sessionStorage.getItem("alphatrade_access_token")).toBe("new-stale");
+    completions[1]({ ok: true, json: async () => ({ access_token: "new-fresh" }) });
+    await newRequest;
+    expect(sessionStorage.getItem("alphatrade_access_token")).toBe("new-fresh");
   });
 });
