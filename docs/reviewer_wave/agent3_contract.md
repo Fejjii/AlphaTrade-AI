@@ -62,6 +62,22 @@ Agent 3 owns dedicated widgets only if a defect is reproduced.
 
 ## Coordination availability
 
+Update: sibling manifests are now published and were read at Agent 2 `daa4f384`
+and Agent 1 `d24b45e0`. Agent 2 requests no new schema or accounting table: durable
+turn storage uses existing conversation messages. This leaves a coherent linear
+migration chain `a8agentcapture001 -> a9knowledgeoutbox001`, with one final head.
+The private/shared RAG filter and parent/chunk SQL checks implement Agent 2's
+requested interface; `STRATEGY_TEMPLATE` remains in Agent retrieval. Agent 1 owns
+the generated contracts and readiness UI after these schemas are published.
+Concrete response schemas are in `backend/src/app/schemas/rag.py`; document listing
+contains the indexing observation, including job ID, attempts, retry time and error.
+Pending uploads return SQL storage true, status pending and null vector backend.
+No claim of embedding/vector fallback is made before provider work occurs.
+
+The indexing worker is opt-in through `KNOWLEDGE_INDEXING_ENABLED`, default false,
+in the existing supervised paper worker. Review schema upgrade, Agent 1 UI/contracts
+and resource budget before enabling it. This task does not change runtime flags.
+
 `codex/reviewer-wave-agent` and `codex/reviewer-wave-frontend` do not yet exist on
 GitHub (connector 404 and git remote-ref failure). This manifest records requests
 without implying agreement. No authenticated failing order request, sanitized
