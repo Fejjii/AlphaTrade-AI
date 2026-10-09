@@ -863,12 +863,14 @@ class ManualDemoService:
                 JournalTrade.execution_lifecycle_id == command_id,
             )
         )
-        missing = [
-            (
+        self.session.commit()
+        durable = ManualDemoHistoryService(self.session).get(tenant, command_id).evidence
+        missing = []
+        if durable.recovery_status != "resolved":
+            missing.append(
                 "Account claim remains held until explicit evidence-backed "
                 "recovery; global safety is unchanged."
             )
-        ]
         cancel_requested = self.session.scalar(
             select(AuditLog.id).where(
                 AuditLog.organization_id == tenant.organization_id,
@@ -891,7 +893,7 @@ class ManualDemoService:
             )
         elif evidence is None or not evidence.fills:
             missing.append("No actual venue fill has been verified.")
-        if protection != "verified":
+        if durable.protection not in {"verified", "not_required_closed"}:
             missing.append("Stop and target protection are not verified.")
         if diagnostics:
             missing.append(
@@ -899,8 +901,6 @@ class ManualDemoService:
                 "against this order in BloFin demo, then refresh this SAME command. "
                 "Do not resubmit or clear the operator hold."
             )
-        self.session.commit()
-        durable = ManualDemoHistoryService(self.session).get(tenant, command_id).evidence
         return ManualDemoStatus(
             revision_id=plan.revision_id,
             command_id=command_id,
