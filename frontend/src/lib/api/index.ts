@@ -1,16 +1,15 @@
+import { validatedFetch } from "./validated-fetch";
+import * as validators from "./generated/validators";
 import * as generatedApi from "./generated/client";
 import type { BrainDraftBinding, BrainOverview, BrainSetup, SfpDraft } from "./brain-types";
 import { apiFetch } from "@/lib/api/client";
 import type {
-  AgentMessageResponse,
   ApprovalRequest,
   AuditRecord,
   AuthResponse,
   HealthResponse,
   IngestDocumentResponse,
   FileImportPreview,
-  PaginatedRagChunks,
-  PaginatedRagDocuments,
   DisciplineScoreResult,
   DashboardSummary,
   JournalEntry,
@@ -363,21 +362,10 @@ export const api = {
         },
       ),
   },
-  chat: {
-    message: (body: {
-      message: string;
-      conversation_id?: string;
-      strategy_id?: string;
-      symbol?: string;
-      timeframe?: string;
-    }) =>
-      apiFetch<AgentMessageResponse>("/chat/message", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-  },
+  chat: { message: generatedApi.chatMessage },
   agent: {
     turn: generatedApi.agentTurn,
+    retryCapture: generatedApi.captureRetry,
     confirmProposal: generatedApi.confirmProposal,
     rejectProposal: generatedApi.rejectProposal,
   },
@@ -773,39 +761,12 @@ export const api = {
       body.append("source_type", sourceType);
       body.append("preview_receipt", receipt);
       body.append("confirm", "true");
-      return apiFetch<IngestDocumentResponse>("/knowledge/files/import", { method: "POST", body });
+      return validatedFetch<IngestDocumentResponse>("/knowledge/files/import", { method: "POST", body, responseValidator: validators.knowledgeIngestResponse });
     },
-    listDocuments: (params?: {
-      source_type?: string;
-      limit?: number;
-      offset?: number;
-    }) =>
-      apiFetch<PaginatedRagDocuments>("/knowledge/documents", {
-        query: params,
-      }),
-    listChunks: (params?: {
-      document_id?: string;
-      limit?: number;
-      offset?: number;
-    }) =>
-      apiFetch<PaginatedRagChunks>("/knowledge/chunks", {
-        query: params,
-      }),
-    ingest: (body: {
-      title: string;
-      text: string;
-      source_type: string;
-      strategy_tag?: string;
-      symbol_tag?: string;
-      timeframe_tag?: string;
-      risk_tag?: string;
-      source_uri?: string;
-      version?: number;
-    }) =>
-      apiFetch<IngestDocumentResponse>("/knowledge/ingest", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+    listDocuments: generatedApi.knowledgeDocuments,
+    listChunks: generatedApi.knowledgeChunks,
+    ingest: generatedApi.knowledgeIngest,
+    retryIndexing: generatedApi.knowledgeRetryIndexing,
     search: (body: {
       query: string;
       top_k?: number;

@@ -22,6 +22,12 @@ await fs.unlink(temporary);
 const schema = JSON.parse(full);
 const pilots = [
   ["agentTurn", "/agent/turns", "post"],
+  ["chatMessage", "/chat/message", "post"],
+  ["captureRetry", "/agent/saved/retry", "post"],
+  ["knowledgeDocuments", "/knowledge/documents", "get"],
+  ["knowledgeChunks", "/knowledge/chunks", "get"],
+  ["knowledgeIngest", "/knowledge/ingest", "post"],
+  ["knowledgeRetryIndexing", "/knowledge/documents/{document_id}/retry-indexing", "post"],
   ["confirmProposal", "/agent/proposals/{proposal_id}/confirm", "post"],
   ["rejectProposal", "/agent/proposals/{proposal_id}/reject", "post"],
   ["strategyPatch", "/strategies/{strategy_id}", "patch"],
@@ -44,6 +50,7 @@ for (const [, route, method] of pilots) {
   paths[route][method] = schema.paths[route][method];
   visit(paths[route][method]);
 }
+visit({ $ref: "#/components/schemas/TurnConflictDetails" });
 const pilot = { ...schema, paths, components: { ...schema.components,
   schemas: Object.fromEntries([...used].sort().map(name => [name, schemas[name]])) } };
 const typeText = astToString(await openapiTS(pilot, { defaultNonNullable: false }));
@@ -58,6 +65,7 @@ const ajv = new Ajv({ strict: false, code: { source: true, esm: true }, coerceTy
 addFormats(ajv);
 ajv.addSchema({ $id: "http-contract", $defs: rewriteRefs(pilot.components.schemas) });
 const validatorRefs = {};
+validatorRefs.turnConflictDetails = 'http-contract#/$defs/TurnConflictDetails';
 let client = '// Generated from local FastAPI OpenAPI. Run npm run api:generate.\n' +
   'import type { paths } from "./types";\nimport { validatedFetch } from "../validated-fetch";\n' +
   'import * as validators from "./validators";\n\n';
@@ -65,6 +73,15 @@ for (const [name, route, method] of pilots) {
   const op = schema.paths[route][method];
   const response = op.responses['200'].content['application/json'].schema.$ref.split('/').at(-1);
   validatorRefs[name + 'Response'] = `http-contract#/$defs/${response}`;
+  const errorValidators = [];
+  for (const [status, error] of Object.entries(op.responses)) {
+    const ref = error.content?.['application/json']?.schema?.$ref;
+    if (status !== '200' && ref) {
+      const errorName = name + 'Error' + status;
+      validatorRefs[errorName] = `http-contract#/$defs/${ref.split('/').at(-1)}`;
+      errorValidators.push(`${status}: validators.${errorName}`);
+    }
+  }
   const param = route.match(/\{(.+?)\}/)?.[1];
   const hasBody = Boolean(op.requestBody);
   if (hasBody) {
@@ -84,6 +101,7 @@ for (const [name, route, method] of pilots) {
     `    method: "${method.toUpperCase()}", auth: true, signal: options?.signal, headers: options?.headers,\n` +
     (hasBody ? `    bodyValue: body, requestValidator: validators.${name}Request,\n` : '') +
     (op.parameters?.some(p => p.in === 'query') ? '    query,\n' : '') +
+    (errorValidators.length ? `    errorValidators: { ${errorValidators.join(', ')} },\n` : '') +
     `    responseValidator: validators.${name}Response,\n  });\n}\n\n`;
 }
 // AJV emits a root function twice when two endpoints share the same response schema.

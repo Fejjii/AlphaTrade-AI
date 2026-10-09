@@ -926,3 +926,56 @@ def test_chat_structure_request_supersedes_open_draft_identity(
         )
         pending = stale_confirm.pending_proposal
         assert pending is None or pending.id != stale_id
+
+
+def test_agent_authoring_setup_type_confirmation_reload_and_replay(conv_env):
+    client, factory = conv_env
+    _auth(client, "conv-a@test.example")
+    response = client.post(
+        "/agent/turns",
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+        json={
+            "message": complete_first_slice_preview_text(),
+            "action": {
+                "name": "strategy.create",
+                "arguments": {
+                    "text": complete_first_slice_preview_text(),
+                    "setup_type": "liquidity_sweep_reversal",
+                },
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    turn = response.json()
+    linked = next(
+        item["linked_strategy_proposal_id"]
+        for item in turn["proposals"]
+        if item["linked_strategy_proposal_id"]
+    )
+    path = f"/conversations/{turn['conversation_id']}/proposals/{linked}"
+    draft = client.get(path).json()
+    assert draft["status"] == "draft"
+    from sqlalchemy import func
+
+    from app.db.models import UserStrategy, UserStrategyVersion
+
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(UserStrategy)) == 0
+    payload = {**_confirm_payload(draft), "request_id": str(uuid.uuid4())}
+    confirmed = client.post(path + "/confirm", json=payload)
+    assert confirmed.status_code == 200, confirmed.text
+    saved = confirmed.json()
+    strategy_path = f"/strategies/{saved['resulting_strategy_id']}"
+    assert client.get(strategy_path).json()["setup_type"] == "liquidity_sweep_reversal"
+    assert (
+        client.get(f"/conversations/{turn['conversation_id']}").json()["strategy_id"]
+        == saved["resulting_strategy_id"]
+    )
+    with factory() as session:
+        before = session.scalar(select(func.count()).select_from(UserStrategyVersion))
+    repeated = client.post(path + "/confirm", json=payload)
+    assert repeated.status_code == 200
+    assert repeated.json()["resulting_version_id"] == saved["resulting_version_id"]
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(UserStrategyVersion)) == before
+    assert client.get(path).json()["resulting_version_id"] == saved["resulting_version_id"]

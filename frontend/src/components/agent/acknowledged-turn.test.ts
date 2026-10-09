@@ -37,3 +37,16 @@ describe("acknowledged turn reconciliation", () => {
     expect(proposalsFromMessages(messages)).toEqual([]);
   });
 });
+
+
+it.each(["user only", "assistant only", "second turn first", "repeated partial"])("preserves two acknowledged pairs through %s history", (mode) => {
+  const first = acknowledgedMessages("First user", { ...agentTurnFixture, reply: "First reply" });
+  const second = acknowledgedMessages("Second user", { ...agentTurnFixture, reply: "Second reply",
+    user_message_id: "44444444-4444-4444-8444-444444444444", assistant_message_id: "55555555-5555-4555-8555-555555555555" });
+  const retained = [...first, ...second];
+  const partial = mode === "user only" ? [first[0]] : mode === "assistant only" ? [first[1]] : [second[1], first[1]];
+  let merged = reconcileMessages(partial, retained);
+  if (mode === "repeated partial") merged = reconcileMessages([second[0]], merged);
+  expect(merged.map(message => message.id)).toEqual(retained.map(message => message.id));
+  expect(merged.map(message => message.content)).toEqual(["First user", "First reply", "Second user", "Second reply"]);
+});

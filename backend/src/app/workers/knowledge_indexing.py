@@ -13,6 +13,7 @@ import threading
 from app.core.config import Settings
 from app.db.session import get_session_factory
 from app.providers.factory import resolve_providers
+from app.providers.qdrant import QdrantVectorStore
 from app.rag.indexing import IndexingRunner
 from app.workers.paper_worker import CycleOutcome
 
@@ -36,6 +37,8 @@ class KnowledgeIndexingCycle:
                 settings=self.settings,
                 stopping=self._stop.is_set,
             )
+        if isinstance(self.runner.store, QdrantVectorStore):
+            self.runner.store.reconnect()
         outcomes = self.runner.run_once(max_jobs=2)
         repaired = self.runner.reconcile_once(limit=1) if not self._stop.is_set() else 0
         counts = self.runner.queue_counts()

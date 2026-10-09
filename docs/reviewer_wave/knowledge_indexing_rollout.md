@@ -91,3 +91,44 @@ search can opt into shared visibility. Rejected vector hits mark search degraded
    provider SDK, scope and worker/migration regressions in the consolidated branch.
    Complete one supervised exact-ref release gate under `.ai/RELEASE.md`; focused
    local passes are development evidence. External order acceptance stays supervised.
+
+## Consolidated compatibility and rollback review
+
+The integration has exactly one Alembic head, `a9knowledgeoutbox001`, after
+`a8agentcapture001`. Apply the additive migration before any new API or worker code.
+New writers require the outbox table and generation column. Old API writers remain
+schema-compatible but bypass generation fencing; stop or replace them before enabling
+new indexing. A mixed writer window does not establish knowledge consistency.
+
+Deploy API and worker from the same reviewed revision. Leave
+`KNOWLEDGE_INDEXING_ENABLED=false` until the supervised deployment review authorizes
+activation. This flag, Watcher/Telegram controls, credentials, kill switch and exchange
+execution settings are unchanged by this PR. With indexing disabled, uploads remain
+stored/pending. No readiness claim follows from SQL storage alone.
+
+Before activation, inventory pending/processing/failed jobs, oldest pending age,
+legacy documents with null generation, and recent replacement/deletion volume. Review
+provider throughput, quota/token/cost budget and Qdrant collection dimensions and
+keyword indexes (`organization_id`, `user_id`, `document_id`). The bounded rolling
+reconciler visits legacy documents with chunks and queues a generation; empty metadata
+records remain unindexed. Backlog completion requires observing each current generation
+as ready, not merely an empty claim batch. Record scoped failed-job retries separately.
+Request quotas count content/turn admissions; `rag_indexing` and attempts covered by
+a durable turn admission retain usage/token/cost accounting without adding admissions.
+Historical events without that durable marker retain conservative legacy counting.
+
+The same worker instance now reconnects after an initial Qdrant failure, with a
+five-second probe and exponential reconnect delay capped at 300 seconds. Durable job
+retry bounds and generation fences remain in force. Failed probes cannot mark ready.
+
+For rollback, disable the indexing component and stop new writers before changing API
+versions. Preserve SQL documents/chunks and export/drain durable jobs before considering
+schema downgrade: downgrade removes jobs/generation tracking. Prefer keeping the additive
+schema while rolling code back, and do not restart old synchronous vector writers while
+new generations remain outstanding. Reconcile and verify scoped inventories after any
+subsequent reviewed restart. This document is a rollout plan; nothing was deployed.
+
+Browser requests go directly to `NEXT_PUBLIC_API_URL`; there is no Next API proxy in
+this repository. The browser abort budget and durable lease are 360 seconds. Provider
+work uses the existing bounded turn budget. Any external ingress timeout must be checked
+in the approved staging environment; its deployed configuration was not changed here.

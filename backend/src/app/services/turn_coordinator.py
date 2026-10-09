@@ -61,6 +61,7 @@ def transcript_revision(session: Session, conversation_id: UUID) -> str:
             ConversationMessage.role != ConversationMessageRole.SYSTEM,
         )
         .order_by(ConversationMessage.created_at, ConversationMessage.id)
+        .execution_options(populate_existing=True)
     )
     payload = [(str(r.id), r.content, r.payload) for r in rows]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
@@ -213,7 +214,7 @@ class TurnCoordinator:
                     feature="agent_chat",
                     organization_id=organization_id,
                     user_id=user_id,
-                    provider="internal",
+                    provider="agent_turn_admission",
                     input_tokens=0,
                     output_tokens=0,
                 )
@@ -245,11 +246,19 @@ class TurnCoordinator:
         require_action_permission(
             session, organization_id=reservation.organization_id, user_id=reservation.user_id
         )
-        row = session.get(ConversationMessage, reservation.turn_id)
+        row = session.scalar(
+            select(ConversationMessage)
+            .where(ConversationMessage.id == reservation.turn_id)
+            .execution_options(populate_existing=True)
+        )
         allowed = {"running", "capture", "completed"} if allow_complete else {"running", "capture"}
         if allow_inactive:
             allowed |= {"completed", "failed", "interrupted"}
-        if row is None or row.payload[RESERVATION]["state"] not in allowed:
+        if (
+            row is None
+            or row.payload[RESERVATION]["state"] not in allowed
+            or (not allow_complete and not allow_inactive and self.expired(row))
+        ):
             raise ConflictError(
                 "Turn reservation is no longer current.",
                 details={

@@ -3,9 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { agentTurnFixture, FIXTURE_UUID } from "../src/test/pilot-fixtures";
 
 async function fixtures(page: Page, handle?: (route: import("@playwright/test").Route) => Promise<boolean>) {
-  await page.context().addCookies([{ name: "alphatrade_session", value: "1", url: "http://127.0.0.1:3000" }]);
+  await page.context().addCookies([{ name: "alphatrade_session", value: "1", url: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000" }]);
   await page.addInitScript(() => sessionStorage.setItem("alphatrade_access_token", "frontend-fixture-only"));
-  await page.route("http://localhost:8000/**", async route => {
+  await page.route(`${process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000"}/**`, async route => {
     if (handle && await handle(route)) return;
     const source: Record<string, unknown> = {
       "/health": { status: "ok", execution_mode: "paper", real_trading_enabled: false,

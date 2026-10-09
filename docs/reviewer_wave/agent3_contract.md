@@ -110,3 +110,7 @@ budget checks before each batch; blocked budgets remain pending/failed. Both eve
 types count in the existing daily request counter. No quota/Agent modules or SDK
 dependencies were edited. Agent 1 can label the two feature rows as content storage
 and embedding/indexing work without describing pending content as searchable.
+
+
+## Integration contract update
+Source d1bf70ba remains preserved. Observation metadata is written with document ID, tenant/user, generation, version and source hash conditions; an old snapshot cannot overwrite replacement readiness. Qdrant initialization failure is retried by the same worker with bounded backoff; job identity and claim/attempt fences remain unchanged. Deterministic RAG/browser fixtures advance the real outbox and wait for readiness, without synchronous production indexing. The integration request counter supersedes the earlier accounting paragraph: `rag_ingest` counts storage admissions; `rag_indexing` records provider usage/tokens/costs without adding request admissions. Legacy events retain conservative counting. See knowledge_indexing_rollout.md for coordinated API/worker migration, backlog, activation, older writer retirement and rollback. The activation default stays false.

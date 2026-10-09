@@ -85,7 +85,7 @@ def run_chat(
     turn = current_turn()
     assert turn is not None
     phases = node_phases(
-        service.runtime, coordinator, reservation, canonical_runtime, canonical_evidence
+        service.runtime, coordinator, reservation, revision, canonical_runtime, canonical_evidence
     )
     # Revalidate the original transcript snapshot before each provider phase.
     # Strategy workflow tools update domain proposals, not this transcript.

@@ -20,9 +20,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => testParams,
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "00000000-0000-0000-0000-000000000002" }, organization: { id: "00000000-0000-0000-0000-000000000001" } }),
+}));
 const apiMocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
   listMessages: vi.fn(),
+  getConversation: vi.fn(),
   agentTurn: vi.fn(),
   confirmProposal: vi.fn(),
   rejectProposal: vi.fn(),
@@ -41,6 +45,7 @@ vi.mock("@/lib/api", () => ({
     conversations: {
       list: apiMocks.listConversations,
       listMessages: apiMocks.listMessages,
+      get: apiMocks.getConversation,
     },
     chat: { message: vi.fn() },
     agent: {
@@ -65,6 +70,8 @@ vi.mock("@/contexts/AppContext", () => ({
 
 describe("Agent workspace", () => {
   beforeEach(() => {
+    sessionStorage.clear();
+    apiMocks.getConversation.mockResolvedValue({ strategy_id: null });
     testParams = new URLSearchParams();
     apiMocks.listConversations.mockResolvedValue({
       items: [{ id: "c1", title: "BTC plan" }],
@@ -348,10 +355,30 @@ describe("Agent workspace", () => {
     expect(screen.getByLabelText("Message")).toHaveValue(
       "Review risk before trading",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Recover original request" }));
     await screen.findAllByTestId("agent-message");
     expect(apiMocks.agentTurn).toHaveBeenCalledTimes(2);
+    expect(apiMocks.agentTurn.mock.calls[1][0]).toEqual(apiMocks.agentTurn.mock.calls[0][0]);
+    expect(apiMocks.agentTurn.mock.calls[1][1].headers).toEqual(apiMocks.agentTurn.mock.calls[0][1].headers);
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+  });
+
+  it("recovers the original key and payload after a lost response and remount", async () => {
+    apiMocks.agentTurn.mockRejectedValueOnce(new Error("Response lost"));
+    const first = render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "My original intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(/Response lost/);
+    const original = apiMocks.agentTurn.mock.calls[0];
+    first.unmount();
+    render(<AgentWorkspace />);
+    await screen.findByTestId("agent-turn-recovery");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Edited text stays separate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Recover original request" }));
+    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledTimes(2));
+    expect(apiMocks.agentTurn.mock.calls[1][0]).toEqual(original[0]);
+    expect(apiMocks.agentTurn.mock.calls[1][1].headers).toEqual(original[1].headers);
+    expect(original[0].conversation_id).toBeUndefined();
   });
 
   it("allows ordinary chat and voice while execution is globally paused", async () => {
@@ -387,7 +414,7 @@ describe("Agent workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "check conversation history before resending",
+      "recover its saved result",
     );
     expect(screen.getByLabelText("Message")).toHaveValue("Review my journal");
     expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
@@ -565,9 +592,7 @@ describe("Agent workspace", () => {
       expected_content_hash: "a".repeat(64),
       statement: "I confirm",
     }, { signal: expect.any(AbortSignal) });
-    expect(await screen.findByTestId("agent-proposals")).toHaveTextContent(
-      "applied",
-    );
+    await waitFor(() => expect(screen.getByTestId("agent-proposals")).toHaveTextContent("applied"));
   });
 
   it("clears the previous conversation while loading another and preserves failed message drafts", async () => {

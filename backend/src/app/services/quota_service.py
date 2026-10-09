@@ -199,6 +199,7 @@ class QuotaService:
         quota = self.get_or_create_quota(organization_id)
         usage = self._usage_snapshot(organization_id, quota)
         warnings: list[str] = []
+        admitted = self._has_turn_admission(organization_id, user_id)
 
         if quota.daily_request_limit >= 0:
             if quota.daily_request_limit == 0:
@@ -210,7 +211,7 @@ class QuotaService:
                     user_id=user_id,
                 )
             pct = usage.daily_requests_used / quota.daily_request_limit
-            if pct >= float(quota.hard_block_threshold):
+            if not admitted and pct >= float(quota.hard_block_threshold):
                 return self._block(
                     organization_id,
                     feature,
@@ -285,7 +286,7 @@ class QuotaService:
                     request_id=request_id,
                     user_id=user_id,
                 )
-            if limit > 0:
+            if limit > 0 and not (admitted and feature == "agent_chat"):
                 pct = used / limit
                 if pct >= float(quota.hard_block_threshold):
                     return self._block(
@@ -315,6 +316,24 @@ class QuotaService:
             hard_blocked=False,
             message="within quota",
             feature=feature,
+        )
+
+    def _has_turn_admission(self, organization_id: uuid.UUID, user_id: uuid.UUID | None) -> bool:
+        """Only a durable, server-written admission reserves request capacity."""
+        from app.db.models import UsageEvent
+        from app.services.turn_context import current_turn
+
+        turn = current_turn()
+        if turn is None:
+            return False
+        admission = self._session.get(UsageEvent, uuid.uuid5(turn.turn_id, "admission"))
+        return bool(
+            admission is not None
+            and admission.organization_id == organization_id
+            and admission.user_id == user_id
+            and admission.provider == "agent_turn_admission"
+            and admission.feature == "agent_chat"
+            and admission.request_id == str(turn.turn_id)
         )
 
     def record_request_usage(
@@ -351,11 +370,11 @@ class QuotaService:
         month = month_start()
         today = day_start()
         monthly = self._usage.summarize(organization_id=organization_id, since=month)
-        daily_count = self._usage.count_events_since(organization_id=organization_id, since=today)
+        daily_count = self._usage.count_requests_since(organization_id=organization_id, since=today)
 
         feature_usage: dict[str, int] = {}
         for feature in FEATURE_LIMIT_FIELDS:
-            feature_usage[feature] = self._usage.count_events_since(
+            feature_usage[feature] = self._usage.count_requests_since(
                 organization_id=organization_id,
                 since=month,
                 feature=feature,

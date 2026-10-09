@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -339,6 +340,8 @@ class QdrantVectorStore:
         self._using_qdrant = False
         self._dimension_mismatch: tuple[str, int, int] | None = None
         self._payload_indexes_ready: set[str] = set()
+        self._reconnect_failures = 0
+        self._next_reconnect_at = 0.0
         self._connect()
 
     def _refuse_memory_substitute(self, *, reason: str, collection: str) -> None:
@@ -372,10 +375,25 @@ class QdrantVectorStore:
             client.get_collections()
             self._client = client
             self._using_qdrant = True
+            self._payload_indexes_ready.clear()
+            self._reconnect_failures = 0
         except Exception as exc:
-            logger.warning("qdrant_connect_failed", error=str(exc))
+            logger.warning("qdrant_connect_failed", error_type=type(exc).__name__)
             self._client = None
             self._using_qdrant = False
+            self._reconnect_failures += 1
+            self._next_reconnect_at = time.monotonic() + min(
+                300, 5 * 2 ** min(self._reconnect_failures - 1, 6)
+            )
+
+    def reconnect(self) -> bool:
+        """One bounded connect probe per backoff window, preserving this store."""
+        if self._using_qdrant:
+            return True
+        if time.monotonic() < self._next_reconnect_at:
+            return False
+        self._connect()
+        return self._using_qdrant
 
     def collection_vector_size(self, collection: str) -> int | None:
         """Return existing collection vector size, or None if missing/unreachable."""

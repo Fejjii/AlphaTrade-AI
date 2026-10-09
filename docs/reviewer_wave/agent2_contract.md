@@ -98,3 +98,7 @@ supervised per `.ai/RELEASE.md`.
   crowd out permitted relevance. Integrator must test combined branches with include_shared
   and indexing generations before release. No unbounded search is substituted.
 - Deferred: deployment, live paid model acceptance, consolidated release gate, Mac mirroring.
+
+
+## Integration contract update
+Source 44d68013 remains preserved. RagService publishes shared-search capability and reads parents through the detached repository port. The combined adapter rechecks SQL ownership/deletion/current readiness after search. Every SQL LangGraph phase guards reservation, lease, transcript revision and principal authority before entry, flush and commit, including internally committing tools. One UUID-derived `agent_turn_admission` event is the durable request admission. Covered provider attempts/retries/capture/embedding events retain tokens/costs without consuming further requests; arbitrary request IDs cannot bypass counting. The last admitted request may finish under a positive request limit, but zero limits and token/cost revocation still block work. Replays add no admission.

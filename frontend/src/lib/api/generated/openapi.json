@@ -15028,9 +15028,50 @@
       "IndexingObservation": {
         "additionalProperties": false,
         "properties": {
+          "attempts": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "fallback_used": {
             "title": "Fallback Used",
             "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
           },
           "observed_at": {
             "format": "date-time",
@@ -15043,19 +15084,31 @@
             "type": "integer"
           },
           "vector_backend": {
-            "title": "Vector Backend",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Backend"
           },
           "vector_index_status": {
-            "const": "upsert_acknowledged",
-            "default": "upsert_acknowledged",
+            "default": "unknown",
+            "enum": [
+              "pending",
+              "ready",
+              "failed",
+              "unknown",
+              "upsert_acknowledged"
+            ],
             "title": "Vector Index Status",
             "type": "string"
           }
         },
         "required": [
           "sql_chunk_count",
-          "vector_backend",
           "fallback_used",
           "observed_at"
         ],
@@ -15365,6 +15418,9 @@
           "vector_index_status": {
             "default": "unknown",
             "enum": [
+              "pending",
+              "ready",
+              "failed",
               "upsert_acknowledged",
               "unknown"
             ],
@@ -36733,6 +36789,11 @@
         "additionalProperties": false,
         "description": "A scoped retrieval request.",
         "properties": {
+          "include_shared": {
+            "default": false,
+            "title": "Include Shared",
+            "type": "boolean"
+          },
           "organization_id": {
             "anyOf": [
               {
@@ -47309,6 +47370,100 @@
         "title": "TrustTierCount",
         "type": "object"
       },
+      "TurnConflictDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "turn_key_conflict",
+              "conversation_turn_in_progress",
+              "turn_running",
+              "turn_capture",
+              "turn_failed",
+              "turn_interrupted",
+              "turn_stale",
+              "turn_stale_snapshot"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "turn_id",
+          "conversation_id"
+        ],
+        "title": "TurnConflictDetails",
+        "type": "object"
+      },
+      "TurnConflictError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnConflictDetails"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "TurnConflictError",
+        "type": "object"
+      },
+      "TurnConflictResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TurnConflictError"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "TurnConflictResponse",
+        "type": "object"
+      },
       "TurnOperation": {
         "enum": [
           "read",
@@ -51394,6 +51549,26 @@
     "/agent/saved/retry": {
       "post": {
         "operationId": "retry_capture_agent_saved_retry_post",
+        "parameters": [
+          {
+            "description": "Stable UUID for capture recovery.",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stable UUID for capture recovery.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -51414,6 +51589,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnConflictResponse"
+                }
+              }
+            },
+            "description": "Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O."
           },
           "422": {
             "content": {
@@ -51590,6 +51775,26 @@
     "/agent/turns": {
       "post": {
         "operationId": "agent_turn_agent_turns_post",
+        "parameters": [
+          {
+            "description": "Stable UUID for turn recovery.",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stable UUID for turn recovery.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -51610,6 +51815,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnConflictResponse"
+                }
+              }
+            },
+            "description": "Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O."
           },
           "422": {
             "content": {
@@ -55147,6 +55362,26 @@
     "/chat/message": {
       "post": {
         "operationId": "send_message_chat_message_post",
+        "parameters": [
+          {
+            "description": "Stable UUID for turn recovery.",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stable UUID for turn recovery.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -55167,6 +55402,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnConflictResponse"
+                }
+              }
+            },
+            "description": "Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O."
           },
           "422": {
             "content": {
@@ -60492,6 +60737,95 @@
           }
         ],
         "summary": "Register knowledge document metadata",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/documents/{document_id}": {
+      "delete": {
+        "operationId": "delete_document_knowledge_documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete your knowledge document",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/documents/{document_id}/retry-indexing": {
+      "post": {
+        "operationId": "retry_indexing_knowledge_documents__document_id__retry_indexing_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestDocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry failed indexing of your document",
         "tags": [
           "knowledge"
         ]

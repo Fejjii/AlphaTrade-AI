@@ -30,6 +30,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      PHASE1_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
       AT028_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
     defaults:
       run:
@@ -134,6 +135,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install schema exporter
+        working-directory: backend
+        run: uv sync --extra dev
+      - name: Generated API drift check
+        run: npm run api:check
       - name: Lint
         run: npm run lint
       - name: Typecheck
@@ -142,6 +151,13 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+      - name: Share the verified production browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-production-build
+          path: frontend/.next
+          include-hidden-files: true
+          retention-days: 1
 
   evaluation:
     runs-on: ubuntu-latest
@@ -192,9 +208,15 @@ jobs:
         run: uv sync --extra dev
       - name: Install frontend
         run: npm ci
+      - name: Restore the verified production browser build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-production-build
+          path: frontend/.next
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
       - name: E2E smoke (API + public UI)
         env:
           CI: "true"
+          PLAYWRIGHT_PRODUCTION: "true"
         run: npm run test:e2e

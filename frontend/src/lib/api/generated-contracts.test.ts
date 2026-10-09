@@ -46,4 +46,22 @@ describe("generated HTTP boundaries", () => {
     expect(validators.attentionResponse(attentionFixture)).toBe(true);
     expect(validators.dailyReviewResponse(dailyReviewFixture)).toBe(true);
   });
+  it("validates current indexing states and keeps datetime offsets strict", () => {
+    const document = { id: agentTurnFixture.conversation_id, title: "Stored note", source_type: "general_note",
+      version: 1, created_at: "2026-10-09T12:00:00Z", updated_at: "2026-10-09T12:00:00Z",
+      ingestion_metadata: { indexing: { sql_chunk_count: 1, vector_backend: null,
+        vector_index_status: "pending", fallback_used: false, observed_at: "2026-10-09T12:00:00Z",
+        job_id: agentTurnFixture.conversation_id, attempts: 0, next_attempt_at: null, error_code: null } } };
+    const page = { items: [document], total: 1, limit: 50, offset: 0 };
+    for (const status of ["pending", "ready", "failed", "unknown"]) {
+      document.ingestion_metadata.indexing.vector_index_status = status;
+      expect(validators.knowledgeDocumentsResponse(page)).toBe(true);
+    }
+    document.created_at = "2026-10-09T12:00:00";
+    expect(validators.knowledgeDocumentsResponse(page)).toBe(false);
+    document.created_at = "2026-10-09T12:00:00Z";
+    document.ingestion_metadata.indexing.vector_index_status = "invented";
+    expect(validators.knowledgeDocumentsResponse(page)).toBe(false);
+  });
+
 });

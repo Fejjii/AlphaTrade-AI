@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api/client";
+import { captureRetry } from "@/lib/api/generated/client";
 import {
   ENTRY_CATEGORIES,
   ENTRY_LABELS,
@@ -44,20 +44,14 @@ export function SavedReceipt({
     }
   }
   async function retry() {
+    if (!capture.source_message_id) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await apiFetch<{ items: SavedEntry[] }>(
-        "/agent/saved/retry",
-        {
-          method: "POST",
-          auth: true,
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            source_message_id: capture.source_message_id,
-          }),
-        },
-      );
+      const result = await captureRetry({
+        conversation_id: conversationId,
+        source_message_id: capture.source_message_id,
+      });
       setEntries(result.items);
     } catch {
       setError(

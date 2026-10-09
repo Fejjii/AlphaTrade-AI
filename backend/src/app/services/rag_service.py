@@ -66,6 +66,9 @@ class RagService:
     trading signals or order instructions.
     """
 
+    # search supports authenticated own/private plus organization-shared scope.
+    supports_shared_search = True
+
     def __init__(
         self,
         session: Session | None = None,
@@ -468,20 +471,29 @@ class RagService:
                 query.include_shared and query.organization_id is not None and chunk.user_id is None
             ):
                 continue
-            document = (
-                self._session.get(DocumentModel, chunk.document_id) if self._session else None
-            )
+            # Repository reads support detached callers. Never require an ambient
+            # Session across embedding/vector network work to verify the parent.
+            document = self._documents.get(chunk.document_id) if self._documents else None
             if (
                 document is None
                 or document.organization_id != chunk.organization_id
                 or document.user_id != chunk.user_id
+                or (
+                    hit.payload.get("document_id") is not None
+                    and hit.payload["document_id"] != str(document.id)
+                )
             ):
                 continue
             if document.indexing_generation is not None:
                 observation = (document.ingestion_metadata or {}).get("indexing") or {}
-                if observation.get("vector_index_status") != "ready" or hit.payload.get(
-                    "generation"
-                ) != str(document.indexing_generation):
+                if (
+                    observation.get("vector_index_status") != "ready"
+                    or hit.payload.get("generation") != str(document.indexing_generation)
+                    or (
+                        hit.payload.get("document_version") != document.version
+                        or hit.payload.get("source_hash") != document.source_hash
+                    )
+                ):
                     continue
             metadata = _chunk_metadata_from_row(chunk)
             if metadata.source_type != document.source_type or (

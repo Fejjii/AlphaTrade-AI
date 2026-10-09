@@ -6,6 +6,10 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { FileUp, Send } from "lucide-react";
 import { SavedReceipt } from "@/components/agent/SavedReceipt";
 import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { ApiError } from "@/lib/api/client";
+import { clearPendingTurns, pendingFor, persistPending, recoveryDetails, removePending, type PendingTurn, type TurnBody } from "./turn-recovery";
+import { StrategyDraftReview } from "./StrategyDraftReview";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { acknowledgedMessages, mergeProposals, proposalsFromMessages, reconcileMessages } from "./acknowledged-turn";
@@ -13,7 +17,7 @@ import { AgentMessageContent } from "./AgentMessageContent";
 import { AgentVoiceControls } from "@/components/agent/AgentVoiceControls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input, Select, Textarea } from "@/components/ui/input";
 import { formatDateTime } from "@/lib/format";
 import { api } from "@/lib/api";
 import type {
@@ -31,7 +35,7 @@ type LoadState<T> = {
 };
 
 const emptyLoad = { items: [], error: null, loading: true };
-export const AGENT_TURN_TIMEOUT_MS = 240_000;
+export const AGENT_TURN_TIMEOUT_MS = 360_000;
 
 function messageLabel(role: ConversationMessageRecord["role"]): string {
   if (role === "user") return "You";
@@ -46,6 +50,8 @@ function visibleReply(reply: string | null): string | null {
 }
 
 export function AgentWorkspace() {
+  const { user, organization } = useAuth();
+  const recoveryScope = user && organization ? `${organization.id}:${user.id}` : null;
   const params = useSearchParams();
   const strategyId = params.get("strategy_id");
   const [strategyContext, setStrategyContext] = useState<{ id: string; name: string } | null>(null);
@@ -93,12 +99,32 @@ export function AgentWorkspace() {
   const [messages, setMessages] = useState<ConversationMessageRecord[]>([]);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [setupType, setSetupType] = useState("htf_trend_pullback");
   const [importOpen, setImportOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [latest, setLatest] = useState<AgentTurnResult | null>(null);
   const [proposals, setProposals] = useState<AgentStructuredProposal[]>([]);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingTurn | null>(null);
+  const pendingRef = useRef<PendingTurn | null>(null);
+
+  const rememberPending = useCallback((value: PendingTurn | null) => {
+    if (recoveryScope) {
+      if (value) persistPending(recoveryScope, value);
+      else if (pendingRef.current) removePending(recoveryScope, pendingRef.current.key);
+    }
+    pendingRef.current = value;
+    setPending(value);
+  }, [recoveryScope]);
+
+  useEffect(() => {
+    contextGeneration.current++;
+    turnAbort.current?.abort();
+    const value = recoveryScope ? pendingFor(recoveryScope, conversationId) : null;
+    pendingRef.current = value;
+    setPending(value);
+  }, [recoveryScope, conversationId]);
 
   useEffect(() => {
     mounted.current = true;
@@ -127,23 +153,33 @@ export function AgentWorkspace() {
     setAttachmentPreview(null);
     setSourceDocumentId(null);
     setSendError(null);
+    setStrategyContext(null);
+    setStrategyError(null);
   }
 
   useEffect(() => {
     const controller = new AbortController();
     strategyAbort.current = controller;
-    contextGeneration.current++;
-    turnAbort.current?.abort();
     setStrategyContext(null);
     setStrategyError(null);
-    if (strategyId) void api.strategies.get(strategyId, { signal: controller.signal }).then((strategy) => {
-      if (!controller.signal.aborted && strategy.id === strategyId)
-        setStrategyContext({ id: strategy.id, name: strategy.name });
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setStrategyError(error instanceof Error ? error.message : "Strategy unavailable");
-    });
+    async function loadBinding() {
+      try {
+        // Persisted conversation binding takes precedence over the entry URL.
+        const binding = conversationId
+          ? (await api.conversations.get(conversationId)).strategy_id
+          : strategyId;
+        if (controller.signal.aborted || !binding) return;
+        const strategy = await api.strategies.get(binding, { signal: controller.signal });
+        if (!controller.signal.aborted && strategy.id === binding)
+          setStrategyContext({ id: strategy.id, name: strategy.name });
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setStrategyError(error instanceof Error ? error.message : "Strategy binding unavailable");
+      }
+    }
+    void loadBinding();
     return () => controller.abort();
-  }, [strategyId]);
+  }, [strategyId, conversationId]);
 
   const urlConversation = params.get("conversation");
   useEffect(() => {
@@ -174,6 +210,9 @@ export function AgentWorkspace() {
   }, []);
 
   useEffect(() => onSessionCleared(() => {
+    clearPendingTurns();
+    pendingRef.current = null;
+    setPending(null);
     retainedMessages.current.clear();
     strategyAbort.current?.abort();
     setStrategyContext(null);
@@ -229,10 +268,12 @@ export function AgentWorkspace() {
   async function sendMessage(
     message = draft,
     source: "text" | "voice" = "text",
+    recovery?: PendingTurn,
+    strategyDraft = false,
   ): Promise<boolean> {
     const text =
-      message.trim() || (attached ? "Please organize this document." : "");
-    if (!text || sendInFlight.current || (strategyId && !strategyContext) || (messagesLoading && messages.length === 0))
+      recovery?.body.message ?? (message.trim() || (attached ? "Please organize this document." : ""));
+    if (!text || sendInFlight.current || (!recovery && pendingRef.current) || (!recovery && !conversationId && strategyId && !strategyContext) || (messagesLoading && messages.length === 0))
       return false;
     const generation = contextGeneration.current;
     const isCurrent = () => mounted.current && generation === contextGeneration.current;
@@ -244,7 +285,7 @@ export function AgentWorkspace() {
     setSendError(null);
     try {
       let documentId = sourceDocumentId;
-      if (attached && !documentId) {
+      if (!recovery && attached && !documentId) {
         if (!attachmentPreview)
           throw new Error("Preview the attachment before sending.");
         const imported = await api.knowledge.importFile(
@@ -257,14 +298,22 @@ export function AgentWorkspace() {
         if (!isCurrent()) return false;
         setSourceDocumentId(documentId);
       }
-      const result = await api.agent.turn(
-        {
+      const body: TurnBody = recovery?.body ?? {
           message: text,
           strategy_id: strategyContext?.id,
           conversation_id: conversationId ?? undefined,
-          source_document_id: documentId ?? undefined,
-        },
-        { signal: controller.signal, headers: { "Idempotency-Key": crypto.randomUUID() } },
+          source_document_id: strategyDraft ? undefined : documentId ?? undefined,
+          ...(strategyDraft ? { action: {
+            name: strategyContext ? "strategy.refinement" : "strategy.create",
+            arguments: { text: (attachmentPreview?.extracted_text ?? text).slice(0, 4000), ...(documentId ? { evidence_document_ids: [documentId] } : {}), ...(strategyContext ? { strategy_id: strategyContext.id } : { setup_type: setupType }) },
+          } } : {}),
+      };
+      const request: PendingTurn = recovery ?? { key: crypto.randomUUID(), body,
+        conversationId: conversationId, state: "uncertain", createdAt: new Date().toISOString() };
+      rememberPending(request);
+      const result = await api.agent.turn(
+        request.body,
+        { signal: controller.signal, headers: { "Idempotency-Key": request.key } },
       );
       if (!isCurrent()) return false;
       setAttached(null);
@@ -275,12 +324,18 @@ export function AgentWorkspace() {
       if (conversationId !== result.conversation_id)
         turnConversation.current = result.conversation_id;
       activeConversation.current = result.conversation_id;
+      const address = new URL(window.location.href);
+      address.searchParams.set("conversation", result.conversation_id);
+      window.history.replaceState(null, "", address.pathname + address.search);
       setConversationId(result.conversation_id);
       const retained = reconcileMessages(retainedMessages.current.get(result.conversation_id) ?? [],
         acknowledgedMessages(text, result));
       retainedMessages.current.set(result.conversation_id, retained);
       setMessages(retained);
       setMessagesError(null);
+      if (result.capture_status === "unavailable" && result.capture_error?.includes("pending"))
+        rememberPending({ ...request, conversationId: result.conversation_id, state: "turn_capture" });
+      else rememberPending(null);
       if (source === "text")
         setDraft((current) => (current.trim() === text ? "" : current));
       // History never delays the acknowledged reply or composer. It can be stale or fail.
@@ -289,9 +344,12 @@ export function AgentWorkspace() {
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
+      const conflict = error instanceof ApiError && error.status === 409 ? recoveryDetails(error.body) : null;
+      if (conflict && pendingRef.current)
+        rememberPending({ ...pendingRef.current, state: conflict.reason, conversationId: conflict.conversation_id });
       setSendError(
         controller.signal.aborted
-          ? "Agent response timed out. The request may have completed; check conversation history before resending."
+          ? "Agent response timed out. Keep this request and recover its saved result."
           : error instanceof Error
             ? error.message
             : "Message failed",
@@ -358,7 +416,7 @@ export function AgentWorkspace() {
       data-testid="agent-workspace"
     >
       <h1 className="sr-only">Agent</h1>
-      {strategyId ? <div className="flex flex-wrap gap-3 text-sm" data-testid="agent-strategy-context">
+      {strategyContext || strategyError || (strategyId && !conversationId) ? <div className="flex flex-wrap gap-3 text-sm" data-testid="agent-strategy-context">
         {strategyContext ? <><span>Strategy: {strategyContext.name}</span>
           <Link href={`/strategy-lab/${encodeURIComponent(strategyContext.id)}`} className="underline">Back to strategy</Link></> :
           strategyError ? <p role="alert">Strategy unavailable: {strategyError}</p> : <p role="status">Loading strategy context…</p>}
@@ -547,6 +605,19 @@ export function AgentWorkspace() {
                   Agent is reviewing your message…
                 </p>
               ) : null}
+              {pending ? <div role="status" data-testid="agent-turn-recovery" className="space-y-2 rounded-control border border-warning-border p-3 text-sm">
+                <p>{pending.state === "turn_running" || pending.state === "turn_capture" || pending.state === "conversation_turn_in_progress"
+                  ? "The request is still processing. Recovery uses its original message and key."
+                  : pending.state === "uncertain" ? "The response is uncertain. Recover the original request before starting another."
+                    : `Request state: ${pending.state}. Review history before deliberately starting a new turn.`}</p>
+                <Button disabled={sending} onClick={() => void sendMessage(pending.body.message, "text", pending)}>Recover original request</Button>
+                {pending.conversationId ? <Button variant="outline" onClick={() => {
+                  changeConversation(pending.conversationId);
+                  void reconcileHistory(pending.conversationId!);
+                }}>Check saved history</Button> : null}
+                {!['uncertain', 'turn_running', 'turn_capture', 'conversation_turn_in_progress'].includes(pending.state)
+                  ? <Button variant="outline" onClick={() => rememberPending(null)}>Start a new turn</Button> : null}
+              </div> : null}
               {proposals.length > 0 ? (
                 <ul className="space-y-2" data-testid="agent-proposals">
                   {proposals.map((proposal) => (
@@ -568,6 +639,11 @@ export function AgentWorkspace() {
                           stays a draft.
                         </p>
                       ) : null}
+                      {proposal.linked_strategy_proposal_id ? <StrategyDraftReview
+                        key={proposal.linked_strategy_proposal_id}
+                        conversationId={proposal.conversation_id}
+                        proposalId={proposal.linked_strategy_proposal_id}
+                      /> : null}
                       {proposal.kind === "propose_journal_entry" ? (
                         <p className="text-caption text-text-muted">
                           Confirm writes one journal entry. Sending a message
@@ -654,8 +730,8 @@ export function AgentWorkspace() {
                   <Button
                     type="submit"
                     disabled={
-                      sending ||
-                      Boolean(strategyId && !strategyContext) ||
+                      sending || Boolean(pending) ||
+                      Boolean(!conversationId && strategyId && !strategyContext) ||
                       (messagesLoading && messages.length === 0) ||
                       (!draft.trim() && !attached) ||
                       (Boolean(attached) && !attachmentPreview)
@@ -664,6 +740,16 @@ export function AgentWorkspace() {
                     <Send className="h-4 w-4" aria-hidden="true" />
                     {sending ? "Sending…" : "Send"}
                   </Button>
+                  <Button type="button" variant="outline"
+                    disabled={sending || Boolean(pending) || (!draft.trim() && !attachmentPreview) || Boolean(strategyError) || Boolean(!conversationId && strategyId && !strategyContext)}
+                    onClick={() => void sendMessage(draft, "text", undefined, true)}>
+                    Review strategy draft
+                  </Button>
+                  {!strategyContext ? <Select aria-label="Strategy setup type" value={setupType}
+                    onChange={event => setSetupType(event.target.value)}>
+                    {['htf_trend_pullback', 'liquidity_sweep_reversal', 'countertrend_short_build', 'passive_level_order', 'profit_protection', 'green_day_guard', 'mental_capital_guard', 'nested_continuation', 'sfp', 'manual_review'].map(type =>
+                      <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
+                  </Select> : null}
                   <Button
                     type="button"
                     variant="outline"
@@ -677,7 +763,7 @@ export function AgentWorkspace() {
                 </div>
                 <AgentVoiceControls
                   disabled={
-                    sending || Boolean(strategyId && !strategyContext) || (messagesLoading && messages.length === 0)
+                    sending || Boolean(pending) || Boolean(!conversationId && strategyId && !strategyContext) || (messagesLoading && messages.length === 0)
                   }
                   conversationKey={String(voiceContextKey)}
                   reply={visibleReply(

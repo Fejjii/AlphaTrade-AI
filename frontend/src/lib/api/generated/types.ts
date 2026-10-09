@@ -16,6 +16,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send chat message */
+        post: operations["send_message_chat_message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/saved/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Capture */
+        post: operations["retry_capture_agent_saved_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List knowledge documents */
+        get: operations["list_documents_knowledge_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document chunks */
+        get: operations["list_chunks_knowledge_chunks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/ingest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest plain-text document into the knowledge base */
+        post: operations["ingest_document_knowledge_ingest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/documents/{document_id}/retry-indexing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry failed indexing of your document */
+        post: operations["retry_indexing_knowledge_documents__document_id__retry_indexing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent/proposals/{proposal_id}/confirm": {
         parameters: {
             query?: never;
@@ -120,6 +222,98 @@ export interface components {
          * @enum {string}
          */
         AgentCapability: "general_conversation" | "market_and_portfolio" | "strategy_brain" | "strategy_analytics" | "governed_learning" | "strategy_retrieval" | "strategy_authoring" | "pattern_and_rule_capture" | "trade_discussion" | "pre_trade_reasoning" | "journal_capture" | "post_trade_reflection" | "knowledge_retrieval" | "statistics_and_performance" | "screenshot_analysis" | "voice_io" | "persistent_context" | "daily_review";
+        /**
+         * AgentMessageResponse
+         * @description Structured agent response (Slice 9).
+         */
+        AgentMessageResponse: {
+            analysis?: components["schemas"]["TradingAnalysisDetail"] | null;
+            /** Approval Id */
+            approval_id?: string | null;
+            /** Approval Reason */
+            approval_reason?: string | null;
+            /**
+             * Approval Required
+             * @default false
+             */
+            approval_required?: boolean;
+            /**
+             * Approval Status
+             * @description pending | not_required | blocked
+             */
+            approval_status: string;
+            /** Citations */
+            citations?: components["schemas"]["Citation"][];
+            /** Confidence */
+            confidence?: number | null;
+            /** Conversation Id */
+            conversation_id: string;
+            /**
+             * History Injected
+             * @default 0
+             */
+            history_injected?: number;
+            /** Limitations */
+            limitations?: string[];
+            narrative?: components["schemas"]["TradingNarrativeDetail"] | null;
+            narrative_meta?: components["schemas"]["NarrativeMetadata"] | null;
+            paper_execution?: components["schemas"]["AgentPaperResult"] | null;
+            pending_proposal?: components["schemas"]["StrategyProposalRecord"] | null;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Reply */
+            reply: string;
+            /** Request Id */
+            request_id: string;
+            risk_level?: components["schemas"]["RiskSeverity"] | null;
+            risk_result?: components["schemas"]["RiskCheckResult"] | null;
+            /** Tool Outputs */
+            tool_outputs?: components["schemas"]["ToolOutput"][];
+            usage?: components["schemas"]["UsageEvent"] | null;
+        };
+        /** AgentPaperResult */
+        AgentPaperResult: {
+            /**
+             * Approval Id
+             * Format: uuid
+             */
+            approval_id: string;
+            /** Authorization Id */
+            authorization_id?: string | null;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Confirmation Message */
+            confirmation_message: string;
+            /**
+             * Eligibility Id
+             * Format: uuid
+             */
+            eligibility_id: string;
+            /** Journal Trade Id */
+            journal_trade_id?: string | null;
+            /** Paper Action Id */
+            paper_action_id?: string | null;
+            plan: components["schemas"]["TradePlanRevision"];
+            pretrade: components["schemas"]["PaperPreTradeAnalysis"];
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Receipt Id */
+            receipt_id?: string | null;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed?: boolean;
+            risk_result: components["schemas"]["RiskCheckResult"];
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "proposed" | "executed" | "blocked";
+        };
         /** AgentTurnRequest */
         AgentTurnRequest: {
             action?: components["schemas"]["ActionRequest"] | null;
@@ -339,11 +533,137 @@ export interface components {
             user_id: string;
         };
         /**
+         * AuthorizationChannel
+         * @enum {string}
+         */
+        AuthorizationChannel: "WEB" | "API" | "TELEGRAM";
+        /**
          * BacktestStatus
          * @description Placeholder backtest lifecycle.
          * @enum {string}
          */
         BacktestStatus: "not_run" | "not_started" | "scheduled" | "queued" | "running" | "complete" | "completed" | "failed";
+        /** BasisPolicy */
+        BasisPolicy: {
+            evidence_price: components["schemas"]["SemanticAmount"];
+            execution_price: components["schemas"]["SemanticAmount"];
+            /** Formula */
+            formula: string;
+            /** Freshness Seconds */
+            freshness_seconds: number;
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /** Tolerance Bps */
+            tolerance_bps: string;
+        };
+        /** CalculationInput */
+        CalculationInput: {
+            /** Conservative Remainder */
+            conservative_remainder: string;
+            /** Formula Id */
+            formula_id: string;
+            /** Formula Version */
+            formula_version: string;
+            /** Input Value */
+            input_value: string;
+            /** Name */
+            name: string;
+            /** Precision */
+            precision: number;
+            /** Result Value */
+            result_value: string;
+            /** Rounding Mode */
+            rounding_mode: string;
+            /** Unit */
+            unit: string;
+        };
+        /** CaptureRetry */
+        CaptureRetry: {
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Source Message Id
+             * Format: uuid
+             */
+            source_message_id: string;
+        };
+        /** ChatMessageRequest */
+        ChatMessageRequest: {
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Message */
+            message: string;
+            /** Strategy Id */
+            strategy_id?: string | null;
+            /** Symbol */
+            symbol?: string | null;
+            /** Timeframe */
+            timeframe?: string | null;
+        };
+        /**
+         * ChunkMetadata
+         * @description Filterable metadata attached to a chunk for scoped retrieval.
+         */
+        ChunkMetadata: {
+            /** Page Number */
+            page_number?: number | null;
+            /** Risk Tag */
+            risk_tag?: string | null;
+            /** Section Title */
+            section_title?: string | null;
+            /** Source Filename */
+            source_filename?: string | null;
+            source_type: components["schemas"]["DocumentSourceType"];
+            /** Strategy Tag */
+            strategy_tag?: string | null;
+            /** Symbol Tag */
+            symbol_tag?: string | null;
+            /** Timeframe Tag */
+            timeframe_tag?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * Citation
+         * @description A citation returned alongside RAG-grounded answers.
+         */
+        Citation: {
+            /**
+             * Chunk Id
+             * Format: uuid
+             */
+            chunk_id: string;
+            /** Chunk Ordinal */
+            chunk_ordinal?: number | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Page Number */
+            page_number?: number | null;
+            /** Score */
+            score?: number | null;
+            /** Section Title */
+            section_title?: string | null;
+            /** Snippet */
+            snippet?: string | null;
+            /** Source Filename */
+            source_filename?: string | null;
+            source_type: components["schemas"]["DocumentSourceType"];
+            /** Title */
+            title?: string | null;
+        };
         /** ConnectionRef */
         ConnectionRef: {
             artifact_kind: components["schemas"]["ArtifactKind"];
@@ -355,6 +675,17 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * ContractType
+         * @enum {string}
+         */
+        ContractType: "LINEAR" | "INVERSE";
+        /**
+         * CostSource
+         * @description How usage cost was determined — only ``provider_reported`` is billing-grade.
+         * @enum {string}
+         */
+        CostSource: "provider_reported" | "tokenizer_estimated" | "static_estimated" | "unavailable";
         /** DailyPnl */
         DailyPnl: {
             /** Breakeven */
@@ -443,6 +774,100 @@ export interface components {
             /** User Observations */
             user_observations: components["schemas"]["ReviewItem"][];
             window: components["schemas"]["ReviewWindow"];
+        };
+        /** DocumentIngestionMetadata */
+        DocumentIngestionMetadata: {
+            file?: components["schemas"]["FileProvenance"] | null;
+            indexing?: components["schemas"]["IndexingObservation"] | null;
+        };
+        /**
+         * DocumentSourceType
+         * @description RAG corpus source types (reconciled with Architecture §7).
+         * @enum {string}
+         */
+        DocumentSourceType: "trading_playbook" | "product_requirements" | "system_architecture" | "risk_policy" | "strategy_template" | "trade_journal" | "review_note" | "mistakes_database" | "general_note";
+        /**
+         * EntryOrderType
+         * @enum {string}
+         */
+        EntryOrderType: "MARKET" | "LIMIT";
+        /**
+         * EntryRuleBlock
+         * @description Structured entry trigger.
+         */
+        "EntryRuleBlock-Output": {
+            /** Conditions */
+            conditions?: components["schemas"]["RuleCondition-Output"][];
+            /** @default long */
+            direction?: components["schemas"]["TradeDirection"];
+            /** Notes */
+            notes?: string | null;
+            trigger_type: components["schemas"]["EntryTriggerType"];
+        };
+        /**
+         * EntrySide
+         * @enum {string}
+         */
+        EntrySide: "BUY" | "SELL";
+        /**
+         * EntryTriggerType
+         * @description Machine-testable entry trigger types (Slice 36).
+         * @enum {string}
+         */
+        EntryTriggerType: "ema_pullback" | "breakout" | "liquidity_sweep" | "reclaim" | "failed_breakout" | "rsi_threshold" | "volume_confirmation" | "trend_alignment";
+        /**
+         * ExitRuleBlock
+         * @description Structured exit rule.
+         */
+        "ExitRuleBlock-Output": {
+            /** Conditions */
+            conditions?: components["schemas"]["RuleCondition-Output"][];
+            /** Notes */
+            notes?: string | null;
+            /** R Multiple */
+            r_multiple?: string | null;
+            rule_type: components["schemas"]["ExitRuleType"];
+            /** Size Fraction */
+            size_fraction?: number | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * ExitRuleType
+         * @description Machine-testable exit rule blocks.
+         * @enum {string}
+         */
+        ExitRuleType: "fixed_stop" | "atr_stop" | "swing_stop" | "tp_multiple" | "tp_price_levels" | "partial_tp" | "runner_structure_break";
+        /** ExitTarget */
+        ExitTarget: {
+            derivation: components["schemas"]["VersionedDerivation"];
+            /** Order */
+            order: number;
+            price: components["schemas"]["SemanticAmount"];
+            /** Quantity Fraction */
+            quantity_fraction: string;
+        };
+        /** FileProvenance */
+        FileProvenance: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Confirmed At
+             * Format: date-time
+             */
+            confirmed_at: string;
+            /** Extracted Characters */
+            extracted_characters: number;
+            /** Extracted Text Hash */
+            extracted_text_hash: string;
+            /** Filename */
+            filename: string;
+            /** Media Type */
+            media_type: string;
+            /** Parser Version */
+            parser_version: string;
+            /** Raw Content Hash */
+            raw_content_hash: string;
         };
         /** GovernedLearningStatus */
         GovernedLearningStatus: {
@@ -557,6 +982,132 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** IndexingObservation */
+        IndexingObservation: {
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts?: number;
+            /** Error Code */
+            error_code?: string | null;
+            /** Fallback Used */
+            fallback_used: boolean;
+            /** Job Id */
+            job_id?: string | null;
+            /** Next Attempt At */
+            next_attempt_at?: string | null;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Sql Chunk Count */
+            sql_chunk_count: number;
+            /** Vector Backend */
+            vector_backend?: string | null;
+            /**
+             * Vector Index Status
+             * @default unknown
+             * @enum {string}
+             */
+            vector_index_status?: "pending" | "ready" | "failed" | "unknown" | "upsert_acknowledged";
+        };
+        /**
+         * IngestDocumentRequest
+         * @description Ingest plain text into the knowledge base.
+         */
+        IngestDocumentRequest: {
+            /** Organization Id */
+            organization_id?: string | null;
+            /** Risk Tag */
+            risk_tag?: string | null;
+            source_type: components["schemas"]["DocumentSourceType"];
+            /** Source Uri */
+            source_uri?: string | null;
+            /** Strategy Tag */
+            strategy_tag?: string | null;
+            /** Symbol Tag */
+            symbol_tag?: string | null;
+            /** Text */
+            text: string;
+            /** Timeframe Tag */
+            timeframe_tag?: string | null;
+            /** Title */
+            title: string;
+            /** User Id */
+            user_id?: string | null;
+            /**
+             * Version
+             * @default 1
+             */
+            version?: number;
+        };
+        /**
+         * IngestDocumentResponse
+         * @description Summary returned after document ingestion.
+         */
+        IngestDocumentResponse: {
+            /** Chunk Count */
+            chunk_count: number;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Duplicate
+             * @default false
+             */
+            duplicate?: boolean;
+            /**
+             * Fallback Used
+             * @default false
+             */
+            fallback_used?: boolean;
+            /** Source Hash */
+            source_hash: string;
+            /**
+             * Sql Chunks Stored
+             * @default true
+             */
+            sql_chunks_stored?: boolean;
+            /**
+             * Vector Backend
+             * @description Authoritative vector backend used for upsert (e.g. qdrant, in-memory-vector).
+             */
+            vector_backend?: string | null;
+            /**
+             * Vector Index Status
+             * @default unknown
+             * @enum {string}
+             */
+            vector_index_status?: "pending" | "ready" | "failed" | "upsert_acknowledged" | "unknown";
+            /** Version */
+            version: number;
+        };
+        /** InstrumentRules */
+        InstrumentRules: {
+            /** Base Currency */
+            base_currency: string;
+            /** Contract Multiplier */
+            contract_multiplier: string;
+            contract_type: components["schemas"]["ContractType"];
+            /** Lot Size */
+            lot_size: string;
+            /** Minimum Notional */
+            minimum_notional: string;
+            /** Minimum Quantity */
+            minimum_quantity: string;
+            /** Quote Currency */
+            quote_currency: string;
+            /** Rules Version */
+            rules_version: string;
+            /** Settlement Currency */
+            settlement_currency: string;
+            /** Tick Size */
+            tick_size: string;
+        };
         /**
          * JournalStatsWarning
          * @description One confidence/data-coverage warning.
@@ -625,6 +1176,11 @@ export interface components {
              */
             kind: "conversation_message" | "journal_trade" | "journal_observation" | "document" | "backtest_run" | "paper_validation_run";
         };
+        /**
+         * MarginMode
+         * @enum {string}
+         */
+        MarginMode: "CROSS" | "ISOLATED";
         /** MarketQuoteView */
         MarketQuoteView: {
             /** Fallback Used */
@@ -649,10 +1205,96 @@ export interface components {
          */
         MarketRegime: "trending_up" | "trending_down" | "ranging" | "volatile" | "quiet" | "unknown";
         /**
+         * NarrativeMetadata
+         * @description How the narrative layer was produced (for UI transparency).
+         */
+        NarrativeMetadata: {
+            /**
+             * Fallback Used
+             * @default false
+             */
+            fallback_used?: boolean;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Source
+             * @description llm | deterministic_fallback
+             */
+            source: string;
+            /**
+             * Validation Passed
+             * @default true
+             */
+            validation_passed?: boolean;
+        };
+        /**
          * NestedMaturityStage
          * @enum {string}
          */
         NestedMaturityStage: "N1" | "N2" | "N3" | "N4_PLUS";
+        /**
+         * NoTradeRuleBlock
+         * @description Structured no-trade filter.
+         */
+        "NoTradeRuleBlock-Output": {
+            /** Conditions */
+            conditions?: components["schemas"]["RuleCondition-Output"][];
+            /** Notes */
+            notes?: string | null;
+            rule_type: components["schemas"]["NoTradeRuleType"];
+            /** Threshold */
+            threshold?: string | null;
+        };
+        /**
+         * NoTradeRuleType
+         * @description Machine-testable no-trade filters.
+         * @enum {string}
+         */
+        NoTradeRuleType: "low_volume" | "high_funding" | "weekend_chop" | "daily_loss_lock" | "green_day_protection" | "htf_conflict";
+        /** NonNegativeSemanticAmount */
+        NonNegativeSemanticAmount: {
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: string;
+        };
+        /** PaginatedRagChunks */
+        PaginatedRagChunks: {
+            /** Items */
+            items: components["schemas"]["RagChunk"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedRagDocuments */
+        PaginatedRagDocuments: {
+            /** Items */
+            items: components["schemas"]["RagDocument"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** PaperPreTradeAnalysis */
+        PaperPreTradeAnalysis: {
+            /** Entry */
+            entry: string;
+            /** Risk Reward Ratios */
+            risk_reward_ratios: string[];
+            /** Stop */
+            stop: string;
+            /** Targets */
+            targets: string[];
+        };
         /** PaperSafetyContract */
         PaperSafetyContract: {
             /**
@@ -688,6 +1330,27 @@ export interface components {
          * @enum {string}
          */
         PaperValidationStatus: "not_started" | "in_progress" | "passed" | "failed";
+        /**
+         * PlanPresentationMetadata
+         * @description Non-semantic display data accepted at the plan boundary.
+         */
+        PlanPresentationMetadata: {
+            channel?: components["schemas"]["AuthorizationChannel"] | null;
+            /** Decision Reference */
+            decision_reference?: string | null;
+            /** Display Title */
+            display_title?: string | null;
+            /** Evidence Reference */
+            evidence_reference?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Setup Id */
+            setup_id?: string | null;
+            /** Strategy Id */
+            strategy_id?: string | null;
+            /** Strategy Version Id */
+            strategy_version_id?: string | null;
+        };
         /** ProposalDecisionRequest */
         ProposalDecisionRequest: {
             /**
@@ -710,6 +1373,94 @@ export interface components {
          * @enum {string}
          */
         ProvenanceSource: "user_supplied" | "agent_inferred" | "watcher_observed" | "trade_outcome" | "system_generated";
+        /**
+         * QuantityUnit
+         * @enum {string}
+         */
+        QuantityUnit: "CONTRACTS" | "BASE" | "QUOTE";
+        /**
+         * RagChunk
+         * @description A retrievable chunk of a document.
+         */
+        RagChunk: {
+            /** Chunk Ordinal */
+            chunk_ordinal: number;
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Embedding Ref
+             * @description Qdrant point id, if embedded.
+             */
+            embedding_ref?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            metadata: components["schemas"]["ChunkMetadata"];
+            /** Organization Id */
+            organization_id?: string | null;
+            /** Page Number */
+            page_number?: number | null;
+            /** Section Title */
+            section_title?: string | null;
+            /** Text Hash */
+            text_hash?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Token Count */
+            token_count?: number | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /**
+         * RagDocument
+         * @description A source document in the knowledge base.
+         */
+        RagDocument: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            ingestion_metadata?: components["schemas"]["DocumentIngestionMetadata"] | null;
+            /** Organization Id */
+            organization_id?: string | null;
+            /** Source Hash */
+            source_hash?: string | null;
+            source_type: components["schemas"]["DocumentSourceType"];
+            /** Source Uri */
+            source_uri?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** User Id */
+            user_id?: string | null;
+            /**
+             * Version
+             * @default 1
+             */
+            version?: number;
+        };
         /**
          * ReviewClass
          * @enum {string}
@@ -776,11 +1527,117 @@ export interface components {
             timezone: string;
         };
         /**
+         * RiskAction
+         * @description Deterministic risk-engine verdict. Default-deny favors ``BLOCK``.
+         * @enum {string}
+         */
+        RiskAction: "allow" | "warn" | "block";
+        /** RiskAndExits */
+        RiskAndExits: {
+            fee_allowance: components["schemas"]["NonNegativeSemanticAmount"];
+            funding_allowance: components["schemas"]["NonNegativeSemanticAmount"];
+            /** Leverage */
+            leverage: string;
+            /** Margin Assumption Id */
+            margin_assumption_id: string;
+            /** Margin Assumption Version */
+            margin_assumption_version: string;
+            maximum_loss: components["schemas"]["SemanticAmount"];
+            risk_budget: components["schemas"]["SemanticAmount"];
+            runner: components["schemas"]["RunnerRules"];
+            slippage_allowance: components["schemas"]["NonNegativeSemanticAmount"];
+            stop: components["schemas"]["SemanticAmount"];
+            /** Targets */
+            targets: components["schemas"]["ExitTarget"][];
+        };
+        /**
+         * RiskCheckResult
+         * @description Aggregated, deterministic verdict.
+         *
+         *     The overall ``action`` is the most restrictive of all triggered rules; the
+         *     engine defaults to ``BLOCK`` when inputs are insufficient to decide safely.
+         */
+        RiskCheckResult: {
+            action: components["schemas"]["RiskAction"];
+            /** Approval Required */
+            approval_required: boolean;
+            /** Explanation */
+            explanation: string;
+            severity: components["schemas"]["RiskSeverity"];
+            /**
+             * Suggested Modification
+             * @description Optional safer parameters (e.g. reduced size/leverage).
+             */
+            suggested_modification?: {
+                [key: string]: string;
+            } | null;
+            /** Triggered Rules */
+            triggered_rules?: components["schemas"]["TriggeredRule"][];
+        };
+        /**
+         * RiskRuleId
+         * @description Stable identifiers for risk rules (reconciled with PRD/Architecture).
+         * @enum {string}
+         */
+        RiskRuleId: "max_leverage" | "max_position_size" | "max_daily_loss" | "max_weekly_loss" | "no_stop_loss" | "invalid_stop_loss" | "unsupported_coin" | "countertrend_reduced_size" | "volatile_altcoin_reduced_size" | "extreme_funding" | "low_volume" | "weekend_condition" | "sleep_test" | "overtrading" | "strong_green_day" | "cooldown_after_loss" | "kill_switch";
+        /**
+         * RiskSeverity
+         * @enum {string}
+         */
+        RiskSeverity: "info" | "low" | "medium" | "high" | "critical";
+        /**
+         * RuleCondition
+         * @description Single condition within a rule block.
+         */
+        "RuleCondition-Output": {
+            /**
+             * Confirmation Required
+             * @default false
+             */
+            confirmation_required?: boolean;
+            /** Indicator */
+            indicator?: string | null;
+            /** Lookback Candles */
+            lookback_candles?: number | null;
+            operator?: components["schemas"]["RuleConditionOperator"] | null;
+            timeframe?: components["schemas"]["Timeframe"] | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * RuleConditionOperator
+         * @description Comparison operator for structured rule conditions.
+         * @enum {string}
+         */
+        RuleConditionOperator: "gt" | "gte" | "lt" | "lte" | "eq" | "crosses_above" | "crosses_below";
+        /** RunnerRules */
+        RunnerRules: {
+            /** Activation Target Order */
+            activation_target_order?: number | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Expression */
+            expression: string;
+            /** Remaining Quantity Fraction */
+            remaining_quantity_fraction: string;
+            /** Rule Id */
+            rule_id: string;
+            /** Rule Version */
+            rule_version: string;
+        };
+        /**
          * SampleConfidence
          * @description Coarse confidence label derived from closed-trade sample size.
          * @enum {string}
          */
         SampleConfidence: "insufficient" | "low" | "moderate" | "high";
+        /** SavedEntriesPage */
+        SavedEntriesPage: {
+            /** Items */
+            items: components["schemas"]["SavedEntry"][];
+            /** Total */
+            total: number;
+        };
         /** SavedEntry */
         SavedEntry: {
             /**
@@ -869,6 +1726,22 @@ export interface components {
              * @constant
              */
             status?: "contract_only";
+        };
+        /** SemanticAmount */
+        SemanticAmount: {
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: string;
+        };
+        /** SlippagePolicy */
+        SlippagePolicy: {
+            /** Maximum Bps */
+            maximum_bps: string;
+            /** Policy Id */
+            policy_id: string;
+            /** Policy Version */
+            policy_version: string;
         };
         /** StrategyAnalyticsBucket */
         StrategyAnalyticsBucket: {
@@ -1271,6 +2144,94 @@ export interface components {
             /** Minimum Replay Trades */
             minimum_replay_trades?: number | null;
         };
+        /** StrategyProposalRecord */
+        StrategyProposalRecord: {
+            /** Challenge Notes */
+            challenge_notes?: string[];
+            /** Confirmation Request Id */
+            confirmation_request_id?: string | null;
+            /** Confirmed At */
+            confirmed_at?: string | null;
+            /** Content Hash */
+            content_hash?: string | null;
+            /** Context Refs */
+            context_refs?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Preview
+             * @default true
+             */
+            is_preview?: boolean;
+            /** Limitations */
+            limitations?: string[];
+            /**
+             * Mutates Strategy Authority
+             * @default false
+             */
+            mutates_strategy_authority?: boolean;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Parent Version Id */
+            parent_version_id?: string | null;
+            /** Proposed Card */
+            proposed_card?: {
+                [key: string]: unknown;
+            } | null;
+            /** Proposed Pattern Spec */
+            proposed_pattern_spec?: {
+                [key: string]: unknown;
+            } | null;
+            proposed_structured_rules?: components["schemas"]["StructuredRules-Output"] | null;
+            /** Rejected At */
+            rejected_at?: string | null;
+            /** Resulting Content Hash */
+            resulting_content_hash?: string | null;
+            /** Resulting Strategy Id */
+            resulting_strategy_id?: string | null;
+            /** Resulting Version Id */
+            resulting_version_id?: string | null;
+            /** Source Message Id */
+            source_message_id?: string | null;
+            status: components["schemas"]["StrategyProposalStatus"];
+            /** Target Strategy Id */
+            target_strategy_id?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            validation: components["schemas"]["StructuredRulesValidation"];
+        };
+        /**
+         * StrategyProposalStatus
+         * @description Structured strategy proposal preview. Drafts never mutate versions.
+         * @enum {string}
+         */
+        StrategyProposalStatus: "draft" | "confirmed" | "rejected" | "superseded";
         /**
          * StrategyValidationStatus
          * @description Validation lifecycle for a user strategy card.
@@ -1344,16 +2305,419 @@ export interface components {
             user_id: string;
         };
         /**
+         * StructuredRules
+         * @description Machine-testable rule bundle attached to a strategy version.
+         */
+        "StructuredRules-Output": {
+            /** Entry Rules */
+            entry_rules?: components["schemas"]["EntryRuleBlock-Output"][];
+            /** Exit Rules */
+            exit_rules?: components["schemas"]["ExitRuleBlock-Output"][];
+            /** No Trade Rules */
+            no_trade_rules?: components["schemas"]["NoTradeRuleBlock-Output"][];
+            primary_timeframe?: components["schemas"]["Timeframe"] | null;
+        };
+        /**
+         * StructuredRulesValidation
+         * @description Validation result for structured rules.
+         */
+        StructuredRulesValidation: {
+            /** Errors */
+            errors?: string[];
+            /** Valid */
+            valid: boolean;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * TimeInForce
+         * @enum {string}
+         */
+        TimeInForce: "GTC" | "IOC" | "FOK" | "POST_ONLY";
+        /**
          * Timeframe
          * @description Supported candle timeframes.
          * @enum {string}
          */
         Timeframe: "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "6h" | "12h" | "1d" | "3d" | "1w";
         /**
+         * ToolOutput
+         * @description Envelope for tool results, including success/error status.
+         */
+        ToolOutput: {
+            /** Error */
+            error?: string | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Success */
+            success: boolean;
+            /** Tool Name */
+            tool_name: string;
+            /**
+             * Used Fallback
+             * @default false
+             */
+            used_fallback?: boolean;
+        };
+        /**
+         * TradeDirection
+         * @enum {string}
+         */
+        TradeDirection: "long" | "short";
+        /**
+         * TradePlanRevision
+         * @description Persisted immutable executable revision.
+         */
+        TradePlanRevision: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            basis_policy: components["schemas"]["BasisPolicy"];
+            /** Calculation Inputs */
+            calculation_inputs: components["schemas"]["CalculationInput"][];
+            /** Candidate Id */
+            candidate_id: string | null;
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Correlation Id
+             * Format: uuid
+             */
+            correlation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            entry_zone: components["schemas"]["app__schemas__trade_plan__EntryZone"];
+            entry_zone_derivation: components["schemas"]["VersionedDerivation"];
+            /**
+             * Evidence Fallback Used
+             * @constant
+             */
+            evidence_fallback_used: false;
+            /**
+             * Evidence Final
+             * @constant
+             */
+            evidence_final: true;
+            /** Evidence Freshness Seconds */
+            evidence_freshness_seconds: number;
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Evidence Instrument */
+            evidence_instrument: string;
+            /**
+             * Evidence Is Live
+             * @constant
+             */
+            evidence_is_live: true;
+            evidence_market: components["schemas"]["app__schemas__trade_plan__MarketType"];
+            /**
+             * Evidence Observed At
+             * Format: date-time
+             */
+            evidence_observed_at: string;
+            /**
+             * Evidence Sequence Complete
+             * @constant
+             */
+            evidence_sequence_complete: true;
+            /** Evidence Venue */
+            evidence_venue: string;
+            /** Exchange Account Id */
+            exchange_account_id: string | null;
+            /** Execution Instrument */
+            execution_instrument: string;
+            execution_market: components["schemas"]["app__schemas__trade_plan__MarketType"];
+            /** Execution Policy Version */
+            execution_policy_version: string;
+            /** Execution Venue */
+            execution_venue: string;
+            /**
+             * Expected Account Mode
+             * @default NET
+             * @constant
+             */
+            expected_account_mode?: "NET";
+            /** Instrument Mapping Version */
+            instrument_mapping_version: string;
+            instrument_rules: components["schemas"]["InstrumentRules"];
+            limit_price: components["schemas"]["SemanticAmount"] | null;
+            margin_mode: components["schemas"]["MarginMode"];
+            /** Market Marker */
+            market_marker: boolean;
+            /**
+             * Operation
+             * @default SUBMIT_ENTRY
+             * @constant
+             */
+            operation?: "SUBMIT_ENTRY";
+            order_type: components["schemas"]["EntryOrderType"];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Permission Attestation Id
+             * Format: uuid
+             */
+            permission_attestation_id: string;
+            /** Permission Attestation Version */
+            permission_attestation_version: string;
+            /**
+             * Plan Id
+             * Format: uuid
+             */
+            plan_id: string;
+            /**
+             * Position Mode
+             * @default NET
+             * @constant
+             */
+            position_mode?: "NET";
+            presentation_metadata?: components["schemas"]["PlanPresentationMetadata"];
+            quantity: components["schemas"]["SemanticAmount"];
+            quantity_unit: components["schemas"]["QuantityUnit"];
+            /**
+             * Reduce Only
+             * @default false
+             * @constant
+             */
+            reduce_only?: false;
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            risk_and_exits: components["schemas"]["RiskAndExits"];
+            /**
+             * Schema Version
+             * @default CanonicalTradePlanContentV1
+             * @enum {string}
+             */
+            schema_version?: "CanonicalTradePlanContentV1" | "ManualDemoTradePlanV1";
+            /** Setup Definition Id */
+            setup_definition_id: string | null;
+            side: components["schemas"]["EntrySide"];
+            slippage_policy: components["schemas"]["SlippagePolicy"];
+            /** Strategy Version Id */
+            strategy_version_id: string | null;
+            time_in_force: components["schemas"]["TimeInForce"];
+            /** Timeframe */
+            timeframe: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+        };
+        /**
+         * TradingAnalysisDetail
+         * @description Structured trading response — built deterministically, never raw LLM-only.
+         */
+        TradingAnalysisDetail: {
+            /**
+             * Approval Status
+             * @description pending | not_required | blocked
+             */
+            approval_status: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Evidence */
+            evidence?: string[];
+            /** Invalidation */
+            invalidation?: string | null;
+            /**
+             * Market Data Quality
+             * @description mock | stale | missing | live — transparency for market data source
+             * @default mock
+             */
+            market_data_quality?: string;
+            /** Next Decision Point */
+            next_decision_point?: string | null;
+            /** Paper Mode Disclaimer */
+            paper_mode_disclaimer?: string | null;
+            risk_level?: components["schemas"]["RiskSeverity"] | null;
+            /** Setup Type */
+            setup_type?: string | null;
+            /** Stop Loss Or No Trade Reason */
+            stop_loss_or_no_trade_reason: string;
+            /** Summary */
+            summary: string;
+        };
+        /**
+         * TradingNarrativeDetail
+         * @description Schema-validated LLM narrative polish. Extra fields forbidden.
+         */
+        TradingNarrativeDetail: {
+            /** Caution Notes */
+            caution_notes?: string[];
+            /** Citations Used */
+            citations_used?: string[];
+            /** Evidence Explanation */
+            evidence_explanation: string;
+            /** Invalidation Explanation */
+            invalidation_explanation: string;
+            /** Limitations */
+            limitations?: string[];
+            /** Next Decision Point */
+            next_decision_point: string;
+            /** Paper Mode Disclaimer */
+            paper_mode_disclaimer: string;
+            /** Risk Explanation */
+            risk_explanation: string;
+            /** Setup Interpretation */
+            setup_interpretation: string;
+            /** Summary */
+            summary: string;
+        };
+        /**
+         * TriggeredRule
+         * @description A single rule outcome contributing to the overall verdict.
+         */
+        TriggeredRule: {
+            action: components["schemas"]["RiskAction"];
+            /** Message */
+            message: string;
+            rule_id: components["schemas"]["RiskRuleId"];
+            severity: components["schemas"]["RiskSeverity"];
+        };
+        /** TurnConflictDetails */
+        TurnConflictDetails: {
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "turn_key_conflict" | "conversation_turn_in_progress" | "turn_running" | "turn_capture" | "turn_failed" | "turn_interrupted" | "turn_stale" | "turn_stale_snapshot";
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
+        };
+        /** TurnConflictError */
+        TurnConflictError: {
+            /** Code */
+            code: string;
+            /** Details */
+            details?: components["schemas"]["TurnConflictDetails"] | {
+                [key: string]: unknown;
+            } | null;
+            /** Message */
+            message: string;
+            /** Request Id */
+            request_id?: string | null;
+        };
+        /** TurnConflictResponse */
+        TurnConflictResponse: {
+            error: components["schemas"]["TurnConflictError"];
+        };
+        /**
          * TurnOperation
          * @enum {string}
          */
         TurnOperation: "read" | "propose" | "refuse";
+        /**
+         * UsageEvent
+         * @description A single metered LLM/tool interaction.
+         */
+        UsageEvent: {
+            /**
+             * Cache Hit
+             * @default false
+             */
+            cache_hit?: boolean;
+            /**
+             * Cost Is Placeholder
+             * @default true
+             */
+            cost_is_placeholder?: boolean;
+            /** @default unavailable */
+            cost_source?: components["schemas"]["CostSource"];
+            /**
+             * Estimated Cost
+             * @default 0
+             */
+            estimated_cost?: string;
+            /**
+             * Fallback Used
+             * @default false
+             */
+            fallback_used?: boolean;
+            /** Feature */
+            feature: string;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens?: number;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Model */
+            model?: string | null;
+            /** Organization Id */
+            organization_id?: string | null;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens?: number;
+            /** Provider */
+            provider?: string | null;
+            /** Provider Reported Cost */
+            provider_reported_cost?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+            /** @default success */
+            status?: components["schemas"]["UsageStatus"];
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls?: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens?: number;
+            /** Usage Event Id */
+            usage_event_id?: string | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /**
+         * UsageStatus
+         * @enum {string}
+         */
+        UsageStatus: "success" | "failure" | "partial";
         /** UserStrategy */
         UserStrategy: {
             backtest_status?: components["schemas"]["BacktestStatus"] | null;
@@ -1427,6 +2791,13 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VersionedDerivation */
+        VersionedDerivation: {
+            /** Formula Id */
+            formula_id: string;
+            /** Formula Version */
+            formula_version: string;
+        };
         /** VoiceIoContract */
         VoiceIoContract: {
             /**
@@ -1478,6 +2849,20 @@ export interface components {
          * @enum {string}
          */
         app__schemas__common__MarketType: "crypto_perp" | "crypto_spot" | "forex" | "equities" | "commodities";
+        /** EntryZone */
+        app__schemas__trade_plan__EntryZone: {
+            /** Lower */
+            lower: string;
+            /** Price Unit */
+            price_unit: string;
+            /** Upper */
+            upper: string;
+        };
+        /**
+         * MarketType
+         * @enum {string}
+         */
+        app__schemas__trade_plan__MarketType: "PERPETUAL" | "SPOT";
     };
     responses: never;
     parameters: never;
@@ -1490,7 +2875,10 @@ export interface operations {
     agent_turn_agent_turns_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable UUID for turn recovery. */
+                "idempotency-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1507,6 +2895,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentTurnResult"];
+                };
+            };
+            /** @description Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_chat_message_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable UUID for turn recovery. */
+                "idempotency-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentMessageResponse"];
+                };
+            };
+            /** @description Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_capture_agent_saved_retry_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable UUID for capture recovery. */
+                "idempotency-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureRetry"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedEntriesPage"];
+                };
+            };
+            /** @description Durable turn recovery or domain conflict. Same-key recovery never repeats model I/O. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_knowledge_documents_get: {
+        parameters: {
+            query?: {
+                source_type?: components["schemas"]["DocumentSourceType"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedRagDocuments"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chunks_knowledge_chunks_get: {
+        parameters: {
+            query?: {
+                document_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedRagChunks"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_document_knowledge_ingest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_indexing_knowledge_documents__document_id__retry_indexing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestDocumentResponse"];
                 };
             };
             /** @description Validation Error */

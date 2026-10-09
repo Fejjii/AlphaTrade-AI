@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import Engine, and_, func, or_, select, text
+from sqlalchemy import Engine, and_, func, or_, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -48,7 +48,20 @@ def indexing_observation(
     backend: str | None = None,
     fallback: bool = False,
 ) -> None:
-    metadata = DocumentIngestionMetadata.model_validate(document.ingestion_metadata or {})
+    document.ingestion_metadata = observation_metadata(
+        document.ingestion_metadata, job, count, backend=backend, fallback=fallback
+    )
+
+
+def observation_metadata(
+    stored: dict[str, Any] | None,
+    job: KnowledgeIndexingJob,
+    count: int,
+    *,
+    backend: str | None = None,
+    fallback: bool = False,
+) -> dict[str, Any]:
+    metadata = DocumentIngestionMetadata.model_validate(stored or {})
     metadata.indexing = IndexingObservation(
         sql_chunk_count=count,
         vector_backend=backend,
@@ -60,7 +73,7 @@ def indexing_observation(
         next_attempt_at=job.available_at if job.status == "pending" else None,
         error_code=job.error_code,
     )
-    document.ingestion_metadata = metadata.model_dump(mode="json")
+    return metadata.model_dump(mode="json")
 
 
 def enqueue_indexing(
@@ -224,7 +237,27 @@ class IndexingRunner:
                 )
                 or 0
             )
-            indexing_observation(document, job, count, backend=backend, fallback=fallback)
+            observed = observation_metadata(
+                document.ingestion_metadata, job, count, backend=backend, fallback=fallback
+            )
+            # Job claims/acknowledgments lock the job first. The conditional SQL
+            # write takes the parent lock only at update and checks its current
+            # generation atomically, including replacement committed after read.
+            # Do not dirty the ORM snapshot: a later flush could undo this fence.
+            session.execute(
+                update(Document)
+                .where(
+                    Document.id == job.document_id,
+                    Document.indexing_generation == job.id,
+                    Document.organization_id == job.organization_id,
+                    Document.user_id == job.user_id,
+                    Document.version == job.document_version,
+                    Document.source_hash == job.source_hash,
+                )
+                .values(ingestion_metadata=observed)
+                .execution_options(synchronize_session=False)
+            )
+            session.expire(document, ["ingestion_metadata"])
 
     def _finish(
         self,

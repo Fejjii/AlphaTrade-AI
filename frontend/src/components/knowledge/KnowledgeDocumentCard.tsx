@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { api } from "@/lib/api";
 
 import {
   formatKnowledgeTimestamp,
@@ -31,6 +32,9 @@ export function KnowledgeDocumentCard({
   onToggleExpand,
   detailSlot,
 }: KnowledgeDocumentCardProps) {
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const status = document.ingestion_metadata?.indexing?.vector_index_status ?? "unknown";
   const category = knowledgeCategory(document);
   const relationships = resolveKnowledgeRelationships(document);
   const createdLabel = formatKnowledgeTimestamp(document.created_at);
@@ -60,6 +64,16 @@ export function KnowledgeDocumentCard({
             </Badge>
           </div>
         </div>
+        <p role="status" data-testid="knowledge-indexing-status">
+          Stored · Search {status === "upsert_acknowledged" ? "previously acknowledged" : status === "unknown" ? "unverified" : status}
+        </p>
+        {status === "failed" ? <button type="button" disabled={retrying} onClick={async () => {
+          setRetrying(true); setRetryError(null);
+          try { await api.knowledge.retryIndexing(document.id); setRetryError("Retry queued. Refresh the library to check readiness."); }
+          catch (error) { setRetryError(error instanceof Error ? error.message : "Indexing retry failed"); }
+          finally { setRetrying(false); }
+        }}>Retry indexing</button> : null}
+        {retryError ? <p role="status">{retryError}</p> : null}
         {deepLinkNotices.map((notice) => (
           <p
             key={notice.kind}
@@ -109,8 +123,7 @@ export function KnowledgeDocumentCard({
               {document.ingestion_metadata?.indexing ? (
                 <p>
                   Recorded search index:{" "}
-                  {document.ingestion_metadata.indexing.vector_backend}, upsert
-                  acknowledged at{" "}
+                  {document.ingestion_metadata.indexing.vector_backend ?? "unverified"}, {status} at{" "}
                   {document.ingestion_metadata.indexing.observed_at}
                   {document.ingestion_metadata.indexing.fallback_used
                     ? " (fallback/local)"

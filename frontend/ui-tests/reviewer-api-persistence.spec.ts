@@ -5,7 +5,7 @@ import { strategyPatch } from "../src/lib/api/generated/client";
 import { emptyStrategyCard } from "../src/components/strategy/StrategyCardForm";
 
 test("generated strategy PATCH persists setup_type and a separate API read reloads it", async ({ request }) => {
-  const base = "http://127.0.0.1:8000";
+  const base = process.env.PLAYWRIGHT_API_URL ?? "http://localhost:8000";
   expect(appConfig.apiBaseUrl).toBe(base);
   const health = await request.get(`${base}/health`);
   expect(health.ok()).toBe(true);

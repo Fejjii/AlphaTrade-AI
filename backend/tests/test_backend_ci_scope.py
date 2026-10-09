@@ -128,3 +128,18 @@ def test_workflow_keeps_quality_evaluation_browser_and_explicit_full_release_gat
     for job in jobs.values():
         assert "if" not in job and "continue-on-error" not in job
         assert all("continue-on-error" not in step for step in job["steps"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "backend/src/app/rag/indexing.py",
+        "frontend/src/lib/api/validated-fetch.ts",
+        "frontend/src/components/agent/AgentWorkspace.tsx",
+    ],
+)
+def test_combined_reviewer_changes_select_cross_module_postgres_boundaries(path):
+    selected = scope.select_tests([path], ROOT / "backend")
+    assert set(scope.REVIEWER_BOUNDARY_TESTS).issubset(selected)
+    workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
+    assert "PHASE1_POSTGRES_URL" in workflow["jobs"]["backend"]["env"]

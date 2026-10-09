@@ -30,11 +30,37 @@ SFP_PATHS = (
 )
 
 
+REVIEWER_BOUNDARY_PATHS = (
+    "backend/src/app/agents/",
+    "backend/src/app/interactive_agent/",
+    "backend/src/app/services/rag_service",
+    "backend/src/app/rag/",
+    "backend/src/app/workers/knowledge_indexing",
+    "backend/src/app/services/turn_",
+    "backend/src/app/services/chat_turn",
+    "backend/src/app/services/quota_",
+    "backend/src/app/repositories/usage",
+    "frontend/scripts/generate-api",
+    "frontend/src/lib/api/",
+    "frontend/src/components/agent/",
+)
+REVIEWER_BOUNDARY_TESTS = (
+    "tests/test_agent_vector_retrieval.py",
+    "tests/test_reviewer_integration_postgres.py",
+    "tests/test_knowledge_indexing.py",
+    "tests/test_turn_coordinator_postgres.py",
+    "tests/test_shared_turn_policy.py",
+    "tests/test_usage_quota.py",
+)
+
+
 def select_tests(changed: list[str], backend: Path) -> list[str]:
     selected = set(BASE_TESTS)
     for path in changed:
         if path.startswith(SFP_PATHS):
             selected.update(SFP_TESTS)
+        if path.startswith(REVIEWER_BOUNDARY_PATHS):
+            selected.update(REVIEWER_BOUNDARY_TESTS)
         candidate = Path(path.removeprefix("backend/"))
         if path.startswith("backend/tests/") and candidate.name.startswith("test_"):
             selected.add(candidate.as_posix())

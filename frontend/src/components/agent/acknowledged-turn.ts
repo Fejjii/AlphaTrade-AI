@@ -59,7 +59,36 @@ export function reconcileMessages(
       },
     } : message);
   }
-  return [...byId.values()];
+  // Preserve acknowledged order even when history contains only an assistant
+  // or user half. Merge both ordered sequences; history cannot reverse an
+  // already acknowledged sequence or duplicate an exact message identity.
+  const edges = new Map<string, Set<string>>([...byId.keys()].map(id => [id, new Set()]));
+  const reaches = (from: string, target: string, seen = new Set<string>()): boolean => {
+    if (from === target) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return [...(edges.get(from) ?? [])].some(id => reaches(id, target, seen));
+  };
+  for (const sequence of [retained, history]) {
+    for (let i = 1; i < sequence.length; i++) {
+      const before = sequence[i - 1].id, after = sequence[i].id;
+      if (before !== after && !reaches(after, before)) edges.get(before)?.add(after);
+    }
+  }
+  const rank = new Map([...byId.keys()].map((id, i) => [id, i]));
+  const remaining = new Set(byId.keys());
+  const ordered: ConversationMessageRecord[] = [];
+  while (remaining.size) {
+    const eligible = [...remaining].filter(id => ![...remaining].some(other => edges.get(other)?.has(id)));
+    eligible.sort((a, b) => {
+      const timeA = Date.parse(byId.get(a)!.created_at), timeB = Date.parse(byId.get(b)!.created_at);
+      return (Number.isFinite(timeA) && Number.isFinite(timeB) ? timeA - timeB : 0) || rank.get(a)! - rank.get(b)!;
+    });
+    const id = eligible[0];
+    ordered.push(byId.get(id)!);
+    remaining.delete(id);
+  }
+  return ordered;
 }
 
 export function acknowledgedMessages(

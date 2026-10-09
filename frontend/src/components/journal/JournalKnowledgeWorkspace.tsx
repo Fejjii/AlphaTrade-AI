@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KnowledgeDocumentCard } from "@/components/knowledge/KnowledgeDocumentCard";
 import { KnowledgeDetailPanel } from "@/components/knowledge/KnowledgeDetailPanel";
 import { JournalReturnLink, journalReturnKey } from "./JournalReturnLink";
@@ -229,6 +229,16 @@ export function JournalKnowledgeWorkspace() {
     sourcePage,
     chunkPage,
   ]);
+  const readinessDeadline = useRef(0);
+  const hasPending = Boolean(data?.documents?.some(document =>
+    document.ingestion_metadata?.indexing?.vector_index_status === "pending"));
+  useEffect(() => {
+    if (!knowledge || !hasPending) { readinessDeadline.current = 0; return; }
+    if (!readinessDeadline.current) readinessDeadline.current = Date.now() + 60_000;
+    if (Date.now() >= readinessDeadline.current) return;
+    const timer = setTimeout(() => { void reload(); }, 2_000);
+    return () => clearTimeout(timer);
+  }, [knowledge, hasPending, data, reload]);
   const returnKey = journalReturnKey(user?.id, organization?.id);
   useEffect(() => {
     if (loading || savedId || documentId) return;
@@ -322,6 +332,7 @@ export function JournalKnowledgeWorkspace() {
           Knowledge
         </Link>
       </nav>
+      {knowledge ? <Button variant="outline" onClick={() => { readinessDeadline.current = 0; void reload(); }}>Refresh search readiness</Button> : null}
       <div className="flex flex-wrap items-center gap-3">
         <Input
           aria-label="Search entries"

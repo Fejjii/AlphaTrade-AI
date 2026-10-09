@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.agents.runtime import AgentRuntime
@@ -85,6 +86,7 @@ def node_phases(
     seed: AgentRuntime,
     coordinator: TurnCoordinator,
     reservation: TurnReservation,
+    revision: str,
     canonical_runtime: Any = None,
     canonical_evidence: Any = None,
 ) -> Callable[[str], AbstractContextManager[AgentRuntime]]:
@@ -128,6 +130,15 @@ def node_phases(
             return
         started = time.perf_counter()
         with coordinator.sessions() as session, ExitStack() as stack:
+            # Tool services can commit internally. Fence each transaction, not
+            # merely graph completion, while retaining brief database phases.
+            def guard_write(current: Session, *args: Any) -> None:
+                with current.no_autoflush:
+                    coordinator.guard(current, reservation, revision=revision)
+
+            guard_write(session)
+            event.listen(session, "before_flush", guard_write)
+            event.listen(session, "before_commit", guard_write)
             if canonical_runtime is not None:
                 stack.enter_context(canonical_runtime.bind_session(session))
             runtime = build_agent_service(
@@ -138,8 +149,12 @@ def node_phases(
             ).runtime
             runtime.model_router = seed.model_router
             runtime.narrative_service = seed.narrative_service
-            yield runtime
-            session.commit()
+            try:
+                yield runtime
+                session.commit()
+            finally:
+                event.remove(session, "before_flush", guard_write)
+                event.remove(session, "before_commit", guard_write)
         coordinator.transaction_ms.append((time.perf_counter() - started) * 1000)
 
     return phase

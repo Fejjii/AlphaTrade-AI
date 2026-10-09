@@ -88,8 +88,8 @@ class AgentVectorAdapter:
         self.sessions = sessions
 
     def search_response(self, query: RagQuery) -> RagSearchResponse:
-        # Agent 3 owns include-shared vector filter semantics. Query organization
-        # scope until that contract lands, then independently verify SQL scope.
+        # Use the published shared-search capability. Older service versions retain
+        # bounded compatibility search followed by independent SQL authorization.
         self.usage.principal_id = query.user_id
         supports_shared = "include_shared" in RagQuery.model_fields and bool(
             getattr(self.rag, "supports_shared_search", False)
@@ -109,6 +109,7 @@ class AgentVectorAdapter:
                 }
             )
         permitted = []
+        unverified = False
         seen: set[UUID] = set()
         with self.sessions() as session:
             from app.interactive_agent.retrieval import _load_scoped_chunk
@@ -122,10 +123,22 @@ class AgentVectorAdapter:
                     organization_id=query.organization_id,
                     user_id=query.user_id,
                 )
-                if loaded is None or loaded[1].id != hit.document_id or hit.chunk_id in seen:
+                if loaded is None or loaded[1].id != hit.document_id:
+                    unverified = True
+                    continue
+                if hit.chunk_id in seen:
                     continue
                 seen.add(hit.chunk_id)
                 chunk, document = loaded
+                if (
+                    document.indexing_generation is not None
+                    and ((document.ingestion_metadata or {}).get("indexing") or {}).get(
+                        "vector_index_status"
+                    )
+                    != "ready"
+                ):
+                    unverified = True
+                    continue
                 permitted.append(
                     hit.model_copy(
                         update={
@@ -142,6 +155,13 @@ class AgentVectorAdapter:
         return result.model_copy(
             update={
                 "chunks": permitted,
+                "degraded": result.degraded or unverified,
+                "detail": (
+                    (result.detail or "")
+                    + " Some hits could not be verified against current SQL readiness."
+                )
+                if unverified
+                else result.detail,
                 "citations": [
                     c.model_copy(
                         update={

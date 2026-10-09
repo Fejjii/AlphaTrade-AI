@@ -95,3 +95,7 @@ Independent Agent 1 implementation is complete. Dependent UI work has no reliabl
 estimate until owners publish concrete schemas. Local/cloud handoff is published;
 Mac mirror status is **UNKNOWN**. Paper mode, real trading disabled, decimal/hash
 contracts, tenant privacy, risk/approval controls and runtime settings are preserved.
+
+
+## Integration contract update
+Source 69778070 remains preserved. Integration retains original UUID/body in authenticated tab storage until terminal acknowledgment or explicit terminal recovery, clears scope on logout, and exposes typed 409 reasons and explicit same-key recovery. Acknowledged history pairs preserve order and metadata across partial reads. Conversation strategy binding is loaded from SQL-backed conversation GET; it takes precedence over the entry URL. Browser requests are direct to the API, with a 360-second abort budget. Draft authoring/import uses explicit strategy actions, then the canonical preview/confirm/version/compile/approve endpoints. Imports remain separate from tool-action envelopes. Setup type is saved and reloaded; confirmation does not grant execution. Generated contracts include turns, chat/recovery and knowledge indexing states with strict date-time validation. CI checks drift and registers reviewer tests against the verified production build.
