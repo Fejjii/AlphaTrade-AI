@@ -109,7 +109,11 @@ class TurnCoordinator:
                 if detail["digest"] != digest:
                     raise ConflictError(
                         "Idempotency key was used with different input.",
-                        details={"reason": "turn_key_conflict"},
+                        details={
+                            "reason": "turn_key_conflict",
+                            "turn_id": str(turn_id),
+                            "conversation_id": str(existing.conversation_id),
+                        },
                     )
                 reservation = TurnReservation(
                     turn_id, existing.conversation_id, organization_id, user_id
@@ -167,7 +171,11 @@ class TurnCoordinator:
                 if not self.expired(row):
                     raise ConflictError(
                         "Another turn is running in this conversation.",
-                        details={"reason": "conversation_turn_in_progress", "turn_id": str(row.id)},
+                        details={
+                            "reason": "conversation_turn_in_progress",
+                            "turn_id": str(row.id),
+                            "conversation_id": str(conversation.id),
+                        },
                     )
                 # Never repeat an ambiguous provider call after process interruption.
                 detail["state"] = "interrupted"
@@ -243,7 +251,12 @@ class TurnCoordinator:
             allowed |= {"completed", "failed", "interrupted"}
         if row is None or row.payload[RESERVATION]["state"] not in allowed:
             raise ConflictError(
-                "Turn reservation is no longer current.", details={"reason": "turn_stale"}
+                "Turn reservation is no longer current.",
+                details={
+                    "reason": "turn_stale",
+                    "turn_id": str(reservation.turn_id),
+                    "conversation_id": str(reservation.conversation_id),
+                },
             )
         if (
             revision is not None
@@ -251,7 +264,11 @@ class TurnCoordinator:
         ):
             raise ConflictError(
                 "Conversation changed during provider work.",
-                details={"reason": "turn_stale_snapshot"},
+                details={
+                    "reason": "turn_stale_snapshot",
+                    "turn_id": str(reservation.turn_id),
+                    "conversation_id": str(reservation.conversation_id),
+                },
             )
         return row
 

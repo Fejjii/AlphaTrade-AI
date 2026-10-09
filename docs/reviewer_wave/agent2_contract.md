@@ -20,7 +20,11 @@ Owner branch: `codex/reviewer-wave-agent`. No merge, deployment or trading activ
   reservation expires after 360s; the same key reports `turn_interrupted`, and an
   intentional new key may proceed while the old finalizer is barred. Keys are tenant/user
   scoped and bound to route + original payload. Legacy clients without a key still work.
-  The optional header is declared in OpenAPI: Agent 1 must regenerate its owned contracts.
+  The optional header and 409 `TurnConflictResponse` are declared in OpenAPI:
+  Agent 1 must regenerate its owned contracts. Keep the original client key and payload;
+  the server turn_id is a separate derived identity. Do not substitute it as the key
+  or patch the original conversation_id when recovering. Successful 200 schemas
+  remain AgentTurnResult, AgentMessageResponse and SavedEntriesPage.
 - Provider transport: official OpenAI Python SDK 3.28.0, HTTPX2 2.13.1; SDK retries disabled. One
   application retry budget, explicit per-attempt timeout, sanitized categories,
   every upstream attempt has its own stable ledger identity. No model downgrade.
@@ -38,6 +42,19 @@ Owner branch: `codex/reviewer-wave-agent`. No merge, deployment or trading activ
   Completed reply is committed before capture; capture errors retain that reply.
 - Capture must snapshot entry revisions before model I/O, then revalidate revisions
   under its brief private-user lock before writing; correction/Undo remains intact.
+
+## Agent 1 coordination
+
+Read the latest frontend manifest at `69778070`. It implements the original 240s
+wait and a fresh key per intentional send; uncertain timeout recovery remains pending.
+This revision supersedes 240s with 360s. Backend code now publishes the optional
+header and concrete TurnConflictResponse/TurnConflictDetails schemas under
+`interactive_agent/turn_contracts.py`, including stable turn/conversation IDs.
+Agent 1 can retain the original key/body, offer explicit same-key recovery, show
+409 turn_running as pending, and use conversation_id to load committed history.
+Capture-pending 200 retains the saved reply with capture_status=unavailable and an
+explicit capture_error; capture retry uses a fresh deliberate UUID. No automatic
+mutation resend is requested. Regenerate with `npm run api:generate` after integration.
 
 ## Request to Agent 3
 
@@ -72,7 +89,8 @@ supervised per `.ai/RELEASE.md`.
   and vector adapter; durable SQL phases and replay (implementation verified in focused checks).
 - Completed: affected cross-module regressions, PostgreSQL stall/rollback checks,
   baseline type comparison and Ruff. See `agent2_runtime_review.md` for exact results.
-- In progress: draft PR and cloud handoff publication.
+- Completed: reviewable transport, policy/retrieval and concurrency/persistence commits;
+  implementation and cloud handoff branches published. Draft is ready for integrator review.
 - Dependency: Agent 3 shared vector visibility and strategy-template semantics. The adapter
   uses `RagQuery.include_shared` when RagService advertises
   `supports_shared_search = True`. Until then it safely overfetches 50

@@ -17,6 +17,7 @@ from app.agent_capture.store import entry_record, list_entries, require_entry, u
 from app.core.dependencies import SessionDep, SettingsDep
 from app.db.models import ConversationMessage
 from app.interactive_agent.contracts import PAYLOAD_KEY
+from app.interactive_agent.turn_contracts import TURN_CONFLICT_RESPONSES
 from app.security.rbac import TraderDep
 from app.services.turn_coordinator import TurnReservation
 from app.services.turn_policy import TURN_DEPENDENCIES
@@ -46,7 +47,12 @@ async def saved_list(
     )
 
 
-@router.post("/retry", response_model=SavedEntriesPage, dependencies=TURN_DEPENDENCIES)
+@router.post(
+    "/retry",
+    response_model=SavedEntriesPage,
+    dependencies=TURN_DEPENDENCIES,
+    responses=TURN_CONFLICT_RESPONSES,
+)
 async def retry_capture(
     body: CaptureRetry,
     tenant: TraderDep,

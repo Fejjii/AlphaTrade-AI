@@ -10,6 +10,7 @@ from app.core.dependencies import (
     SessionDep,
     SettingsDep,
 )
+from app.interactive_agent.turn_contracts import TURN_CONFLICT_RESPONSES
 from app.schemas.chat import AgentMessageResponse, ChatMessageRequest
 from app.security.rbac import TraderDep
 from app.services.conversation_service import parse_conversation_id
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
     response_model=AgentMessageResponse,
     summary="Send chat message",
     dependencies=TURN_DEPENDENCIES,
+    responses=TURN_CONFLICT_RESPONSES,
 )
 async def send_message(
     body: ChatMessageRequest,

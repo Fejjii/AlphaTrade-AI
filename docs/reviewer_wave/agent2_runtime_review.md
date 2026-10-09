@@ -86,7 +86,10 @@ conversational responders likewise report unavailable before live I/O. Synchrono
 remain available to ingestion/workers. No production source caller still invokes
 the old convenience capture path.
 
-Client budget is 360s, preserving frontier model, effort and output limits. Reply
+Client budget is 360s, superseding the frontend manifest's current 240s.
+Optional request headers and concrete 409 recovery schemas are now in OpenAPI;
+200 result schemas stay compatible. Client keeps the original key and payload, not
+the separately derived server turn_id. Frontier model, effort and output limits are preserved. Reply
 and capture remain sequential reasoning calls, potentially with one retry each.
 Cancellation stops client waiting; accepted work may still finish. Process death
 can leave upstream usage unknown until reconciliation; the interrupted reservation
@@ -124,12 +127,17 @@ Focused verification runs (not the consolidated release gate):
 - Final boundary and committed-policy checks: 79 passed, 2 warnings, 41.98s.
   The prior canonical selection found one test-only uncommitted quota update; the
   test now commits it before HTTP, and the complete usage-quota module passes.
+- Final committed-head policy/retrieval/continuity/PostgreSQL check: 38 passed,
+  zero skipped, 2 warnings, 23.27s.
+- Final additive recovery-contract and PostgreSQL coordination check: 16 passed,
+  zero skipped, 2 warnings, 7.83s; validates the actual 409 error envelope.
 - Final canonical paper authority/phase8/order idempotency selection: 89 passed,
   zero skipped, 60.60s.
 - Full source type comparison: baseline 495 errors in 100 files; current 491 errors
   in 100 files, zero introduced categories after ignoring line shifts; four existing
-  wrapper annotation errors removed. Affected 16-file check passes with imports silent.
-- Backend Ruff check and format check pass (1168 files). No unrelated type cleanup.
+  wrapper annotation errors removed. Affected 18-file check, including the additive
+  recovery-contract module, passes with imports silent.
+- Backend Ruff check and format check pass (1169 files). No unrelated type cleanup.
 
 Exact broad selection used:
 

@@ -112,6 +112,11 @@ def test_chat_key_replays_before_new_quota_and_does_not_duplicate_usage(turn_htt
     assert replay.status_code == 200 and replay.json() == first.json()
     conflict = client.post("/agent/turns", json=body, headers=headers)
     assert conflict.status_code == 409
+    from app.interactive_agent.turn_contracts import TurnConflictDetails, TurnConflictResponse
+
+    parsed = TurnConflictResponse.model_validate(conflict.json())
+    assert isinstance(parsed.error.details, TurnConflictDetails)
+    assert str(parsed.error.details.conversation_id) == first.json()["conversation_id"]
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(UsageEvent)) == before
 

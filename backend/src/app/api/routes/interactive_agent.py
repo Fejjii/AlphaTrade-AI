@@ -29,6 +29,7 @@ from app.interactive_agent.contracts import (
 from app.interactive_agent.conversation import ModelConversationalResponder
 from app.interactive_agent.proposals import find_proposal
 from app.interactive_agent.service import InteractiveAgentService
+from app.interactive_agent.turn_contracts import TURN_CONFLICT_RESPONSES
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import TraderDep
 from app.services.agent_paper_execution import AgentPaperExecutionService
@@ -88,6 +89,7 @@ async def agent_capabilities(
     response_model=AgentTurnResult,
     summary="Run one agent turn",
     dependencies=TURN_DEPENDENCIES,
+    responses=TURN_CONFLICT_RESPONSES,
 )
 async def agent_turn(
     body: AgentTurnRequest,
