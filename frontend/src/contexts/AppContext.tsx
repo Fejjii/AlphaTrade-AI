@@ -11,7 +11,11 @@ import {
 } from "react";
 
 import { api, ApiError } from "@/lib/api";
-import type { HealthResponse, KillSwitchStatus, ProviderStatusResponse } from "@/lib/api/types";
+import type {
+  HealthResponse,
+  KillSwitchStatus,
+  ProviderStatusResponse,
+} from "@/lib/api/types";
 import { appConfig } from "@/lib/config";
 import { isAuthenticated } from "@/lib/auth/session";
 
@@ -37,8 +41,11 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [providers, setProviders] = useState<ProviderStatusResponse | null>(null);
-  const [killSwitchStatus, setKillSwitchStatus] = useState<KillSwitchStatus | null>(null);
+  const [providers, setProviders] = useState<ProviderStatusResponse | null>(
+    null,
+  );
+  const [killSwitchStatus, setKillSwitchStatus] =
+    useState<KillSwitchStatus | null>(null);
   const [killSwitchError, setKillSwitchError] = useState<string | null>(null);
   const [killSwitchBusy, setKillSwitchBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -57,74 +64,87 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const killSwitchInFlightRef = useRef(false);
   const foregroundRefreshesRef = useRef(0);
 
-  const runHealthRefresh = useCallback(async ({ background }: { background: boolean }) => {
-    if (background && healthInFlightRef.current) return;
-    const generation = ++healthGenerationRef.current;
-    healthInFlightRef.current = true;
-    try {
-      const healthRes = await api.health.get();
-      if (generation !== healthGenerationRef.current) return;
-      setHealth(healthRes);
-      setError(null);
-    } catch (err) {
-      if (generation !== healthGenerationRef.current) return;
-      // Fail closed: after a failed refresh the posture is no longer
-      // verified — never keep presenting the old health snapshot as current
-      // (FP2-101 class). Consumers render explicit "unverified" for null.
-      setHealth(null);
-      setError(err instanceof Error ? err.message : "Failed to load backend status");
-    } finally {
-      if (generation === healthGenerationRef.current) {
-        healthInFlightRef.current = false;
+  const runHealthRefresh = useCallback(
+    async ({ background }: { background: boolean }) => {
+      if (background && healthInFlightRef.current) return;
+      const generation = ++healthGenerationRef.current;
+      healthInFlightRef.current = true;
+      try {
+        const healthRes = await api.health.get();
+        if (generation !== healthGenerationRef.current) return;
+        setHealth(healthRes);
+        setError(null);
+      } catch (err) {
+        if (generation !== healthGenerationRef.current) return;
+        // Fail closed: after a failed refresh the posture is no longer
+        // verified — never keep presenting the old health snapshot as current
+        // (FP2-101 class). Consumers render explicit "unverified" for null.
+        setHealth(null);
+        setError(
+          err instanceof Error ? err.message : "Failed to load backend status",
+        );
+      } finally {
+        if (generation === healthGenerationRef.current) {
+          healthInFlightRef.current = false;
+        }
       }
-    }
-  }, []);
+    },
+    [],
+  );
 
-  const runProvidersRefresh = useCallback(async ({ background }: { background: boolean }) => {
-    if (background && providersInFlightRef.current) return;
-    const generation = ++providersGenerationRef.current;
-    providersInFlightRef.current = true;
-    try {
-      const providersRes = await api.providers.status();
-      if (generation !== providersGenerationRef.current) return;
-      setProviders(providersRes);
-    } catch {
-      if (generation !== providersGenerationRef.current) return;
-      // Provider failure means "providers unknown" (FP2-110); it must not
-      // erase a successfully verified health posture, so only providers is
-      // cleared here.
-      setProviders(null);
-    } finally {
-      if (generation === providersGenerationRef.current) {
-        providersInFlightRef.current = false;
+  const runProvidersRefresh = useCallback(
+    async ({ background }: { background: boolean }) => {
+      if (background && providersInFlightRef.current) return;
+      const generation = ++providersGenerationRef.current;
+      providersInFlightRef.current = true;
+      try {
+        const providersRes = await api.providers.status();
+        if (generation !== providersGenerationRef.current) return;
+        setProviders(providersRes);
+      } catch {
+        if (generation !== providersGenerationRef.current) return;
+        // Provider failure means "providers unknown" (FP2-110); it must not
+        // erase a successfully verified health posture, so only providers is
+        // cleared here.
+        setProviders(null);
+      } finally {
+        if (generation === providersGenerationRef.current) {
+          providersInFlightRef.current = false;
+        }
       }
-    }
-  }, []);
+    },
+    [],
+  );
 
-  const runKillSwitchRefresh = useCallback(async ({ background }: { background: boolean }) => {
-    if (!isAuthenticated()) {
-      setKillSwitchStatus(null);
-      return;
-    }
-    if (background && killSwitchInFlightRef.current) return;
-    const generation = ++killSwitchGenerationRef.current;
-    killSwitchInFlightRef.current = true;
-    try {
-      const status = await api.risk.killSwitch();
-      if (generation !== killSwitchGenerationRef.current) return;
-      setKillSwitchStatus(status);
-      setKillSwitchError(null);
-    } catch (err) {
-      if (generation !== killSwitchGenerationRef.current) return;
-      // Read failures must not invent an inactive local state: keep the last
-      // authoritative kill-switch state and surface an explicit error.
-      setKillSwitchError(err instanceof Error ? err.message : "Failed to load kill switch");
-    } finally {
-      if (generation === killSwitchGenerationRef.current) {
-        killSwitchInFlightRef.current = false;
+  const runKillSwitchRefresh = useCallback(
+    async ({ background }: { background: boolean }) => {
+      if (!isAuthenticated()) {
+        setKillSwitchStatus(null);
+        return;
       }
-    }
-  }, []);
+      if (background && killSwitchInFlightRef.current) return;
+      const generation = ++killSwitchGenerationRef.current;
+      killSwitchInFlightRef.current = true;
+      try {
+        const status = await api.risk.killSwitch();
+        if (generation !== killSwitchGenerationRef.current) return;
+        setKillSwitchStatus(status);
+        setKillSwitchError(null);
+      } catch (err) {
+        if (generation !== killSwitchGenerationRef.current) return;
+        // Read failures must not invent an inactive local state: keep the last
+        // authoritative kill-switch state and surface an explicit error.
+        setKillSwitchError(
+          err instanceof Error ? err.message : "Failed to load kill switch",
+        );
+      } finally {
+        if (generation === killSwitchGenerationRef.current) {
+          killSwitchInFlightRef.current = false;
+        }
+      }
+    },
+    [],
+  );
 
   const refreshKillSwitch = useCallback(
     () => runKillSwitchRefresh({ background: false }),
@@ -177,7 +197,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshInBackground();
     };
 
-    const intervalId = window.setInterval(refreshInBackground, POSTURE_REFRESH_INTERVAL_MS);
+    const intervalId = window.setInterval(
+      refreshInBackground,
+      POSTURE_REFRESH_INTERVAL_MS,
+    );
     window.addEventListener("focus", onVisibilityOrFocus);
     document.addEventListener("visibilitychange", onVisibilityOrFocus);
     return () => {
@@ -211,6 +234,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         killSwitchGenerationRef.current += 1;
         killSwitchInFlightRef.current = false;
         setKillSwitchStatus(status);
+        await runHealthRefresh({ background: false });
+        window.dispatchEvent(new Event("alphatrade:status-changed"));
       } catch (err) {
         const message =
           err instanceof ApiError
@@ -224,7 +249,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setKillSwitchBusy(false);
       }
     },
-    [killSwitchStatus?.version],
+    [killSwitchStatus?.version, runHealthRefresh],
   );
 
   const value = useMemo<AppContextValue>(

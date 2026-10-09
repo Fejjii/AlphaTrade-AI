@@ -1,5 +1,4 @@
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -7,399 +6,263 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PaginatedRagDocuments, RagDocument } from "@/lib/api/types";
-import KnowledgePage from "./page";
-
-const search = new URLSearchParams();
-const mocks = vi.hoisted(() => ({
-  documents: vi.fn(),
-  chunks: vi.fn(),
-  search: vi.fn(),
-  ingest: vi.fn(),
-  candidate: vi.fn(),
-  lessons: vi.fn(),
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import Page from "./page";
+import { api } from "@/lib/api";
+import { savedEntries, type SavedEntry } from "@/lib/api/saved-entries";
+const state = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+  pathname: "/knowledge",
+  replace: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ useSearchParams: () => search }));
-vi.mock("@/lib/api", () => ({
-  api: {
-    knowledge: {
-      listDocuments: mocks.documents,
-      listChunks: mocks.chunks,
-      search: mocks.search,
-      ingest: mocks.ingest,
-    },
-    lessons: { getCandidate: mocks.candidate, listCandidates: mocks.lessons },
-  },
+vi.mock("next/navigation", () => ({
+  usePathname: () => state.pathname,
+  useSearchParams: () => state.params,
+  useRouter: () => ({ replace: state.replace }),
 }));
-const doc = (
-  id: string,
-  source_type = "trading_playbook",
-  source_uri: string | null = null,
-): RagDocument => ({
-  id,
-  source_type,
-  source_uri,
-  title: `Knowledge ${id}`,
-  version: 1,
-  created_at: "2026-10-01T10:00:00Z",
-  updated_at: "2026-10-01T10:00:00Z",
-});
-const page = (
-  items: RagDocument[],
-  total = items.length,
-  offset = 0,
-): PaginatedRagDocuments => ({ items, total, limit: 50, offset });
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "u" }, organization: { id: "o" } }),
+}));
+const entry: SavedEntry = {
+  id: "note",
+  category: "rules",
+  title: "Confirmation rule",
+  summary: "I wait for a closed confirmation.",
+  original_text: "My rule: wait for a closed confirmation.",
+  conversation_id: "conversation",
+  source_message_ids: ["message"],
+  source_document_id: "document",
+  trade_id: null,
+  tags: [],
+  draft: null,
+  revision: 1,
+  undone: false,
+  created_at: "2026-10-09",
+  updated_at: "2026-10-09",
+};
 beforeEach(() => {
-  for (const key of [...search.keys()]) search.delete(key);
-  Object.values(mocks).forEach((mock) => mock.mockReset());
-  mocks.documents.mockResolvedValue(page([doc("playbook")]));
-  mocks.chunks.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
-  mocks.lessons.mockResolvedValue({
+  state.params = new URLSearchParams();
+  state.pathname = "/knowledge";
+  state.replace.mockReset();
+  sessionStorage.clear();
+  vi.spyOn(savedEntries, "list").mockResolvedValue({
+    items: [entry],
+    total: 1,
+  });
+  vi.spyOn(savedEntries, "get").mockResolvedValue(entry);
+  vi.spyOn(savedEntries, "update").mockImplementation(async (_id, body) => ({
+    ...entry,
+    ...body,
+    revision: 2,
+  }));
+  vi.spyOn(api.knowledge, "listDocuments").mockResolvedValue({
     items: [],
     total: 0,
     limit: 50,
     offset: 0,
   });
-  mocks.search.mockResolvedValue({ query: "risk", chunks: [], citations: [] });
-  mocks.ingest.mockResolvedValue({
-    document_id: "saved",
-    chunk_count: 1,
-    duplicate: false,
+  vi.spyOn(api.knowledge, "listChunks").mockResolvedValue({
+    items: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+  });
+  vi.spyOn(api.journal, "listTrades").mockResolvedValue({
+    items: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+  });
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+it("consolidates Knowledge categories and keeps original evidence on demand", async () => {
+  render(<Page />);
+  expect(await screen.findByText("Confirmation rule")).toBeInTheDocument();
+  expect(
+    screen.getByRole("navigation", { name: "Journal and Knowledge" }),
+  ).toHaveTextContent("JournalKnowledge");
+  expect(screen.getByLabelText("Knowledge category")).toHaveTextContent(
+    "RulesStrategiesNews & AnalysisLessons",
+  );
+  expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute(
+    "href",
+    "/journal?tab=knowledge&saved=note",
+  );
+  expect(screen.queryByText(entry.original_text)).not.toBeInTheDocument();
+  expect(api.knowledge.listChunks).not.toHaveBeenCalled();
+  expect(savedEntries.list).toHaveBeenCalledWith({
+    view: "knowledge",
+    category: undefined,
+    q: "",
+    limit: 50,
+    offset: 0,
   });
 });
-afterEach(cleanup);
-
-describe("Knowledge trader workspace", () => {
-  it("keeps five categories visible while documents load", async () => {
-    const pending = deferred<PaginatedRagDocuments>();
-    mocks.documents.mockReturnValue(pending.promise);
-    render(<KnowledgePage />);
-    expect(
-      screen.getByText("Loading Knowledge workspace…"),
-    ).toBeInTheDocument();
-    const nav = screen.getByRole("navigation", {
-      name: "Knowledge categories",
-    });
-    for (const label of [
-      "Trading Rules",
-      "Playbook",
-      "Lessons",
-      "Strategy Research",
-      "Market Observations",
-    ])
-      expect(
-        within(nav).getByRole("link", { name: label }),
-      ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("knowledge-store-panel"),
-    ).not.toBeInTheDocument();
-    await act(async () => pending.resolve(page([])));
-  });
-  it.each([
-    ["rules", ["risk_policy"]],
-    ["playbook", ["trading_playbook"]],
-    ["lessons", ["review_note", "mistakes_database"]],
-    ["research", ["strategy_template"]],
-    ["observations", ["general_note", "trade_journal"]],
-  ])("loads %s through existing filters", async (category, sources) => {
-    search.set("category", category);
-    mocks.documents.mockImplementation(({ source_type }) =>
-      Promise.resolve(page([doc(source_type, source_type)])),
-    );
-    render(<KnowledgePage />);
-    await screen.findByTestId("knowledge-document-grid");
-    expect(
-      mocks.documents.mock.calls.map(([params]) => params.source_type),
-    ).toEqual(sources);
-    expect(
-      screen
-        .getByRole("navigation", { name: "Knowledge categories" })
-        .querySelector('[aria-current="page"]'),
-    ).toHaveAttribute("href", `/knowledge?category=${category}`);
-  });
-  it("preserves query and document links and resets pagination on category change", async () => {
-    search.set("q", "Knowledge");
-    search.set("document", "playbook");
-    search.set("offset", "50");
-    render(<KnowledgePage />);
-    expect(
-      within(
-        screen.getByRole("navigation", { name: "Knowledge categories" }),
-      ).getByRole("link", { name: "Trading Rules" }),
-    ).toHaveAttribute(
-      "href",
-      "/knowledge?q=Knowledge&document=playbook&category=rules",
-    );
-    await screen.findByTestId("knowledge-document-grid");
-  });
-  it("shows provenance and retrieves chunks only on expansion", async () => {
-    mocks.documents.mockResolvedValue(
-      page([doc("strategy", "strategy_template", "strategy://setup-1/v2")]),
-    );
-    mocks.chunks.mockResolvedValue({
-      items: [
-        {
-          id: "chunk",
-          chunk_ordinal: 0,
-          content: "Wait for confirmation",
-          section_title: "Entry",
-        },
-      ],
-      total: 1,
-    });
-    render(<KnowledgePage />);
-    await screen.findByTestId("knowledge-document-card-strategy");
-    expect(screen.getByTestId("knowledge-source-uri")).toHaveTextContent(
-      "strategy://setup-1/v2",
-    );
-    expect(
-      screen.getByRole("link", { name: "Related strategy: open" }),
-    ).toHaveAttribute("href", "/strategy-lab/setup-1");
-    expect(mocks.chunks).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("knowledge-expand-strategy"));
-    await screen.findByText("Wait for confirmation");
-    expect(mocks.chunks).toHaveBeenCalledWith({
-      document_id: "strategy",
-      limit: 50,
-      offset: 0,
-    });
-    fireEvent.click(screen.getByTestId("knowledge-expand-strategy"));
-    expect(screen.queryByText("Wait for confirmation")).not.toBeInTheDocument();
-  });
-  it("retries unavailable chunks and states truncated coverage", async () => {
-    mocks.chunks
-      .mockRejectedValueOnce(new Error("chunks offline"))
-      .mockResolvedValueOnce({
-        items: [{ id: "c", chunk_ordinal: 1, content: "Risk rule" }],
-        total: 2,
-      });
-    render(<KnowledgePage />);
-    fireEvent.click(await screen.findByTestId("knowledge-expand-playbook"));
-    fireEvent.click(
-      await screen.findByTestId("knowledge-detail-retry-playbook"),
-    );
-    expect(
-      await screen.findByTestId("knowledge-detail-truncated-playbook"),
-    ).toHaveTextContent("Showing 1 of 2 chunks");
-  });
-  it("shows an honest empty state", async () => {
-    mocks.documents.mockResolvedValue(page([]));
-    render(<KnowledgePage />);
-    expect(await screen.findByText("No knowledge yet")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-  it("retries source failures without inventing empty counts", async () => {
-    mocks.documents
-      .mockRejectedValueOnce(new Error("documents offline"))
-      .mockResolvedValue(page([doc("recovered")]));
-    render(<KnowledgePage />);
-    await screen.findByText("Knowledge unavailable: documents offline");
-    expect(screen.queryByText(/0 stored/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    await screen.findByText("Knowledge recovered");
-  });
-  it("shows partial multi-source results alongside failures", async () => {
-    search.set("category", "observations");
-    mocks.documents.mockImplementation(({ source_type }) =>
-      source_type === "general_note"
-        ? Promise.resolve(page([doc("observation", source_type)]))
-        : Promise.reject(new Error("journal unavailable")),
-    );
-    render(<KnowledgePage />);
-    await screen.findByText("Knowledge observation");
-    expect(
-      screen.getByText("trade journal unavailable: journal unavailable"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/partial coverage/)).toBeInTheDocument();
-    expect(screen.queryByText(/1 stored/)).not.toBeInTheDocument();
-  });
-  it("paginates within the category without claiming an empty corpus", async () => {
-    search.set("category", "rules");
-    mocks.documents.mockResolvedValue(page([doc("rule", "risk_policy")], 100));
-    const { rerender } = render(<KnowledgePage />);
-    expect(await screen.findByRole("link", { name: "Next" })).toHaveAttribute(
-      "href",
-      "/knowledge?category=rules&offset=50",
-    );
-    mocks.documents.mockResolvedValue(page([], 100, 50));
-    search.set("offset", "50");
-    rerender(<KnowledgePage />);
-    await screen.findByText("No documents on this page");
-    expect(screen.getByRole("link", { name: "Previous" })).toHaveAttribute(
-      "href",
-      "/knowledge?category=rules",
-    );
-    expect(mocks.documents).toHaveBeenLastCalledWith({
-      source_type: "risk_policy",
-      limit: 50,
-      offset: 50,
-    });
-  });
-  it("ignores older responses after category changes", async () => {
-    const old = deferred<PaginatedRagDocuments>();
-    mocks.documents
-      .mockReturnValueOnce(old.promise)
-      .mockResolvedValue(page([doc("new-rules", "risk_policy")]));
-    const { rerender } = render(<KnowledgePage />);
-    search.set("category", "rules");
-    rerender(<KnowledgePage />);
-    await screen.findByText("Knowledge new-rules");
-    await act(async () => old.resolve(page([doc("stale")])));
-    expect(screen.queryByText("Knowledge stale")).not.toBeInTheDocument();
-  });
-  it("opens exact linked documents beyond the first page", async () => {
-    search.set("document", "older");
-    search.set("category", "rules");
-    mocks.documents.mockImplementation(({ limit, offset }) =>
-      limit === 50
-        ? Promise.resolve(page([]))
-        : offset === 0
-          ? Promise.resolve(page([doc("unrelated")], 201))
-          : Promise.resolve(page([doc("older")], 201, 200)),
-    );
-    render(<KnowledgePage />);
-    await screen.findByTestId("knowledge-document-card-older");
-    expect(
-      screen.queryByTestId("knowledge-document-card-unrelated"),
-    ).not.toBeInTheDocument();
-    expect(mocks.documents).toHaveBeenCalledWith({ limit: 200, offset: 200 });
-  });
-  it.each(["missing-document-id", "missing-for-readiness"])(
-    "restores the stale-document contract for %s without losing category context",
-    async (id) => {
-      search.set("document", id);
-      search.set("q", "Knowledge");
-      search.set("category", "rules");
-      search.set("source", "risk_policy");
-      search.set("offset", "50");
-      mocks.documents.mockResolvedValue(page([doc("present", "risk_policy")]));
-      render(<KnowledgePage />);
-      const notice = await screen.findByTestId("knowledge-document-stale");
-      expect(notice).toHaveTextContent(id);
-      expect(notice).toHaveTextContent(/not found/i);
-      expect(notice).toHaveTextContent("No unrelated record was opened.");
-      expect(search.get("document")).toBe(id);
-      expect(search.get("q")).toBe("Knowledge");
-      expect(search.get("category")).toBe("rules");
-      expect(search.get("source")).toBe("risk_policy");
-      expect(search.get("offset")).toBe("50");
-      const nav = screen.getByRole("navigation", { name: "Knowledge categories" });
-      expect(within(nav).getByRole("link", { name: "Trading Rules" })).toHaveAttribute(
-        "aria-current", "page",
-      );
-      expect(within(nav).getByRole("link", { name: "All knowledge" })).toHaveAttribute(
-        "href", `/knowledge?document=${id}&q=Knowledge`,
-      );
-      expect(mocks.chunks).not.toHaveBeenCalled();
-    },
+it("keeps category and search in the return URL", async () => {
+  state.params = new URLSearchParams(
+    "tab=knowledge&category=rules&q=confirmation",
   );
-  it("shows the bounded lookup window in the same stale-document state", async () => {
-    search.set("document", "outside-window");
-    mocks.documents.mockImplementation(({ limit, offset }) =>
-      Promise.resolve(page(
-        Array.from({ length: limit }, (_, index) => doc(`present-${offset + index}`)),
-        4001,
-        offset,
-      )),
-    );
-    render(<KnowledgePage />);
-    const notice = await screen.findByTestId("knowledge-document-stale");
-    expect(notice).toHaveTextContent("outside-window");
-    expect(notice).toHaveTextContent(/not found in the first 4,000 records/i);
-    expect(mocks.documents).toHaveBeenCalledTimes(21);
-    expect(mocks.chunks).not.toHaveBeenCalled();
+  render(<Page />);
+  await screen.findByText("Confirmation rule");
+  fireEvent.click(screen.getByRole("link", { name: "Open" }));
+  expect(
+    JSON.parse(sessionStorage.getItem("alphatrade.journal.return:o:u")!),
+  ).toMatchObject({
+    href: "/knowledge?tab=knowledge&category=rules&q=confirmation",
   });
-  it("retries unresolved links and removes the stale notice after resolution", async () => {
-    search.set("document", "linked");
-    let lookups = 0;
-    mocks.documents.mockImplementation(({ limit }) => {
-      if (limit === 50) return Promise.resolve(page([doc("present")]));
-      if (lookups++ === 0) return Promise.reject(new Error("Knowledge lookup unavailable"));
-      return Promise.resolve(page([doc("linked")]));
-    });
-    render(<KnowledgePage />);
-    const notice = await screen.findByTestId("knowledge-document-stale");
-    expect(notice).toHaveTextContent("Knowledge lookup unavailable");
-    fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
-    await screen.findByTestId("knowledge-document-card-linked");
-    expect(screen.queryByTestId("knowledge-document-stale")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Search entries"), {
+    target: { value: "closed" },
   });
-  it("allows collapsing a deep-linked document", async () => {
-    search.set("document", "playbook");
-    render(<KnowledgePage />);
-    await screen.findByTestId("knowledge-detail-empty-playbook");
-    fireEvent.click(screen.getByTestId("knowledge-expand-playbook"));
-    expect(
-      screen.queryByTestId("knowledge-detail-empty-playbook"),
-    ).not.toBeInTheDocument();
-  });
-  it.each(["risk_policy", "trading_playbook", "general_note"])(
-    "saves %s with canonical ingestion and refreshes",
-    async (source) => {
-      render(<KnowledgePage />);
-      await screen.findByText("Knowledge playbook");
-      fireEvent.click(screen.getByRole("button", { name: "Add note" }));
-      expect(screen.getByRole("button", { name: "Save note" })).toBeDisabled();
-      fireEvent.change(screen.getByLabelText("Category"), {
-        target: { value: source },
-      });
-      fireEvent.change(screen.getByLabelText("Title"), {
-        target: { value: " My rule " },
-      });
-      fireEvent.change(screen.getByLabelText("Document text"), {
-        target: { value: " Wait for confirmation " },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Save note" }));
-      await screen.findByTestId("knowledge-ingest-success");
-      expect(mocks.ingest).toHaveBeenCalledWith({
-        title: "My rule",
-        text: "Wait for confirmation",
-        source_type: source,
-      });
-      expect(mocks.documents).toHaveBeenCalledTimes(2);
-    },
+  expect(state.replace).toHaveBeenCalledWith(
+    "/knowledge?tab=knowledge&category=rules&q=closed",
+    { scroll: false },
   );
-  it("defaults a new note to the active Trading Rules category", async () => {
-    search.set("category", "rules");
-    render(<KnowledgePage />);
-    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
-    expect(screen.getByLabelText("Category")).toHaveValue("risk_policy");
-    await screen.findByTestId("knowledge-document-grid");
+});
+it("loads an exact saved record, corrects it with a revision check and retains source links", async () => {
+  state.params.set("saved", "note");
+  render(<Page />);
+  expect(
+    await screen.findByRole("heading", { name: "Confirmation rule" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Original conversation" }),
+  ).toHaveAttribute("href", "/agent?conversation=conversation");
+  expect(
+    screen.getByRole("link", { name: "Original document" }),
+  ).toHaveAttribute("href", "/journal?tab=knowledge&document_id=document");
+  fireEvent.click(screen.getByRole("button", { name: "Correct summary" }));
+  fireEvent.change(screen.getByLabelText("Corrected summary"), {
+    target: { value: "Wait for confirmation on close." },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+  await waitFor(() =>
+    expect(savedEntries.update).toHaveBeenCalledWith("note", {
+      expected_revision: 1,
+      summary: "Wait for confirmation on close.",
+    }),
+  );
+});
+it("retains a failed correction and does not claim it was saved", async () => {
+  state.params.set("saved", "note");
+  vi.mocked(savedEntries.update).mockRejectedValue(new Error("Conflict"));
+  render(<Page />);
+  await screen.findByRole("heading", { name: "Confirmation rule" });
+  fireEvent.click(screen.getByRole("button", { name: "Correct summary" }));
+  fireEvent.change(screen.getByLabelText("Corrected summary"), {
+    target: { value: "Retained correction" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Save failed");
+  expect(screen.getByLabelText("Corrected summary")).toHaveValue(
+    "Retained correction",
+  );
+});
+it("shows unavailable sources independently while preserving readable notes", async () => {
+  vi.mocked(api.knowledge.listDocuments).mockRejectedValue(
+    new Error("unavailable"),
+  );
+  render(<Page />);
+  expect(await screen.findByText("Confirmation rule")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("Documents unavailable");
+});
+it("retrieves an exact linked document without substituting another source", async () => {
+  state.params.set("document_id", "exact-document");
+  render(<Page />);
+  await waitFor(() =>
+    expect(api.knowledge.listChunks).toHaveBeenCalledWith({
+      document_id: "exact-document",
+      limit: 50,
+    }),
+  );
+  expect(
+    screen.getByRole("link", { name: /Back to Journal/ }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Confirmation rule")).not.toBeInTheDocument();
+});
+it("paginates preserved notes and sources without silently truncating history", async () => {
+  vi.mocked(savedEntries.list).mockResolvedValue({ items: [entry], total: 80 });
+  render(<Page />);
+  await screen.findByText("Confirmation rule");
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Saved notes pages" }),
+    ).getByRole("button", { name: "Next" }),
+  );
+  expect(state.replace).toHaveBeenCalledWith("/knowledge?page=1", {
+    scroll: false,
+  });
+});
+it("shows personal reflections without requiring a trade and excludes simulation claims", async () => {
+  state.pathname = "/journal";
+  vi.mocked(savedEntries.list).mockResolvedValue({
+    items: [{ ...entry, category: "journal" }],
+    total: 1,
+  });
+  vi.mocked(api.journal.listTrades).mockResolvedValue({
+    items: [
+      {
+        id: "simulation",
+        symbol: "BTCUSDT",
+        exchange: "internal",
+        source: "manual",
+        status: "closed",
+        entry_time: "2026-10-09",
+      },
+    ] as never,
+    total: 1,
+    limit: 50,
+    offset: 0,
+  });
+  render(<Page />);
+  expect(await screen.findByText("Confirmation rule")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Open exact trade" }),
+  ).not.toBeInTheDocument();
+});
 
-  it("keeps existing-source empty states scoped to their source", async () => {
-    search.set("source", "risk_policy");
-    mocks.documents.mockResolvedValue(page([]));
-    render(<KnowledgePage />);
-    await screen.findByText("No risk policy yet");
-    expect(screen.queryByText("No knowledge yet")).not.toBeInTheDocument();
+it("requires execution lifecycle provenance for default exchange activity", async () => {
+  state.pathname = "/journal";
+  const base = {
+    symbol: "BTCUSDT",
+    exchange: "BLOFIN_DEMO",
+    source: "paper_execution",
+    status: "closed",
+    entry_time: "2026-10-09",
+  };
+  vi.mocked(api.journal.listTrades).mockResolvedValue({
+    items: [
+      { ...base, id: "unsupported-claim" },
+      {
+        ...base,
+        id: "executed",
+        execution_lifecycle_id: "projected-lifecycle",
+      },
+      {
+        ...base,
+        id: "direct-venue",
+        source: "manual",
+        execution_lifecycle_id: "irrelevant",
+      },
+      {
+        ...base,
+        id: "planned",
+        status: "planned",
+        execution_lifecycle_id: "projected-plan",
+      },
+    ] as never,
+    total: 4,
+    limit: 50,
+    offset: 0,
   });
-
-  it("retains drafts on ingestion errors", async () => {
-    mocks.ingest.mockRejectedValue(new Error("save failed"));
-    render(<KnowledgePage />);
-    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
-    fireEvent.change(screen.getByLabelText("Title"), {
-      target: { value: "Rule" },
-    });
-    fireEvent.change(screen.getByLabelText("Document text"), {
-      target: { value: "Draft rule" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
-    expect(
-      await screen.findByTestId("knowledge-ingest-error"),
-    ).toHaveTextContent("save failed");
-    expect(screen.getByLabelText("Document text")).toHaveValue("Draft rule");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save note" })).toBeEnabled(),
-    );
-  });
+  render(<Page />);
+  expect(
+    await screen.findByRole("link", { name: "Open exact trade" }),
+  ).toHaveAttribute("href", "/journal?trade_id=executed");
+  expect(
+    screen.getAllByRole("link", { name: "Open exact trade" }),
+  ).toHaveLength(1);
 });

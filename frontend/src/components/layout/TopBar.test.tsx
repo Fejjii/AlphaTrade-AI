@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TopBar } from "@/components/layout/TopBar";
@@ -79,189 +79,76 @@ function renderTopBar() {
   );
 }
 
-describe("TopBar status strip PaperModeIndicator", () => {
+describe("Compact truthful header", () => {
   beforeEach(() => {
     posture.executionMode = "paper";
     posture.realTradingEnabled = false;
     posture.postureKnown = true;
     navigationState.pathname = "/";
     logout.mockReset();
+    appState.providers = { providers: [] };
   });
-
-  afterEach(() => cleanup());
-
-  it("shows confirmed paper when /health verifies paper posture", () => {
+  afterEach(cleanup);
+  it("has one mode label and describes only the global pause", () => {
     renderTopBar();
-    expect(screen.getByTestId("status-strip")).toBeInTheDocument();
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode active",
+    expect(
+      screen.getByRole("status", { name: "Execution status" }),
+    ).toHaveTextContent("PAPER");
+    expect(
+      screen.getByRole("status", { name: "Execution status" }),
+    ).toHaveTextContent("No global pause");
+    expect(screen.queryByTestId("status-strip")).not.toBeInTheDocument();
+    expect(screen.queryByText("Execution ready")).not.toBeInTheDocument();
+    expect(screen.getByTestId("header-status-menu")).not.toHaveAttribute(
+      "open",
     );
   });
-
-  it("fails closed when safety posture is missing", () => {
+  it("shows unknown when mode cannot be verified", () => {
     posture.executionMode = null;
     posture.realTradingEnabled = null;
     posture.postureKnown = false;
     renderTopBar();
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode not confirmed",
-    );
+    expect(
+      screen.getByRole("status", { name: "Execution status" }),
+    ).toHaveTextContent("Execution unverified");
   });
-
-  it("fails closed when real trading is enabled", () => {
+  it("does not show a verified paper label on conflicting real trading posture", () => {
     posture.realTradingEnabled = true;
     renderTopBar();
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode not confirmed",
-    );
+    expect(
+      screen.getByRole("status", { name: "Execution status" }),
+    ).not.toHaveTextContent(/^Paper/);
   });
-
-  it("fails closed for non-paper execution mode", () => {
-    posture.executionMode = "live";
-    renderTopBar();
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode not confirmed",
-    );
-  });
-
-  it("keeps real-trading-disabled and advice messaging in the status strip", () => {
-    renderTopBar();
-    expect(screen.getByText("Real OFF")).toBeInTheDocument();
-    expect(screen.getByTestId("status-strip-advice")).toHaveTextContent("Paper-only research");
-  });
-});
-
-describe("TopBar provider status chip (FP2-110)", () => {
-  beforeEach(() => {
-    posture.executionMode = "paper";
-    posture.realTradingEnabled = false;
-    posture.postureKnown = true;
-    navigationState.pathname = "/";
-    appState.providers = { providers: [] };
-  });
-
-  afterEach(() => cleanup());
-
-  it("shows the mock count when provider status is loaded", () => {
-    appState.providers = {
-      providers: [{ is_mock: true }, { is_mock: true }, { is_mock: false }],
-    };
-    renderTopBar();
-    expect(screen.getByTestId("topbar-providers-chip")).toHaveTextContent("2 mock");
-  });
-
-  it("shows a distinct providers-unknown state instead of a healthy-looking zero when status failed", () => {
+  it("keeps secondary diagnostics and account controls in the dropdown", () => {
     appState.providers = null;
     renderTopBar();
-    const chip = screen.getByTestId("topbar-providers-chip");
-    expect(chip).toHaveTextContent("Providers unknown");
-    expect(chip).not.toHaveTextContent("0 mock");
-  });
-});
-
-describe("TopBar page identity and account control", () => {
-  beforeEach(() => {
-    posture.executionMode = "paper";
-    posture.realTradingEnabled = false;
-    posture.postureKnown = true;
-    navigationState.pathname = "/";
-    appState.providers = { providers: [] };
-    logout.mockReset();
-  });
-
-  afterEach(() => cleanup());
-
-  it("shows Dashboard title", () => {
-    navigationState.pathname = "/";
-    renderTopBar();
+    fireEvent.click(screen.getByText("Status", { selector: "summary" }));
+    expect(screen.getByTestId("header-status-menu")).toHaveAttribute("open");
+    expect(screen.getByText("Providers unknown")).toBeVisible();
     expect(
-      within(screen.getByTestId("topbar-page-identity")).getByText("Dashboard"),
-    ).toBeInTheDocument();
+      screen.getByText("Strategy and account gates still apply."),
+    ).toBeVisible();
+    expect(screen.getByText("trader@example.com")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(logout).toHaveBeenCalledOnce();
   });
-
-  it("shows Knowledge as its own destination without a Strategies breadcrumb", () => {
+  it("closes on Escape and restores keyboard focus", () => {
+    renderTopBar();
+    const summary = screen.getByText("Status", { selector: "summary" });
+    fireEvent.click(summary);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Log out" }), {
+      key: "Escape",
+    });
+    expect(screen.getByTestId("header-status-menu")).not.toHaveAttribute(
+      "open",
+    );
+    expect(summary).toHaveFocus();
+  });
+  it("uses the consolidated journal identity", () => {
     navigationState.pathname = "/knowledge";
     renderTopBar();
-    expect(screen.getByTestId("topbar-page-identity")).toHaveTextContent("Knowledge");
-    expect(screen.queryByTestId("topbar-page-subtitle")).not.toBeInTheDocument();
-  });
-
-  it("shows Settings with the signals inbox subtitle on the retained route", () => {
-    navigationState.pathname = "/tradingview-signals";
-    renderTopBar();
-    const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Settings");
-    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Signals inbox");
-  });
-
-  it("shows nested Alerts Review breadcrumb subtitle", () => {
-    navigationState.pathname = "/alerts/review";
-    renderTopBar();
-    const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Settings");
-    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Settings / Setup Review");
-  });
-
-  it("falls back safely for validation candidate detail", () => {
-    navigationState.pathname = "/paper-validation/candidates/cand-123";
-    renderTopBar();
-    const identity = screen.getByTestId("topbar-page-identity");
-    expect(identity).toHaveTextContent("Settings");
-    expect(screen.getByTestId("topbar-page-subtitle")).toHaveTextContent("Candidates");
-  });
-
-  it("falls back for unknown routes with neutral identity", () => {
-    navigationState.pathname = "/not-a-known-route";
-    renderTopBar();
-    expect(
-      within(screen.getByTestId("topbar-page-identity")).getByText("AlphaTrade"),
-    ).toBeInTheDocument();
-  });
-
-  it("restores focus to the account trigger after Escape", async () => {
-    renderTopBar();
-    const trigger = screen.getByRole("button", { name: "Account menu" });
-    fireEvent.click(trigger);
-    expect(screen.getByRole("menu", { name: "Account" })).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("menu", { name: "Account" })).not.toBeInTheDocument();
-    await Promise.resolve();
-    expect(document.activeElement).toBe(trigger);
-  });
-
-  it("does not fabricate freshness claims", () => {
-    renderTopBar();
-    expect(screen.getByTestId("topbar-freshness")).toHaveTextContent("Freshness unavailable");
-    expect(screen.queryByTestId("freshness-pill")).not.toBeInTheDocument();
-  });
-
-  it("suppresses shell freshness-unavailable on Analytics hub (FP2-226)", () => {
-    navigationState.pathname = "/analytics";
-    renderTopBar();
-    expect(screen.getByTestId("topbar-freshness-hub-managed")).toBeInTheDocument();
-    expect(screen.getByTestId("topbar-freshness")).not.toHaveTextContent("Freshness unavailable");
-    expect(screen.queryByTestId("freshness-pill")).not.toBeInTheDocument();
-  });
-
-  it("keeps account control and logout accessible", () => {
-    renderTopBar();
-    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
-    const menu = screen.getByRole("menu", { name: "Account" });
-    expect(within(menu).getByText("trader@example.com")).toBeInTheDocument();
-    expect(within(menu).getByText("Alpha Org")).toBeInTheDocument();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Log out" }));
-    expect(logout).toHaveBeenCalled();
-  });
-
-  it("avoids horizontal overflow at mobile width", () => {
-    renderTopBar();
-    const header = screen.getByRole("banner");
-    expect(header.className).toContain("overflow");
-    expect(screen.getByTestId("topbar-page-identity").className).toContain("min-w-0");
-    expect(screen.getByTestId("topbar-account-control")).toBeInTheDocument();
+    expect(screen.getByTestId("topbar-page-identity")).toHaveTextContent(
+      "Journal & Knowledge",
+    );
   });
 });

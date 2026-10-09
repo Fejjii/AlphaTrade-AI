@@ -382,6 +382,7 @@ export const api = {
   agent: {
     turn: (body: {
       message: string;
+      source_document_id?: string;
       conversation_id?: string;
       strategy_id?: string;
       symbol?: string;
@@ -664,7 +665,7 @@ export const api = {
       apiFetch<void>(`/journal/entries/${id}`, { method: "DELETE" }),
     statistics: (params?: JournalStatsParams) =>
       apiFetch<JournalStatsResponse>("/journal/statistics", { query: params }),
-    listTrades: (params?: { status?: string; source?: string; symbol?: string; limit?: number }) =>
+    listTrades: (params?: { status?: string; source?: string; symbol?: string; limit?: number; offset?: number }) =>
       apiFetch<PaginatedCanonicalJournalTrades>("/journal/trades", { query: params }),
     importTrades: (body: JournalImportRequestBody) =>
       apiFetch<JournalImportResult>("/journal/trades/import", {

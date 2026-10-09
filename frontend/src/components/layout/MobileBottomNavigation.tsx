@@ -22,7 +22,7 @@ export function MobileBottomNavigation() {
         "pb-[env(safe-area-inset-bottom,0px)] lg:hidden",
       )}
     >
-      <div className="grid grid-cols-6">
+      <div className="grid grid-cols-5">
         {MOBILE_BOTTOM_DESTINATION_IDS.map((id) => {
           const destination = getPrimaryDestination(id);
           const { href, label, icon: Icon, ariaLabel } = destination;
@@ -43,11 +43,10 @@ export function MobileBottomNavigation() {
                   : "border-transparent text-text-secondary",
               )}
             >
-              <Icon
-                className="h-5 w-5 shrink-0"
-                aria-hidden="true"
-              />
-              <span className="whitespace-nowrap">{label}</span>
+              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className="text-center">
+                {id === "journal" ? "Journal" : label}
+              </span>
             </Link>
           );
         })}

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, Bot, Library, Layers, LayoutDashboard, Settings, SlidersHorizontal } from "lucide-react";
+import { BookOpen, Bot, Layers, LayoutDashboard, Settings } from "lucide-react";
 
 import {
   ADVANCED_ROUTES,
@@ -9,7 +9,8 @@ import {
   SETTINGS_ROUTE_PREFIXES,
 } from "@/components/layout/advanced-routes";
 
-export type DestinationId = "dashboard" | "agent" | "journal" | "strategies" | "knowledge" | "settings";
+export type DestinationId =
+  "dashboard" | "agent" | "journal" | "strategies" | "settings";
 
 export type NavLink = {
   href: string;
@@ -32,7 +33,7 @@ export type SecondaryNavGroup = {
   items: readonly NavLink[];
 };
 
-/** Six trader destinations. Specialized routes stay contextual or under Settings / Advanced. */
+/** Five trader destinations. Specialized routes stay contextual or under Settings / Advanced. */
 export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   {
     id: "dashboard",
@@ -50,10 +51,10 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
   },
   {
     id: "journal",
-    label: "Journal",
+    label: "Journal & Knowledge",
     href: "/journal",
     icon: BookOpen,
-    ariaLabel: "Journal",
+    ariaLabel: "Journal & Knowledge",
   },
   {
     id: "strategies",
@@ -61,13 +62,6 @@ export const PRIMARY_DESTINATIONS: readonly PrimaryDestination[] = [
     href: "/strategies",
     icon: Layers,
     ariaLabel: "Strategies",
-  },
-  {
-    id: "knowledge",
-    label: "Knowledge",
-    href: "/knowledge",
-    icon: Library,
-    ariaLabel: "Knowledge",
   },
   {
     id: "settings",
@@ -84,42 +78,53 @@ export const MOBILE_BOTTOM_DESTINATION_IDS: readonly DestinationId[] = [
   "agent",
   "journal",
   "strategies",
-  "knowledge",
   "settings",
 ] as const;
 
-const JOURNAL_PREFIXES = ["/journal", "/learning-analytics", "/coaching"] as const;
-const STRATEGY_PREFIXES = ["/strategies", "/strategy-lab"] as const;
-const KNOWLEDGE_PREFIXES = ["/knowledge", "/lessons"] as const;
+const JOURNAL_PREFIXES = [
+  "/journal",
+  "/learning-analytics",
+  "/coaching",
+  "/knowledge",
+  "/lessons",
+] as const;
+const STRATEGY_PREFIXES = ["/strategies", "/strategy-lab", "/risk"] as const;
 const AGENT_PREFIXES = ["/agent"] as const;
 
 export const SECONDARY_NAV: readonly SecondaryNavGroup[] = [
   {
     destinationId: "settings",
-    items: [
-      { href: "/settings", label: "Workspace", icon: Settings },
-      { href: "/settings/advanced", label: "Advanced", icon: SlidersHorizontal, advanced: true },
-    ],
+    items: [{ href: "/settings", label: "Workspace", icon: Settings }],
   },
 ] as const;
 
 /** Ordered prefix rules; first match wins. Dashboard `/` is exact-only. */
-const DESTINATION_MATCHERS: readonly { id: DestinationId; match: (pathname: string) => boolean }[] =
-  [
-    { id: "journal", match: (pathname) => matchesAnyPrefix(pathname, JOURNAL_PREFIXES) },
-    { id: "knowledge", match: (pathname) => matchesAnyPrefix(pathname, KNOWLEDGE_PREFIXES) },
-    { id: "strategies", match: (pathname) => matchesAnyPrefix(pathname, STRATEGY_PREFIXES) },
-    { id: "agent", match: (pathname) => matchesAnyPrefix(pathname, AGENT_PREFIXES) },
-    {
-      id: "settings",
-      match: (pathname) =>
-        pathname === "/settings/advanced" ||
-        matchesAnyPrefix(pathname, SETTINGS_ROUTE_PREFIXES) ||
-        pathname.startsWith("/execution/manual-demo/") ||
-        isAdvancedPath(pathname),
-    },
-    { id: "dashboard", match: (pathname) => pathname === "/" },
-  ];
+const DESTINATION_MATCHERS: readonly {
+  id: DestinationId;
+  match: (pathname: string) => boolean;
+}[] = [
+  {
+    id: "journal",
+    match: (pathname) => matchesAnyPrefix(pathname, JOURNAL_PREFIXES),
+  },
+  {
+    id: "strategies",
+    match: (pathname) => matchesAnyPrefix(pathname, STRATEGY_PREFIXES),
+  },
+  {
+    id: "agent",
+    match: (pathname) => matchesAnyPrefix(pathname, AGENT_PREFIXES),
+  },
+  {
+    id: "settings",
+    match: (pathname) =>
+      pathname === "/settings/advanced" ||
+      matchesAnyPrefix(pathname, SETTINGS_ROUTE_PREFIXES) ||
+      pathname.startsWith("/execution/manual-demo/") ||
+      isAdvancedPath(pathname),
+  },
+  { id: "dashboard", match: (pathname) => pathname === "/" },
+];
 
 export function getDestinationId(pathname: string): DestinationId | null {
   for (const rule of DESTINATION_MATCHERS) {
@@ -129,26 +134,41 @@ export function getDestinationId(pathname: string): DestinationId | null {
 }
 
 export function getPrimaryDestination(id: DestinationId): PrimaryDestination {
-  const found = PRIMARY_DESTINATIONS.find((destination) => destination.id === id);
+  const found = PRIMARY_DESTINATIONS.find(
+    (destination) => destination.id === id,
+  );
   if (!found) {
     throw new Error(`Unknown destination: ${id}`);
   }
   return found;
 }
 
-export function getSecondaryItems(destinationId: DestinationId): readonly NavLink[] {
-  return SECONDARY_NAV.find((group) => group.destinationId === destinationId)?.items ?? [];
+export function getSecondaryItems(
+  destinationId: DestinationId,
+): readonly NavLink[] {
+  return (
+    SECONDARY_NAV.find((group) => group.destinationId === destinationId)
+      ?.items ?? []
+  );
 }
 
 export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/settings") return pathname === "/settings" || pathname.startsWith("/execution/manual-demo/");
+  if (href === "/settings")
+    return (
+      pathname === "/settings" || pathname.startsWith("/execution/manual-demo/")
+    );
   if (href === "/journal") return pathname === "/journal";
   if (href === "/settings/advanced") {
-    return pathname === href || (pathname !== "/settings" && isAdvancedPath(pathname));
+    return (
+      pathname === href ||
+      (pathname !== "/settings" && isAdvancedPath(pathname))
+    );
   }
-  if (href === "/risk") return pathname === "/risk" || pathname.startsWith("/risk/");
-  if (href === "/alerts") return pathname === "/alerts" || pathname.startsWith("/alerts/");
+  if (href === "/risk")
+    return pathname === "/risk" || pathname.startsWith("/risk/");
+  if (href === "/alerts")
+    return pathname === "/alerts" || pathname.startsWith("/alerts/");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -216,8 +236,12 @@ export function resolvePageIdentity(pathname: string): PageIdentity {
 
   const secondaryItems = getSecondaryItems(destinationId);
   const activeHref = resolveSecondaryActiveHref(pathname, secondaryItems);
-  const secondary = secondaryItems.find((item) => item.href === activeHref) ?? null;
-  if (!secondary || (secondary.href === primary.href && pathname === primary.href)) {
+  const secondary =
+    secondaryItems.find((item) => item.href === activeHref) ?? null;
+  if (
+    !secondary ||
+    (secondary.href === primary.href && pathname === primary.href)
+  ) {
     return {
       primaryLabel: primary.label,
       secondaryLabel: null,
@@ -236,7 +260,7 @@ export function resolvePageIdentity(pathname: string): PageIdentity {
 
 /** Flat reachability map used by tests — every retained capability path. */
 export function listReachableHrefs(): string[] {
-  const hrefs = new Set<string>();
+  const hrefs = new Set<string>(["/settings/advanced", "/knowledge"]);
   for (const destination of PRIMARY_DESTINATIONS) {
     hrefs.add(destination.href);
   }

@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.agent_capture.contracts import SavedEntry
 from app.daily_review.contracts import DailyReview
 from app.interactive_agent.actions import ActionDescriptor, ActionRequest
 from app.schemas.common import StrictModel
@@ -110,6 +111,7 @@ class AgentTurnRequest(StrictModel):
     timeframe: str | None = Field(default=None, max_length=16)
     action: ActionRequest | None = None
     analytics_filters: StrategyAnalyticsFilters | None = None
+    source_document_id: UUID | None = None
 
 
 class ProposalDecisionRequest(StrictModel):
@@ -244,6 +246,15 @@ class StructuredActionProposal(StrictModel):
 
 
 class AgentTurnResult(StrictModel):
+    model_usage: list[dict[str, Any]] = Field(default_factory=list)
+    saved_entries: list[SavedEntry] = Field(default_factory=list)
+    capture_status: Literal["not_needed", "saved", "failed", "clarification", "unavailable"] = (
+        "not_needed"
+    )
+    capture_error: str | None = None
+    capture_source_message_id: UUID | None = None
+    capture_clarification: str | None = None
+
     schema_version: Literal["InteractiveAgent/v1"] = SCHEMA_VERSION
     conversation_id: UUID
     user_message_id: UUID

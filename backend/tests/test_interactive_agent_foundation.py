@@ -848,7 +848,21 @@ def test_agent_http_journal_confirm_and_capability_catalog(
         statuses = {item["capability"]: item["status"] for item in body["items"]}
         assert statuses["screenshot_analysis"] == "contract_only"
         assert statuses["voice_io"] == "contract_only"
-        turned = client.post("/agent/turns", json={"message": JOURNAL_TEXT})
+        turned = client.post(
+            "/agent/turns",
+            json={
+                "message": JOURNAL_TEXT,
+                "action": {
+                    "name": "journal.create",
+                    "arguments": {
+                        "text": JOURNAL_TEXT,
+                        "symbol": "BTCUSDT",
+                        "timeframe": "1h",
+                        "direction": "long",
+                    },
+                },
+            },
+        )
         assert turned.status_code == 200
         payload = turned.json()
         assert payload["authority_mutated"] is False

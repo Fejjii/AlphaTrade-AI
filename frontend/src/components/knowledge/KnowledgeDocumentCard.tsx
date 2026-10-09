@@ -76,20 +76,6 @@ export function KnowledgeDocumentCard({
           data-testid="knowledge-source-context"
           className="min-w-0 space-y-1"
         >
-          {document.ingestion_metadata?.file ? (
-            <p className="break-words">File: {document.ingestion_metadata.file.filename}</p>
-          ) : null}
-          <p className="min-w-0" data-testid="knowledge-source-uri">
-            <span className="text-text-muted">Source URI: </span>
-            <span
-              className="inline-block max-w-full truncate align-bottom font-mono text-caption"
-              title={document.source_uri?.trim() || undefined}
-            >
-              {document.source_uri?.trim()
-                ? document.source_uri
-                : "unavailable"}
-            </span>
-          </p>
           <details className="min-w-0 text-xs text-text-muted">
             <summary className="inline-flex min-h-11 cursor-pointer items-center">
               Provenance details
@@ -103,17 +89,37 @@ export function KnowledgeDocumentCard({
               {document.source_hash ? (
                 <p>Source hash: {document.source_hash}</p>
               ) : null}
-              {document.ingestion_metadata?.file ? <>
-                <p>Raw file SHA-256: {document.ingestion_metadata.file.raw_content_hash}</p>
-                <p>Extracted characters: {document.ingestion_metadata.file.extracted_characters}</p>
-                <p>Extraction: {document.ingestion_metadata.file.parser_version}</p>
-              </> : null}
-              {document.ingestion_metadata?.indexing ? <p>
-                Recorded search index: {document.ingestion_metadata.indexing.vector_backend},
-                upsert acknowledged at {document.ingestion_metadata.indexing.observed_at}
-                {document.ingestion_metadata.indexing.fallback_used ? " (fallback/local)" : ""}.
-                Current search availability is checked separately.
-              </p> : <p>Search indexing status: unverified.</p>}
+              {document.ingestion_metadata?.file ? (
+                <>
+                  <p>File: {document.ingestion_metadata.file.filename}</p>
+                  <p>
+                    Raw file SHA-256:{" "}
+                    {document.ingestion_metadata.file.raw_content_hash}
+                  </p>
+                  <p>
+                    Extracted characters:{" "}
+                    {document.ingestion_metadata.file.extracted_characters}
+                  </p>
+                  <p>
+                    Extraction:{" "}
+                    {document.ingestion_metadata.file.parser_version}
+                  </p>
+                </>
+              ) : null}
+              {document.ingestion_metadata?.indexing ? (
+                <p>
+                  Recorded search index:{" "}
+                  {document.ingestion_metadata.indexing.vector_backend}, upsert
+                  acknowledged at{" "}
+                  {document.ingestion_metadata.indexing.observed_at}
+                  {document.ingestion_metadata.indexing.fallback_used
+                    ? " (fallback/local)"
+                    : ""}
+                  . Current search availability is checked separately.
+                </p>
+              ) : (
+                <p>Search indexing status: unverified.</p>
+              )}
             </div>
           </details>
         </div>
@@ -161,7 +167,7 @@ export function KnowledgeDocumentCard({
             aria-expanded={expanded}
             onClick={onToggleExpand}
           >
-            {expanded ? "Hide detail" : "Show detail"}
+            {expanded ? "Close" : "Open"}
           </button>
         ) : null}
 

@@ -92,7 +92,14 @@ async def agent_turn(
 ) -> AgentTurnResult:
     from app.interactive_agent.action_registry import route_action
 
-    action = route_action(body)
+    if body.source_document_id is not None:
+        from app.agent_capture.service import uploaded_text
+        from app.core.errors import ValidationAppError
+
+        if body.action is not None:
+            raise ValidationAppError("An upload cannot carry a tool action.")
+        uploaded_text(session, body.source_document_id, tenant.organization_id, tenant.user_id)
+    action = route_action(body) if body.source_document_id is None else None
     service = (
         _service(
             session,
@@ -107,7 +114,11 @@ async def agent_turn(
         body,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
+        ordinary_capture=True,
     )
+    from app.agent_capture.routes import capture_result
+
+    capture_result(session, settings, tenant.organization_id, tenant.user_id, result, body)
     session.commit()
     return result
 

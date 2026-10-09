@@ -12,9 +12,12 @@ import {
   AgentWorkspace,
   AGENT_TURN_TIMEOUT_MS,
 } from "@/components/agent/AgentWorkspace";
-import { missingAgentCapabilities } from "@/components/agent/agent-contracts";
 import * as browserVoice from "@/lib/voice/browser-voice-provider";
 import type { VoiceProvider } from "@/lib/voice/types";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const apiMocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
@@ -46,7 +49,11 @@ vi.mock("@/lib/api", () => ({
     positions: { list: apiMocks.listPositions },
     strategies: { list: apiMocks.listStrategies },
     canonical: { getMarketStatus: apiMocks.marketStatus },
-    knowledge: { previewFile: apiMocks.previewFile, importFile: apiMocks.importFile, ingest: apiMocks.ingest },
+    knowledge: {
+      previewFile: apiMocks.previewFile,
+      importFile: apiMocks.importFile,
+      ingest: apiMocks.ingest,
+    },
   },
 }));
 
@@ -150,16 +157,21 @@ describe("Agent workspace", () => {
     apiMocks.listMessages.mockResolvedValue({
       items: [
         {
-          id: "u", role: "user", created_at: "2026-01-01",
+          id: "u",
+          role: "user",
+          created_at: "2026-01-01",
           content: `My quotation${marker}Keep this inline.`,
         },
         {
-          id: "a", role: "assistant", created_at: "2026-01-01",
+          id: "a",
+          role: "assistant",
+          created_at: "2026-01-01",
           content: `Conclusion: wait.\n\nStored evidence is stale; it cannot establish a current price.${marker}version=raw-id; hash=abc123`,
         },
       ],
     });
     render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
     const summary = await screen.findByText("Stored evidence");
     const details = summary.closest("details")!;
@@ -179,139 +191,177 @@ describe("Agent workspace", () => {
     apiMocks.listMessages.mockResolvedValue({
       items: [
         {
-          id: "a", role: "assistant", created_at: "2026-01-01",
-          content: "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nEvidence excerpt.",
+          id: "a",
+          role: "assistant",
+          created_at: "2026-01-01",
+          content:
+            "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nEvidence excerpt.",
           payload: {
             interactive_agent: {
-              recorded_evidence: "Nested approved. SFP approved. Full reference raw-id.",
+              recorded_evidence:
+                "Nested approved. SFP approved. Full reference raw-id.",
             },
           },
         },
       ],
     });
     render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
-    const details = (await screen.findByText("Stored evidence")).closest("details")!;
-    expect(details).toHaveTextContent("Nested approved. SFP approved. Full reference raw-id.");
+    const details = (await screen.findByText("Stored evidence")).closest(
+      "details",
+    )!;
+    expect(details).toHaveTextContent(
+      "Nested approved. SFP approved. Full reference raw-id.",
+    );
     expect(details).not.toHaveTextContent("Evidence excerpt.");
     expect(details).not.toHaveAttribute("open");
   });
 
   it("presents bounded manual command choices as visible durable links", async () => {
-    apiMocks.listMessages.mockResolvedValue({ items: [{
-      id: "choices", role: "assistant", created_at: "2026-10-08",
-      content: "Multiple manual BloFin demo orders match. Select an exact command.",
-      payload: { interactive_agent: { sources: [
-        { relation: "manual demo choice", record_id: "original-command", title: "12:56 UTC | 0.1 contracts | filled" },
-        { relation: "manual demo choice", record_id: "blocked-command", title: "13:02 UTC | 1 contracts | blocked" },
-      ] } },
-    }] });
+    apiMocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          id: "choices",
+          role: "assistant",
+          created_at: "2026-10-08",
+          content:
+            "Multiple manual BloFin demo orders match. Select an exact command.",
+          payload: {
+            interactive_agent: {
+              sources: [
+                {
+                  relation: "manual demo choice",
+                  record_id: "original-command",
+                  title: "12:56 UTC | 0.1 contracts | filled",
+                },
+                {
+                  relation: "manual demo choice",
+                  record_id: "blocked-command",
+                  title: "13:02 UTC | 1 contracts | blocked",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
     render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
-    const choices = await screen.findByRole("list", { name: "Matching manual demo attempts" });
+    const choices = await screen.findByRole("list", {
+      name: "Matching manual demo attempts",
+    });
     expect(choices).toHaveTextContent("0.1 contracts | filled");
     expect(choices).toHaveTextContent("1 contracts | blocked");
-    expect(screen.getByRole("link", { name: "12:56 UTC | 0.1 contracts | filled" })).toHaveAttribute("href", "/execution/manual-demo/original-command");
-    expect(screen.getByRole("link", { name: "13:02 UTC | 1 contracts | blocked" })).toHaveAttribute("href", "/execution/manual-demo/blocked-command");
+    expect(
+      screen.getByRole("link", { name: "12:56 UTC | 0.1 contracts | filled" }),
+    ).toHaveAttribute("href", "/execution/manual-demo/original-command");
+    expect(
+      screen.getByRole("link", { name: "13:02 UTC | 1 contracts | blocked" }),
+    ).toHaveAttribute("href", "/execution/manual-demo/blocked-command");
     expect(apiMocks.agentTurn).not.toHaveBeenCalled();
   });
 
   it("keeps full evidence available when the post-turn history request fails", async () => {
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     apiMocks.agentTurn.mockResolvedValue({
-      conversation_id: "c1", reply: "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
+      conversation_id: "c1",
+      reply:
+        "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
       recorded_evidence: "Full governed evidence beyond the reply budget.",
       full_reply: "Full additional explanation after the clean display ending.",
       connections: [{ title: "TradePlan", record_id: "plan-ref" }],
-      capability: "general_conversation", operation: "read", proposals: [], limitations: [],
-      authority_mutated: false, execution_attempted: false, real_trading_enabled: false,
+      capability: "general_conversation",
+      operation: "read",
+      proposals: [],
+      limitations: [],
+      authority_mutated: false,
+      execution_attempted: false,
+      real_trading_enabled: false,
     });
     render(<AgentWorkspace />);
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Compare my strategies" } });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Compare my strategies" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    const details = (await screen.findByText("Stored evidence")).closest("details")!;
-    expect(details).toHaveTextContent("Full governed evidence beyond the reply budget.");
-    expect(details).toHaveTextContent("Full additional explanation after the clean display ending.");
+    const details = (await screen.findByText("Stored evidence")).closest(
+      "details",
+    )!;
+    expect(details).toHaveTextContent(
+      "Full governed evidence beyond the reply budget.",
+    );
+    expect(details).toHaveTextContent(
+      "Full additional explanation after the clean display ending.",
+    );
     expect(details).toHaveTextContent("TradePlan: plan-ref");
     expect(details).not.toHaveAttribute("open");
   });
 
   it.each(["journal", "strategy", "knowledge", "Watcher", "trading", "risk"])(
-    "routes a voice request about %s through the governed Agent turn",
+    "uses one composer for voice about %s",
     async (topic) => {
       const text = `Review my ${topic}`;
       enableVoice(text);
       render(<AgentWorkspace />);
+      fireEvent.click(screen.getByRole("button", { name: "History" }));
       fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
       await screen.findAllByTestId("agent-message");
-      fireEvent.click(screen.getByRole("button", { name: /BTCUSDT/ }));
-      fireEvent.change(screen.getByLabelText("Timeframe"), {
-        target: { value: "4h" },
-      });
-      fireEvent.change(screen.getByLabelText("Message"), {
-        target: { value: "Keep my typed draft" },
-      });
       fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      fireEvent.change(screen.getByLabelText("Voice transcript"), {
+        target: { value: text + " carefully" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
       expect(apiMocks.agentTurn).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+      expect(screen.getByLabelText("Message")).toHaveValue(text + " carefully");
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
       await waitFor(() =>
         expect(apiMocks.agentTurn).toHaveBeenCalledExactlyOnceWith(
           {
-            message: text,
+            message: text + " carefully",
             conversation_id: "c1",
-            symbol: "BTCUSDT",
-            timeframe: "4h",
-            strategy_id: undefined,
+            source_document_id: undefined,
           },
           { signal: expect.any(AbortSignal) },
         ),
       );
-      expect(await screen.findByText("Transcript sent")).toBeInTheDocument();
-      expect(screen.getByLabelText("Message")).toHaveValue(
-        "Keep my typed draft",
-      );
       expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
-      expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
     },
   );
 
-  it("keeps a failed voice transcript and displays the Agent reply if history fails", async () => {
+  it("retains a failed message in the unified composer and displays a completed reply when history fails", async () => {
     enableVoice("Review risk before trading");
     apiMocks.agentTurn.mockRejectedValueOnce(new Error("Turn unavailable"));
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     render(<AgentWorkspace />);
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Turn unavailable",
     );
-    expect(screen.getByTestId("agent-voice-transcript")).toHaveTextContent(
+    expect(screen.getByLabelText("Message")).toHaveValue(
       "Review risk before trading",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
-    expect(await screen.findByText("Transcript sent")).toBeInTheDocument();
-    expect(screen.getAllByTestId("agent-message")[0]).toHaveTextContent(
-      "Review risk before trading",
-    );
-    expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
-      "Stored evidence",
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findAllByTestId("agent-message");
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(2);
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
-  it("pauses voice through the same kill switch as typed messages", async () => {
-    const provider = enableVoice("Buy now");
+  it("allows ordinary chat and voice while execution is globally paused", async () => {
+    const provider = enableVoice("My rule: wait for confirmation");
     apiMocks.killSwitchActive = true;
     render(<AgentWorkspace />);
-    await screen.findByRole("button", { name: "BTC plan" });
     expect(
       screen.getByRole("button", { name: "Start recording" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Send transcript" }),
-    ).toBeDisabled();
-    expect(provider.listen).not.toHaveBeenCalled();
-    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledOnce());
+    expect(provider.listen).toHaveBeenCalledOnce();
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
   it("bounds a stalled Agent turn, retains the transcript, and does not retry automatically", async () => {
@@ -325,17 +375,16 @@ describe("Agent workspace", () => {
         }),
     );
     render(<AgentWorkspace />);
-    await screen.findByRole("button", { name: "BTC plan" });
+    await waitFor(() => expect(apiMocks.listConversations).toHaveBeenCalled());
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "check conversation history before resending",
     );
-    expect(screen.getByTestId("agent-voice-transcript")).toHaveTextContent(
-      "Review my journal",
-    );
+    expect(screen.getByLabelText("Message")).toHaveValue("Review my journal");
     expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
@@ -351,14 +400,13 @@ describe("Agent workspace", () => {
         }),
     );
     render(<AgentWorkspace />);
-    await screen.findByRole("button", { name: "BTC plan" });
+    await waitFor(() => expect(apiMocks.listConversations).toHaveBeenCalled());
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
-    expect(screen.getByTestId("agent-voice-status")).toHaveTextContent(
-      "Transcript sent",
-    );
+    expect(screen.getByLabelText("Message")).toHaveValue("");
     expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
       "Stored evidence",
     );
@@ -366,51 +414,76 @@ describe("Agent workspace", () => {
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
-  it("opens Knowledge document import from Agent and saves only after preview confirmation", async () => {
-    const preview = {
-      filename: "rules.txt", title: "rules", source_type: "trading_playbook", media_type: "text/plain",
-      byte_size: 20, raw_content_hash: "a".repeat(64), extracted_text_hash: "b".repeat(64),
-      extracted_text: "Risk remains governed.", extracted_characters: 20,
-      warnings: [], preview_receipt: "preview-receipt", expires_at: "2026-10-08T20:00:00Z",
-      saved: false, vector_index_status: "not_started",
-    };
-    apiMocks.previewFile.mockResolvedValue(preview);
-    apiMocks.importFile.mockResolvedValue({ document_id: "stored-doc", source_hash: "source-hash", chunk_count: 1,
-      duplicate: false, version: 1, vector_backend: "qdrant", fallback_used: false,
-      vector_index_status: "upsert_acknowledged", sql_chunks_stored: true });
+  it("previews an attachment before sending and passes only its persisted document reference", async () => {
+    apiMocks.previewFile.mockResolvedValue({
+      title: "rules",
+      extracted_text: "Risk remains governed.",
+      warnings: [],
+      preview_receipt: "preview-receipt",
+    });
+    apiMocks.importFile.mockResolvedValue({ document_id: "stored-doc" });
     render(<AgentWorkspace />);
-    fireEvent.click(screen.getByRole("button", { name: "Import document" }));
-    expect(screen.getByRole("region", { name: "Document import to Knowledge" })).toHaveTextContent(
-      "Importing does not approve strategies or create Journal entries.",
+    fireEvent.click(screen.getByRole("button", { name: "Attach document" }));
+    const file = new File(["Risk remains governed."], "rules.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByLabelText("Attach document"), {
+      target: { files: [file] },
+    });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Use my rules" },
+    });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Preview attachment" }));
+    expect(await screen.findByLabelText("Attachment preview")).toHaveValue(
+      "Risk remains governed.",
     );
-    expect(screen.getByRole("link", { name: "Open Knowledge library" })).toHaveAttribute("href", "/knowledge");
-    const file = new File([preview.extracted_text], "rules.txt", { type: "text/plain" });
-    fireEvent.change(screen.getByLabelText("Document file"), { target: { files: [file] } });
-    expect(screen.getByRole("button", { name: "Save previewed file" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Preview file" }));
-    expect(await screen.findByLabelText("Extracted text preview")).toHaveValue(preview.extracted_text);
     expect(apiMocks.importFile).not.toHaveBeenCalled();
-    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Save previewed file" }));
-    expect(await screen.findByTestId("knowledge-ingest-success")).toHaveTextContent("Search index acknowledged by qdrant");
-    expect(apiMocks.importFile).toHaveBeenCalledWith(file, "rules", "trading_playbook", "preview-receipt");
-    expect(apiMocks.ingest).not.toHaveBeenCalled();
-    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(apiMocks.agentTurn).toHaveBeenCalledWith(
+        {
+          message: "Use my rules",
+          conversation_id: undefined,
+          source_document_id: "stored-doc",
+        },
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(apiMocks.importFile).toHaveBeenCalledWith(
+      file,
+      "rules",
+      "general_note",
+      "preview-receipt",
+    );
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
 
   it("keeps the complete explanation and technical source references inside Stored evidence", async () => {
-    apiMocks.listMessages.mockResolvedValue({ items: [{ id: "a", role: "assistant", created_at: "2026-01-01",
-      content: "BTC short: entry 84,714.1. Missing risk narrative.",
-      payload: { interactive_agent: {
-        full_reply: "Complete additional explanation with 9c8c5c4f-3a8c-5301-bb63-b6b6a9bdc1b2.",
-        recorded_evidence: "Canonical amounts and hash: abc123",
-        sources: [{ title: "TradePlan", record_id: "plan-ref" }],
-      } },
-    }] });
+    apiMocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          role: "assistant",
+          created_at: "2026-01-01",
+          content: "BTC short: entry 84,714.1. Missing risk narrative.",
+          payload: {
+            interactive_agent: {
+              full_reply:
+                "Complete additional explanation with 9c8c5c4f-3a8c-5301-bb63-b6b6a9bdc1b2.",
+              recorded_evidence: "Canonical amounts and hash: abc123",
+              sources: [{ title: "TradePlan", record_id: "plan-ref" }],
+            },
+          },
+        },
+      ],
+    });
     render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
-    const details = (await screen.findByText("Stored evidence")).closest("details")!;
+    const details = (await screen.findByText("Stored evidence")).closest(
+      "details",
+    )!;
     expect(details).not.toHaveAttribute("open");
     expect(details).toHaveTextContent("Complete additional explanation");
     expect(details).toHaveTextContent("TradePlan: plan-ref");
@@ -419,61 +492,28 @@ describe("Agent workspace", () => {
     expect(screen.getByText(/BTC short: entry/)).toBeVisible();
   });
 
-  it("separates user and agent messages and offers document import and hides unsupported screenshot controls", async () => {
+  it("has collapsed history, no permanent capability panel or standalone trade context", async () => {
     render(<AgentWorkspace />);
+    expect(
+      screen.queryByRole("button", { name: "BTC plan" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-capability-boundary"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Timeframe")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Attach document" }));
+    expect(screen.getByLabelText("Attach document")).toHaveAttribute(
+      "type",
+      "file",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
     const messages = await screen.findAllByTestId("agent-message");
     expect(messages[0]).toHaveAttribute("data-role", "user");
-    expect(messages[0]).toHaveTextContent("You");
     expect(messages[1]).toHaveAttribute("data-role", "assistant");
-    expect(messages[1]).toHaveTextContent("Agent");
-    expect(screen.queryByTestId("agent-attach-image")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Import document" })).toBeEnabled();
-    expect(screen.getByTestId("agent-voice")).toBeDisabled();
-    expect(document.querySelector("input[type='file']")).toBeNull();
-    expect(screen.getByTestId("agent-capability-boundary")).toHaveTextContent(
-      "Image and screenshot attachment",
-    );
-    expect(
-      screen.queryByText(
-        "Screenshot analysis is not available. No image is uploaded or interpreted.",
-      ),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Voice input is unavailable in this browser. Use a supported browser over HTTPS or type your message.",
-      ),
-    ).toBeInTheDocument();
-    for (const missing of missingAgentCapabilities()) {
-      expect(screen.getByText(missing.label)).toBeInTheDocument();
-    }
-  });
-
-  it("sends text with trade context and does not invent an attachment payload", async () => {
-    render(<AgentWorkspace />);
-    fireEvent.click(await screen.findByRole("button", { name: /BTCUSDT/ }));
-    fireEvent.change(screen.getByLabelText("Timeframe"), {
-      target: { value: "1h" },
-    });
-    fireEvent.change(screen.getByLabelText("Message"), {
-      target: { value: "Review this long." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1));
-    expect(apiMocks.agentTurn).toHaveBeenCalledWith(
-      {
-        message: "Review this long.",
-        conversation_id: undefined,
-        symbol: "BTCUSDT",
-        timeframe: "1h",
-        strategy_id: undefined,
-      },
-      { signal: expect.any(AbortSignal) },
-    );
-    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
-    expect(apiMocks.rejectProposal).not.toHaveBeenCalled();
-    expect(await screen.findByTestId("agent-market-context")).toHaveTextContent(
-      "fresh",
+    expect(screen.getByRole("button", { name: "History" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
     );
   });
 
@@ -532,9 +572,11 @@ describe("Agent workspace", () => {
       ],
     });
     render(<AgentWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
     await screen.findAllByTestId("agent-message");
     apiMocks.listMessages.mockRejectedValue(new Error("History offline"));
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(screen.getByRole("button", { name: "ETH review" }));
     expect(screen.queryByText("Is this a pullback?")).not.toBeInTheDocument();
     expect(

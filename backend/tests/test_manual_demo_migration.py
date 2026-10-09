@@ -32,7 +32,7 @@ def test_single_head_extends_verified_demo_lifecycle():
         "script_location", str(Path(__file__).parents[1] / "src/app/db/migrations")
     )
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["a7manualrecovery001"]
+    assert scripts.get_heads() == ["a8agentcapture001"]
     assert scripts.get_revision("a7manualrecovery001").down_revision == "a6manualdemo001"
     assert scripts.get_revision("a6manualdemo001").down_revision == "a5demolifecycle001"
 
@@ -134,7 +134,7 @@ def test_real_alembic_a6_to_head_preserves_plan_and_enables_recovery_reads(monke
         command.upgrade(config, "head")  # API entrypoint repeats Render's pre-deploy upgrade.
         with factory() as session:
             assert session.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "a7manualrecovery001"
+                "a8agentcapture001"
             )
             preserved = session.get(TradePlanRevision, plan.revision_id)
             assert preserved.semantic_payload == before

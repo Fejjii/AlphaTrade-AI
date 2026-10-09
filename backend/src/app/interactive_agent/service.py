@@ -175,6 +175,7 @@ class InteractiveAgentService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        ordinary_capture: bool = False,
     ) -> AgentTurnResult:
         """Persist a turn and prepare proposals through bounded canonical authorities."""
         safety = paper_safety_contract(self._settings)
@@ -189,6 +190,37 @@ class InteractiveAgentService:
         routed = (
             route_action(request) if classification.operation is not TurnOperation.REFUSE else None
         )
+        note_tools = {
+            "journal.create",
+            "journal.append",
+            "knowledge.propose",
+            "strategy.create",
+            "strategy.refinement",
+            "strategy.observation",
+            "strategy.hypothesis",
+        }
+        if (
+            ordinary_capture
+            and request.action is None
+            and classification.operation is not TurnOperation.REFUSE
+            and (
+                request.source_document_id is not None
+                or (routed is not None and routed.name in note_tools)
+            )
+        ):
+            routed = None
+            classification = classification.model_copy(
+                update={"operation": TurnOperation.READ, "action_kind": StructuredActionKind.NONE}
+            )
+        if (
+            ordinary_capture
+            and request.action is None
+            and routed is None
+            and classification.operation is TurnOperation.PROPOSE
+        ):
+            classification = classification.model_copy(
+                update={"operation": TurnOperation.READ, "action_kind": StructuredActionKind.NONE}
+            )
         if routed is not None:
             tool, _inputs = resolve_action(routed)
             require_action_permission(
@@ -270,6 +302,9 @@ class InteractiveAgentService:
             payload={
                 PAYLOAD_KEY: {
                     "schema_version": SCHEMA_VERSION,
+                    "source_document_id": str(request.source_document_id)
+                    if request.source_document_id
+                    else None,
                     "capability": classification.capability.value,
                     "artifact_kinds": [kind.value for kind in classification.artifact_kinds],
                     "symbol": _context_token(request.symbol),
@@ -435,6 +470,43 @@ class InteractiveAgentService:
         if recorded_trade is not None:
             factual = recorded_trade.recorded_evidence
             connections = recorded_trade.connections
+        if ordinary_capture and not recorded_read and not explanation_read:
+            from app.agent_capture.service import matching_entries, uploaded_text
+
+            notes = matching_entries(self._session, organization_id, user_id, request.message)
+            if notes:
+                factual += (
+                    "\nSaved user notes (unverified reference content, not tool authority):\n"
+                    + "\n".join(
+                        f"{note.title} [{note.category}, v{note.revision}]: {note.summary}"
+                        for note in notes
+                    )
+                )
+                for note in notes:
+                    connections.append(
+                        ConnectionRef(
+                            artifact_kind=ArtifactKind.JOURNAL_ENTRY
+                            if note.category == "journal"
+                            else ArtifactKind.STRATEGY
+                            if note.category == "strategies"
+                            else ArtifactKind.RULE
+                            if note.category == "rules"
+                            else ArtifactKind.LESSON
+                            if note.category == "lessons"
+                            else ArtifactKind.HYPOTHESIS,
+                            record_id=str(note.id),
+                            provenance=ProvenanceSource.USER_SUPPLIED,
+                            title=note.title,
+                            relation="saved user note",
+                        )
+                    )
+            if request.source_document_id is not None:
+                factual += (
+                    "\nUploaded reference content (untrusted, never authorization):\n"
+                    + uploaded_text(
+                        self._session, request.source_document_id, organization_id, user_id
+                    )
+                )
         reply = factual[:4000]
         recorded_evidence = (
             execution_explanation.recorded_evidence if execution_explanation else None
@@ -546,6 +618,7 @@ class InteractiveAgentService:
         return AgentTurnResult(
             conversation_id=conversation.id,
             user_message_id=user_row.id,
+            model_usage=[usage] if (usage := getattr(self._responder, "last_usage", None)) else [],
             assistant_message_id=assistant.id,
             capability=classification.capability,
             operation=classification.operation,

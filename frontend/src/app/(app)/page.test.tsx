@@ -1,8 +1,14 @@
+vi.mock("@/components/settings/ManualDemoActivity", () => ({
+  ManualDemoActivity: () => <div>Manual history fixture</div>,
+}));
+vi.mock("@/components/ManualDemoTest", () => ({
+  ManualDemoTest: () => <div>Manual demo fixture</div>,
+}));
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
-import { failedSource, okSource } from "@/components/workflows/sourceResult";
+import { okSource } from "@/components/workflows/sourceResult";
 import { formatCurrency, formatMonetary, UNAVAILABLE } from "@/lib/format";
 import { makeWatcherMonitoringSnapshot } from "@/lib/watcher-monitoring-fixtures";
 import type { TraderDashboardData } from "@/components/dashboard/TraderDashboardView";
@@ -27,7 +33,9 @@ vi.mock("@/contexts/AppContext", () => ({
 
 vi.mock("@/components/dashboard/BloFinDemoAccountCard", () => ({
   BloFinDemoAccountCard: ({ refreshKey }: { refreshKey: number }) => (
-    <section data-testid="dashboard-demo-account" data-refresh-key={refreshKey}>BloFin demo account</section>
+    <section data-testid="dashboard-demo-account" data-refresh-key={refreshKey}>
+      BloFin demo account
+    </section>
   ),
 }));
 
@@ -83,14 +91,16 @@ function dashboardData(
       safety: { execution_mode: "paper", real_trading_enabled: false },
       open_paper_trades_summary: {
         total_count: 1,
-        items: [{
-          journal_trade_id: "canonical-p1",
-          symbol: "BTCUSDT",
-          direction: "long",
-          exchange: "PAPER_INTERNAL",
-          account_id: "account-one",
-          unrealized_pnl: null,
-        }],
+        items: [
+          {
+            journal_trade_id: "canonical-p1",
+            symbol: "BTCUSDT",
+            direction: "long",
+            exchange: "PAPER_INTERNAL",
+            account_id: "account-one",
+            unrealized_pnl: null,
+          },
+        ],
       },
     } as DashboardSummary),
     watcher: okSource(makeWatcherMonitoringSnapshot()),
@@ -141,34 +151,31 @@ afterEach(() => {
 describe("Trader dashboard", () => {
   it("refreshes the saved demo snapshot together with the Dashboard", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute("data-refresh-key", "0");
+    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute(
+      "data-refresh-key",
+      "0",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute("data-refresh-key", "1");
+    expect(screen.getByTestId("dashboard-demo-account")).toHaveAttribute(
+      "data-refresh-key",
+      "1",
+    );
     expect(asyncState.reload).toHaveBeenCalled();
   });
-  it("shows confirmed paper posture only when verified", () => {
+  it("keeps Daily Review compact without duplicating the shell mode", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent(
-      "PAPER mode",
-    );
     expect(
-      screen.getByTestId("dashboard-real-trading-status"),
-    ).toHaveTextContent("Real trading disabled");
-    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
-      "Paper only",
-    );
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode active",
-    );
+      screen.queryByTestId("dashboard-paper-only"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("paper-mode-indicator"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 1, name: "Dashboard" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
-    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
   });
-
-  it("shows safety conflict when real trading is enabled", () => {
+  it("retains the runtime conflict warning", () => {
     safetyPosture.realTradingEnabled = true;
     asyncState.data = dashboardData({
       summary: okSource({
@@ -179,28 +186,13 @@ describe("Trader dashboard", () => {
     expect(screen.getByTestId("dashboard-safety-conflict")).toHaveTextContent(
       /safety conflict/i,
     );
-    expect(screen.getByTestId("paper-mode-indicator")).toHaveAttribute(
-      "aria-label",
-      "Paper mode not confirmed",
-    );
   });
-
-  it("shows unverified posture when runtime fields are unknown", () => {
-    safetyPosture.executionMode = null;
-    safetyPosture.realTradingEnabled = null;
-    asyncState.data = dashboardData({ summary: failedSource("summary down") });
-    render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-paper-only")).toHaveTextContent(
-      "Execution unverified",
-    );
-    expect(screen.getByTestId("dashboard-runtime-posture")).toHaveTextContent(
-      "Runtime posture unverified",
-    );
-  });
-
   it("shows paper value, pnl, win rate, positions, and trader watcher status", () => {
     render(<DashboardPage />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Dashboard account" }),
+      { target: { value: "simulator" } },
+    );
     expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
       formatCurrency("1000.50"),
     );
@@ -229,7 +221,10 @@ describe("Trader dashboard", () => {
   it("does not present an unmeasured win rate as zero", () => {
     asyncState.data = dashboardData({ portfolio: okSource(portfolio(0, 0)) });
     render(<DashboardPage />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Dashboard account" }),
+      { target: { value: "simulator" } },
+    );
     expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(
       UNAVAILABLE,
     );
@@ -247,12 +242,16 @@ describe("Trader dashboard", () => {
       summary: okSource({
         ...data.summary.data!,
         open_paper_trades_summary: {
-          ...data.summary.data!.open_paper_trades_summary!, total_count: 25,
+          ...data.summary.data!.open_paper_trades_summary!,
+          total_count: 25,
         },
       }),
     });
     render(<DashboardPage />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Dashboard account" }),
+      { target: { value: "simulator" } },
+    );
     expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("3");
     expect(screen.getByTestId("dashboard-daily-status")).toHaveTextContent(
       "Daily status unavailable",
@@ -268,13 +267,24 @@ describe("Trader dashboard", () => {
   it("defaults to one BloFin account view and keeps simulator metrics behind explicit selection", () => {
     render(<DashboardPage />);
     expect(screen.getAllByTestId("dashboard-demo-account")).toHaveLength(1);
-    expect(screen.queryByTestId("dashboard-strategy-performance")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("dashboard-strategy-performance"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("ETHUSDT")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
-    expect(screen.queryByTestId("dashboard-demo-account")).not.toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(formatCurrency("1000.50"));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Dashboard account" }),
+      { target: { value: "simulator" } },
+    );
+    expect(
+      screen.queryByTestId("dashboard-demo-account"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
+      formatCurrency("1000.50"),
+    );
     expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("3");
-    expect(screen.getByRole("link", { name: "Open simulator portfolio" })).toHaveAttribute("href", "/portfolio");
+    expect(
+      screen.getByRole("link", { name: "Open simulator portfolio" }),
+    ).toHaveAttribute("href", "/portfolio");
     expect(screen.queryByText("BTCUSDT · long")).not.toBeInTheDocument();
   });
 

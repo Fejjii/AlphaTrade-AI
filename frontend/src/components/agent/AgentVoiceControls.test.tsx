@@ -112,16 +112,14 @@ describe("Agent voice controls", () => {
     render(<AgentVoiceControls {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
     const late = input;
-    fireEvent.click(screen.getByRole("button", { name: "Clear voice" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel recording" }));
     act(() => {
       late.onTranscript("Late speech");
       late.onComplete("Late speech");
     });
     expect(cancelInput).toHaveBeenCalled();
     expect(screen.queryByTestId("agent-voice-transcript")).toBeNull();
-    expect(screen.getByTestId("agent-voice-status")).toHaveTextContent(
-      "Microphone off",
-    );
+    expect(screen.queryByTestId("agent-voice-status")).not.toBeInTheDocument();
     expect(onSend).not.toHaveBeenCalled();
   });
 

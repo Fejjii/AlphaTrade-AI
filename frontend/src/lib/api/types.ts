@@ -1648,6 +1648,15 @@ export interface AgentStructuredProposal {
 }
 
 export interface AgentTurnResult {
+  model_usage?: Record<string, unknown>[];
+  saved_entries?: import("./saved-entries").SavedEntry[];
+  assistant_message_id?: string;
+  user_message_id?: string;
+  capture_status?:
+    "not_needed" | "saved" | "failed" | "clarification" | "unavailable";
+  capture_error?: string | null;
+  capture_source_message_id?: string | null;
+  capture_clarification?: string | null;
   conversation_id: string;
   reply: string;
   recorded_evidence?: string | null;
@@ -3128,6 +3137,7 @@ export interface PaperSignalResult {
 }
 
 export interface CanonicalJournalTradeListItem {
+  execution_lifecycle_id?: string | null;
   source?: JournalTradeSource;
   exchange?: string | null;
   entry_time?: string | null;

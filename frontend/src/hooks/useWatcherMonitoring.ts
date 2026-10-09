@@ -13,9 +13,11 @@ export function useWatcherMonitoring() {
     const onReconnect = () => {
       void reload();
     };
+    window.addEventListener("alphatrade:status-changed", onReconnect);
     window.addEventListener("focus", onReconnect);
     window.addEventListener("online", onReconnect);
     return () => {
+      window.removeEventListener("alphatrade:status-changed", onReconnect);
       window.removeEventListener("focus", onReconnect);
       window.removeEventListener("online", onReconnect);
     };

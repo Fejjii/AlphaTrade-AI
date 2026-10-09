@@ -338,6 +338,11 @@ def test_model_receives_user_assistant_context_separately_from_fresh_facts(monke
                 mutation_allowed=False,
                 fallback_used=False,
                 resolved_model="simulated",
+                input_tokens=12,
+                output_tokens=30,
+                total_latency_ms=15,
+                total_cost=0,
+                cost_source=SimpleNamespace(value="unavailable"),
                 decision=SimpleNamespace(selected_model="simulated"),
             )
 

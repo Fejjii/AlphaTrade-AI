@@ -1,3 +1,9 @@
+vi.mock("@/components/settings/ManualDemoActivity", () => ({
+  ManualDemoActivity: () => <div>Manual history fixture</div>,
+}));
+vi.mock("@/components/ManualDemoTest", () => ({
+  ManualDemoTest: () => <div>Manual demo fixture</div>,
+}));
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -49,7 +55,10 @@ afterEach(() => {
 describe("Trader dashboard unavailable sources", () => {
   it("renders unavailable figures instead of zeros", () => {
     render(<DashboardPage />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Dashboard account" }),
+      { target: { value: "simulator" } },
+    );
     expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
       UNAVAILABLE,
     );
@@ -74,13 +83,21 @@ describe("Trader dashboard unavailable sources", () => {
     );
     expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
     expect(screen.getByTestId("daily-review-unavailable")).toBeInTheDocument();
-    expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("daily-review-content"),
+    ).not.toBeInTheDocument();
   });
 
   it("never substitutes unrelated empty Journal positions for unavailable native account data", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent(UNAVAILABLE);
-    expect(screen.queryByText("No native open positions at this snapshot.")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("dashboard-strategy-performance")).not.toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent(
+      UNAVAILABLE,
+    );
+    expect(
+      screen.queryByText("No native open positions at this snapshot."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("dashboard-strategy-performance"),
+    ).not.toBeInTheDocument();
   });
 });

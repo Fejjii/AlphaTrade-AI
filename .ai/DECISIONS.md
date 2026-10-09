@@ -3062,3 +3062,27 @@ Existing portfolio and daily discipline projections keep their scope and explici
 UI labels. Manual demo tests remain excluded from the Attention/open-paper count;
 recent Journal records can include them. Missing current PnL/exposure stays null.
 No legacy fallback after a canonical error or historical record rewrite.
+
+## AT-ADR-097 — Private conversational capture has no execution authority
+
+2026-10-09. Consolidate navigation into Dashboard, Agent, Journal & Knowledge,
+Strategies and Settings while reusing PR232 native account/lifecycle contracts.
+Default exchange activity requires the projector-owned execution lifecycle link;
+manual venue/source claims and internal simulations cannot qualify. Preserve
+account-wide native exposure, incomplete outcome coverage and historical records.
+
+Prose and structured capture use configurable `gpt-6-astra`/high reasoning through
+the existing Responses integration, without cheaper/mock prose fallback. Official
+model documentation was checked; authorized runtime access and semantic quality
+are pending. Preserve server-only secrets and explicit unavailable results.
+Private saved notes/drafts have source quotes, scoped deterministic exact-trade
+links, durable content deduplication, revision checks and non-destructive Undo.
+They never become Journal execution evidence, strategy approval, automation, risk
+policy or orders. Uploaded instructions are untrusted data. Existing typed tool
+permissions/confirmations/execution fences remain authoritative.
+
+An additive migration follows a7manualrecovery001; no deployed database was
+changed. Ordinary chat/capture remains available during execution pause. PR232
+acceptance, live checks and the supervised consolidated gate remain separate.
+Implementation, fixture verification and presentation guide:
+`docs/alphatrade_workspace_redesign.md`.
