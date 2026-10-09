@@ -101,6 +101,17 @@ The cloud executor requires a writable `UV_CACHE_DIR` for script subprocesses.
 Its complete-run result and subsequent focused corrections are reported
 separately in the PR; a corrected focused run is not a clean complete gate.
 
+The single local complete run collected 4,817 cases and finished with 4,774
+passed, 32 failed, five setup errors, six skipped and 238 warnings
+(4,115.94 seconds). The
+36 baseline fixture failures/errors were corrected and verified in focused
+selections. The one script cache failure passed with `UV_CACHE_DIR` in `/tmp`;
+all six skipped hardcoded-database cases passed after provisioning their
+separate disposable fixture database. No second complete run was performed.
+An observed browser-test race was repaired by awaiting the saved read response
+and ready refresh control before advancing the fake clock, preserving the
+production single-flight and 180-second polling rules.
+
 ## Authenticated acceptance after review and deployment
 
 No BloFin execution/read-only credentials or owner session are bound in this

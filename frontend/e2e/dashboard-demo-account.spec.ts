@@ -140,8 +140,16 @@ for (const width of [1280, 390]) {
     expect(refreshes).toBe(0);
     await page.screenshot({ path: `../docs/screenshots/blofin-repair/fixture-dashboard-${width}.png`, fullPage: true });
     const initialReads = reads;
+    const savedRead = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/dashboard/demo-account" &&
+      response.request().method() === "GET",
+    );
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await (await savedRead).finished();
     await expect.poll(() => reads).toBeGreaterThan(initialReads);
+    // A request counter proves dispatch, not completion. Let the saved read
+    // settle so single-flight can schedule its native poll before time advances.
+    await expect(card.getByRole("button", { name: "Refresh demo account", exact: true })).toBeEnabled();
     expect(refreshes).toBe(0);
     // Exercise real browser timers and transport errors; values must survive.
     failRefresh = true;

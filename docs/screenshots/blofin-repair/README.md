@@ -14,3 +14,8 @@ PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromiu
 ```
 
 The six tests passed at 1280px and 390px where applicable. Checks include exact route identity, scoped API operations, reflection attachment, native snapshot refresh/retry, recovery confirmations, session restoration, and no horizontal overflow. Chromium mobile viewport checks do not establish Safari or physical iPhone compatibility. Captures used fallback fonts because Google Fonts requests were unavailable in this environment.
+
+The Dashboard checks were additionally repeated three times at each width after
+repairing a test timing race: await the saved GET response and ready refresh
+control before advancing the fake clock. All six repeated checks passed without
+retries; the production timer and single-flight rules were preserved.
