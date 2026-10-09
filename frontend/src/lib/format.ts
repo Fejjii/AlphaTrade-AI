@@ -24,6 +24,19 @@ export function formatMonetary(value: string | number | null | undefined): strin
   return `${sign}${Math.abs(numeric).toFixed(2)}`;
 }
 
+/** Decimal account money: two decimals, preserving meaningful tiny fees/PnL. */
+export function formatMoney(value: string | number | null | undefined): string {
+  const numeric = toFiniteNumber(value);
+  if (numeric === null) return UNAVAILABLE;
+  const magnitude = Math.abs(numeric);
+  const digits = magnitude > 0 && magnitude < 1
+    ? Math.min(20, Math.max(8, -Math.floor(Math.log10(magnitude)) + 3)) : 2;
+  return numeric.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: digits,
+  });
+}
+
 /**
  * Format an amount with an explicit ISO currency code from the backend.
  * When currency is missing, falls back to plain decimal money (no invented symbol).

@@ -235,3 +235,8 @@ describe("AT-040 Phase B redirects", () => {
     }
   });
 });
+
+it("highlights Settings for exact manual demo detail and Journal for trade detail", () => {
+  expect(getDestinationId("/execution/manual-demo/exact-command")).toBe("settings");
+  expect(getDestinationId("/journal")).toBe("journal");
+});

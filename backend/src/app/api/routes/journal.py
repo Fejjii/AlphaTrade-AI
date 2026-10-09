@@ -20,6 +20,7 @@ from app.core.dependencies import (
     SessionDep,
     SetupEvidenceServiceDep,
 )
+from app.core.errors import NotFoundError
 from app.schemas.backtest import (
     JournalComparisonFilters,
     JournalComparisonResponse,
@@ -78,6 +79,7 @@ from app.schemas.journal_trades import (
 from app.schemas.lesson import LessonCandidate
 from app.security.rbac import ReaderDep, TraderDep
 from app.security.tenant import ensure_same_organization
+from app.services.manual_demo_history import ManualDemoHistoryService
 
 router = APIRouter(prefix="/journal", tags=["journal"])
 
@@ -618,8 +620,17 @@ async def get_journal_trade(
     journal_trade_id: uuid.UUID,
     tenant: ReaderDep,
     service: JournalTradeServiceDep,
+    session: SessionDep,
 ) -> JournalTradeDetail:
-    return service.get_detail(journal_trade_id, organization_id=tenant.organization_id)
+    detail = service.get_detail(journal_trade_id, organization_id=tenant.organization_id)
+    if detail.trade.source == JournalTradeSource.MANUAL_DEMO_TEST:
+        if detail.trade.user_id != tenant.user_id or detail.trade.execution_lifecycle_id is None:
+            raise NotFoundError("Journal trade not found.")
+        attempt = ManualDemoHistoryService(session).get(tenant, detail.trade.execution_lifecycle_id)
+        if attempt.evidence.journal_trade_id != journal_trade_id:
+            raise NotFoundError("Journal trade lineage mismatch.")
+        detail.manual_demo = attempt
+    return detail
 
 
 @router.patch(
@@ -717,6 +728,9 @@ async def add_journal_trade_observation(
     service: JournalTradeServiceDep,
     session: SessionDep,
 ) -> JournalTradeObservationRead:
+    trade = service.get(journal_trade_id, organization_id=tenant.organization_id)
+    if trade.source == JournalTradeSource.MANUAL_DEMO_TEST and trade.user_id != tenant.user_id:
+        raise NotFoundError("Journal trade not found.")
     result = service.add_observation(
         journal_trade_id,
         body,

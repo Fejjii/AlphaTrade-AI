@@ -595,10 +595,49 @@ class ManualDemoService:
             and not effect.uncertainty
         )
         observation = None
+        prior_configuration = False
         if not diagnostics:
             self.session.commit()
+            prior_protection_ids: set[str] = set()
+            if evidence is not None:
+                receipts = self.session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.organization_id == tenant.organization_id,
+                        AuditLog.user_id == tenant.user_id,
+                        AuditLog.resource_type == "manual_demo_test",
+                        AuditLog.resource_id == str(command_id),
+                        AuditLog.redacted_metadata["venue_order_id"].as_string()
+                        == evidence.order_id,
+                        AuditLog.redacted_metadata["operation"].as_string()
+                        == "manual_demo_native_order_receipt",
+                    )
+                )
+                for prior in receipts:
+                    prior_facts = dict(prior.redacted_metadata)
+                    prior_digest = prior_facts.pop("receipt_hash", None)
+                    prior_facts.pop("operation", None)
+                    if (
+                        canonical_sha256(prior_facts) != prior_digest
+                        or prior_facts.get("plan_content_hash") != plan.content_hash
+                        or prior_facts.get("client_order_id") != evidence.client_order_id
+                        or prior_facts.get("instrument") != plan.execution_instrument
+                    ):
+                        raise TradingPolicyError("Stored protection receipt lineage failed.")
+                    prior_configuration |= (
+                        prior.redacted_metadata.get("protection_status") == "verified"
+                        or prior.redacted_metadata.get("protection_configured") is True
+                    )
+                    prior_protection_ids.update(
+                        prior.redacted_metadata.get("protection_order_ids", [])
+                    )
+                    if prior.redacted_metadata.get("native_tpsl_id"):
+                        prior_protection_ids.add(prior.redacted_metadata["native_tpsl_id"])
             observation = observe_lifecycle(
-                self._provider(), plan=plan, entry=evidence, proven_unsent=locally_unsent
+                self._provider(),
+                plan=plan,
+                entry=evidence,
+                proven_unsent=locally_unsent,
+                known_protection_ids=tuple(sorted(prior_protection_ids)),
             )
             self.epochs.lock_epoch(
                 organization_id=tenant.organization_id, account_id=plan.account_id
@@ -648,6 +687,9 @@ class ManualDemoService:
                 "native_state": evidence.status,
                 "fill_identities": [f.identity for f in evidence.fills],
                 "protection_status": evidence.protection_status,
+                "protection_configured": evidence.protection_configured
+                or evidence.protected
+                or prior_configuration,
                 "protection_order_ids": list(evidence.protection_order_ids),
                 "instrument": plan.execution_instrument,
                 "planned_stop": str(plan.risk_and_exits.stop.value),
@@ -758,36 +800,51 @@ class ManualDemoService:
                 and not evidence.protected
                 and not resolved
                 and not recorded_closed
-                and (observation is None or observation.position_status != "closed_verified")
+                and observation is not None
+                and observation.account_verified
+                and not observation.account_flat
             ):
-                KillSwitchService(self.session, self.audit, self.settings).activate(
-                    organization_id=tenant.organization_id,
-                    actor_user_id=tenant.user_id,
-                    payload=KillSwitchMutationRequest(
-                        confirm=True,
-                        reason="Manual demo protection is not verified; operator action required",
-                    ),
-                )
+                if not self.epochs.organization_kill_active(tenant.organization_id):
+                    KillSwitchService(self.session, self.audit, self.settings).activate(
+                        organization_id=tenant.organization_id,
+                        actor_user_id=tenant.user_id,
+                        payload=KillSwitchMutationRequest(
+                            confirm=True,
+                            reason=(
+                                "Manual demo protection is not verified; operator action required"
+                            ),
+                        ),
+                    )
                 status = "protection_failed_operator_hold"
-            elif evidence.fills:
+            elif evidence.fills and evidence.protected:
                 status = (
                     "filled_protected"
                     if sum((f.quantity for f in evidence.fills), Decimal("0"))
                     == plan.quantity.value
                     else "partial_fill_protected_operator_hold"
                 )
+            elif evidence.fills:
+                status = (
+                    "closed_verified" if recorded_closed else "filled_exit_unverified_operator_hold"
+                )
             if not resolved and any(
                 not plan.entry_zone.lower <= f.price <= plan.entry_zone.upper
                 for f in evidence.fills
             ):
-                KillSwitchService(self.session, self.audit, self.settings).activate(
-                    organization_id=tenant.organization_id,
-                    actor_user_id=tenant.user_id,
-                    payload=KillSwitchMutationRequest(
-                        confirm=True,
-                        reason="Manual demo fill exceeded the planned entry range; operator review",
-                    ),
-                )
+                if (
+                    observation is not None
+                    and observation.account_verified
+                    and not observation.account_flat
+                    and not self.epochs.organization_kill_active(tenant.organization_id)
+                ):
+                    KillSwitchService(self.session, self.audit, self.settings).activate(
+                        organization_id=tenant.organization_id,
+                        actor_user_id=tenant.user_id,
+                        payload=KillSwitchMutationRequest(
+                            confirm=True,
+                            reason="Manual demo fill exceeded the entry range; operator review",
+                        ),
+                    )
                 status = "actual_fill_outside_plan_operator_hold"
             self.session.commit()
         elif observation:
@@ -854,8 +911,15 @@ class ManualDemoService:
             filled_quantity=projection.filled_quantity if projection else Decimal("0"),
             remaining_quantity=projection.remaining_quantity if projection else plan.quantity.value,
             average_fill_price=projection.weighted_price if projection else None,
-            fees=trade.fees if trade else None,
-            protection=protection,
+            fees=durable.fees,
+            protection=durable.protection,
+            historical_protection=durable.historical_protection,
+            triggered_protection=durable.triggered_protection,
+            protection_diagnostics=durable.protection_diagnostics,
+            entry_fees=durable.entry_fees,
+            gross_pnl=durable.gross_pnl,
+            funding=durable.funding,
+            net_pnl=durable.net_pnl,
             journal_trade_id=trade.id if trade else None,
             missing_evidence=tuple(missing),
             reconciliation_diagnostics=diagnostics
@@ -928,6 +992,12 @@ class ManualDemoService:
             account_idle=facts["account_idle"],
             resolution_reason=facts["resolution_reason"],
             recovery_reason=facts["recovery_reason"],
+            account_verified=facts.get("account_verified", False),
+            triggered_protection=facts.get("triggered_protection", "unverified"),
+            protection_diagnostics=tuple(
+                DemoReconciliationDiagnostic.model_validate(d)
+                for d in facts.get("protection_diagnostics", [])
+            ),
         )
         resolve_manual_lifecycle(
             self.session,

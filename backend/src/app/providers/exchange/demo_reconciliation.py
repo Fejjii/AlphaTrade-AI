@@ -65,6 +65,40 @@ def rows(data: Any, *, single: bool = False) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], data)
 
 
+def history_rows(
+    client: BloFinClient,
+    *,
+    endpoint: str,
+    cursor_field: str,
+    params: dict[str, str],
+    max_pages: int = 10,
+) -> list[dict[str, Any]]:
+    """Read complete descending native pages, bounded and fail-closed on overlap.
+
+    BloFin's `after` cursor is the last orderId/tpslId/tradeId, not a timestamp.
+    A full final page requires another read; a budget limit never proves absence.
+    """
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    query = {**params, "limit": "100"}
+    for _ in range(max_pages):
+        data = client.request("GET", endpoint.removeprefix("GET "), params=query, signed=True)
+        require(isinstance(data, list), "response_shape_invalid")
+        require(
+            len(data) <= 100 and all(isinstance(r, dict) for r in data), "response_shape_invalid"
+        )
+        page = cast(list[dict[str, Any]], data)
+        for row in page:
+            key = identity(row.get(cursor_field))
+            require(key not in seen, "history_cursor_overlap")
+            seen.add(key)
+            result.append(row)
+        if len(page) < 100:
+            return result
+        query = {**query, "after": identity(page[-1].get(cursor_field))}
+    raise NativeEvidenceError("history_page_budget_exhausted")
+
+
 def number(value: Any, *, field: str, positive: bool = False) -> Decimal:
     try:
         require(isinstance(value, str) and 0 < len(value) <= 64, "numeric_value_invalid")
@@ -165,13 +199,11 @@ def reconcile_native(
             "order_state_quantity_conflict",
         )
     with stage("fill_lookup", FILLS):
-        fill_rows = rows(
-            client.request(
-                "GET",
-                FILLS.removeprefix("GET "),
-                params={"instId": plan.execution_instrument, "orderId": order_id, "limit": "100"},
-                signed=True,
-            )
+        fill_rows = history_rows(
+            client,
+            endpoint=FILLS,
+            cursor_field="tradeId",
+            params={"instId": plan.execution_instrument, "orderId": order_id},
         )
     with stage("fill_parse", FILLS):
         fills: list[DemoFill] = []
@@ -185,7 +217,9 @@ def reconcile_native(
             )
             trade_id = identity(fill.get("tradeId"))
             require(fill.get("feeCurrency", "USDT") == "USDT", "fill_fee_currency_unsupported")
-            # Preserve native signed fees/rebates. Never abs(), zero or infer a charge.
+            # REST fills-history reports fee as a cost (positive paid, negative
+            # rebate), as in BloFin's examples and CCXT parse_trade. Account-ledger
+            # cashflow and trading-rate signs are different contracts. Never abs().
             fee = number(fill.get("fee"), field="fee")
             quantity = number(fill.get("fillSize"), field="fillSize", positive=True)
             price = number(fill.get("fillPrice"), field="fillPrice", positive=True)
@@ -288,6 +322,19 @@ def reconcile_native(
     except DemoReconciliationError as exc:
         diagnostics.append(exc.diagnostic)
         protection_status = "unavailable"
+    configured = False
+    try:
+        configured = all(
+            order.get(key) not in (None, "") and number(order[key], field=key) == expected
+            for key, expected in (
+                ("slTriggerPrice", plan.risk_and_exits.stop.value),
+                ("tpTriggerPrice", plan.risk_and_exits.targets[0].price.value),
+                ("slOrderPrice", Decimal("-1")),
+                ("tpOrderPrice", Decimal("-1")),
+            )
+        )
+    except NativeEvidenceError as exc:
+        diagnostics.append(diagnostic_for(exc, stage="protection_parse", endpoint=ORDER))
     return DemoOrderEvidence(
         order_id,
         client_order_id,
@@ -298,4 +345,5 @@ def reconcile_native(
         tuple(verified),
         tuple(diagnostics[:4]),
         native_tpsl_id,
+        configured,
     )

@@ -235,6 +235,7 @@ def test_signed_native_fees_are_preserved_without_absolute_value_or_pnl(native, 
 )
 def test_safe_structured_read_failure_then_same_order_recovery(native, endpoint, stage, caplog):
     world, changes = native
+    world[3].open_position = True
     changes["failure"] = endpoint
     _, failed = _submit(native)
     assert failed.reconciliation_diagnostics[0].stage == stage
@@ -301,6 +302,7 @@ def test_invalid_native_order_and_fill_remain_explicit_holds(
 )
 def test_invalid_or_unlinked_protection_keeps_real_fill_and_journal(native, updates, reason):
     world, changes = native
+    world[3].open_position = True
     changes["protection"].update(updates)
     _, result = _submit(native)
     assert result.status == "protection_failed_operator_hold"
@@ -331,10 +333,10 @@ def test_agent_selects_manual_demo_instead_of_older_simulator_and_followup(nativ
         assert str(status.journal_trade_id) in {r.record_id for r in result.connections}
         assert str(paper.id) not in {r.record_id for r in result.connections}
         assert "86073.10" not in result.reply and "0.005" not in result.reply
-        assert "0.1 contracts = 0.0001 BTC" in result.recorded_evidence and "82894" in result.reply
-        assert "82000" in result.reply and "83000" in result.reply
+        assert "0.1 contracts (0.0001 BTC)" in result.reply and "82,894.00" in result.reply
+        assert "82000" in result.recorded_evidence and "83000" in result.recorded_evidence
         assert "recorded protection verified" in result.recorded_evidence
-        assert "minimum 1R do not apply" in result.recorded_evidence
+        assert "excluded from strategy performance" in result.recorded_evidence
         assert not result.execution_attempted and not result.authority_mutated
         session.commit()
         followup = _ask(
@@ -356,9 +358,9 @@ def test_later_read_outage_retains_fill_journal_and_reports_current_evidence_mis
     assert "No actual venue fill has been verified" not in " ".join(held.missing_evidence)
     with world[0]() as session:
         read = _ask(world, session, "Explain my latest manual BloFin demo trade")
-        assert "0.1 contracts = 0.0001 BTC" in read.recorded_evidence
-        assert "latest read unavailable" in read.recorded_evidence
-        assert "previously recorded facts do not prove current protection" in read.reply
+        assert "0.1 contracts (0.0001 BTC)" in read.reply
+        assert "latest native reconciliation" in read.recorded_evidence
+        assert "recorded fills do not establish a current position" in read.reply
         assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 1
     assert world[3].post_count == 1
 
@@ -505,7 +507,7 @@ def test_exact_legacy_replay_can_record_precision_proof_without_rewriting_old_au
             "response_shape_invalid",
         ),
         ("/api/v1/trade/fills-history", ["unreadable"], "fill_lookup", "response_shape_invalid"),
-        ("/api/v1/trade/fills-history", [{}] * 100, "fill_lookup", "response_page_incomplete"),
+        ("/api/v1/trade/fills-history", [{}] * 100, "fill_lookup", "native_identity_invalid"),
         ("/api/v1/trade/orders-tpsl-pending", None, "protection_lookup", "response_shape_invalid"),
         (
             "/api/v1/trade/orders-tpsl-pending",
@@ -548,7 +550,7 @@ def test_manual_read_never_uses_model_or_previous_simulator_history(native):
             user_id=world[1].user_id,
         )
         assert str(status.journal_trade_id) in {r.record_id for r in result.connections}
-        assert "0.1 contracts = 0.0001 BTC" in result.reply
+        assert "Entry filled: 0.1 contracts (0.0001 BTC)" in result.reply
 
 
 def test_agent_reports_existing_unreconciled_command_without_simulator_fallback(native):
@@ -560,9 +562,12 @@ def test_agent_reports_existing_unreconciled_command_without_simulator_fallback(
         result = _ask(world, session, "Explain my latest manual BloFin demo BTC long trade")
         assert str(status.command_id) in {r.record_id for r in result.connections}
         assert not any(r.record_id == str(paper.id) for r in result.connections)
-        assert "actual BloFin demo fills" in result.reply
+        assert "No entry fill is verified" in result.reply
         assert "submitted order is not a filled position" in result.recorded_evidence
-        assert "86073" not in result.reply and "latest read unavailable" in result.recorded_evidence
+        assert (
+            "86073" not in result.reply
+            and "latest native reconciliation" in result.recorded_evidence
+        )
     assert world[3].post_count == 1
 
 

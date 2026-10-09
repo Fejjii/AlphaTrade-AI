@@ -115,6 +115,7 @@ const DESTINATION_MATCHERS: readonly { id: DestinationId; match: (pathname: stri
       match: (pathname) =>
         pathname === "/settings/advanced" ||
         matchesAnyPrefix(pathname, SETTINGS_ROUTE_PREFIXES) ||
+        pathname.startsWith("/execution/manual-demo/") ||
         isAdvancedPath(pathname),
     },
     { id: "dashboard", match: (pathname) => pathname === "/" },
@@ -141,7 +142,7 @@ export function getSecondaryItems(destinationId: DestinationId): readonly NavLin
 
 export function isNavLinkActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/settings") return pathname === "/settings";
+  if (href === "/settings") return pathname === "/settings" || pathname.startsWith("/execution/manual-demo/");
   if (href === "/journal") return pathname === "/journal";
   if (href === "/settings/advanced") {
     return pathname === href || (pathname !== "/settings" && isAdvancedPath(pathname));

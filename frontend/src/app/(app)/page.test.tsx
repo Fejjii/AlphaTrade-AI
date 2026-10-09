@@ -36,7 +36,7 @@ function portfolio(
   winRate: number,
 ): PaperPortfolioResponse {
   return {
-    account: { current_equity: "1000.50" },
+    account: { current_equity: "1000.50", open_trade_count: 3 },
     metrics: { trade_count: tradeCount, win_rate: winRate, net_pnl: "12.50" },
     breakdowns: {
       by_strategy: [
@@ -200,6 +200,7 @@ describe("Trader dashboard", () => {
 
   it("shows paper value, pnl, win rate, positions, and trader watcher status", () => {
     render(<DashboardPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
     expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
       formatCurrency("1000.50"),
     );
@@ -207,12 +208,6 @@ describe("Trader dashboard", () => {
       formatMonetary("12.50"),
     );
     expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent("50.0%");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
-      "BTCUSDT",
-    );
-    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent(
-      "ETHUSDT",
-    );
     expect(
       screen.getByTestId("dashboard-strategy-performance"),
     ).toHaveTextContent("HTF Pullback");
@@ -234,6 +229,7 @@ describe("Trader dashboard", () => {
   it("does not present an unmeasured win rate as zero", () => {
     asyncState.data = dashboardData({ portfolio: okSource(portfolio(0, 0)) });
     render(<DashboardPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
     expect(screen.getByTestId("dashboard-win-rate")).toHaveTextContent(
       UNAVAILABLE,
     );
@@ -256,10 +252,8 @@ describe("Trader dashboard", () => {
       }),
     });
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("25");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
-      "Showing 1 of 25",
-    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("3");
     expect(screen.getByTestId("dashboard-daily-status")).toHaveTextContent(
       "Daily status unavailable",
     );
@@ -271,33 +265,17 @@ describe("Trader dashboard", () => {
     );
   });
 
-  it("links canonical trades and labels scope differences without inventing PnL", () => {
+  it("defaults to one BloFin account view and keeps simulator metrics behind explicit selection", () => {
     render(<DashboardPage />);
-    expect(screen.getByRole("link", { name: /ETHUSDT/ })).toHaveAttribute("href", "/journal?trade_id=j1");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("manual demo tests excluded");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("PAPER_INTERNAL");
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("Unrealized PnL unavailable");
-    expect(screen.getByText(/these scopes can differ/)).toBeInTheDocument();
-  });
-
-  it("labels demo Journal provenance separately from paper account metrics", () => {
-    const data = dashboardData();
-    asyncState.data = dashboardData({ journal: okSource({
-      ...data.journal.data!, items: [{ ...data.journal.data!.items[0],
-        exchange: "BLOFIN_DEMO", source: "manual_demo_test", net_pnl: null,
-      }],
-    }) });
-    render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent("BLOFIN_DEMO");
+    expect(screen.getAllByTestId("dashboard-demo-account")).toHaveLength(1);
+    expect(screen.queryByTestId("dashboard-strategy-performance")).not.toBeInTheDocument();
+    expect(screen.queryByText("ETHUSDT")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
+    expect(screen.queryByTestId("dashboard-demo-account")).not.toBeInTheDocument();
     expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(formatCurrency("1000.50"));
-  });
-
-  it("never falls back to legacy positions when canonical open records fail", () => {
-    asyncState.data = dashboardData({ summary: failedSource("down") });
-    render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent(UNAVAILABLE);
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("Open positions unavailable");
-    expect(screen.queryByText("No open positions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("3");
+    expect(screen.getByRole("link", { name: "Open simulator portfolio" })).toHaveAttribute("href", "/portfolio");
+    expect(screen.queryByText("BTCUSDT · long")).not.toBeInTheDocument();
   });
 
   it("shows loading and error states", () => {

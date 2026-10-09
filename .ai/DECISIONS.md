@@ -2,6 +2,22 @@
 
 Durable, append-only architecture/workflow decisions. IDs: `AT-ADR-XXX`.
 
+## AT-ADR-097 — Separate native closure from protection attribution
+
+- Date: 2026-10-09
+- Decision: Verify exact native entry/reduce-only exit sequence and quantity
+  independently from optional TP/SL ancestry. Preserve entry/exit facts while
+  retaining explicit uncertainty about historical, active and triggered protection.
+- Safety: Flatness is insufficient closure proof. New protection/outside-range
+  kill activation requires positively observed open exposure; existing kill and
+  unrelated holds persist. Recovery remains scoped, audited and idempotent.
+- Presentation: Default to one configured native account; bind recorded performance
+  to saved account provenance and verified lifecycle evidence. Unknown funding/net
+  and unsupported strategy outcomes stay unknown. Exact Journal detail reuses
+  immutable execution evidence and separate personal observations.
+- Limits: Fixtures do not verify native account mapping or the user's live exits.
+- Reference: `docs/blofin_reconciliation_presentation_repair.md`; AT-117.
+
 ## AT-ADR-094 — Past qualification selects immutable trade lineage
 
 - Date: 2026-10-06

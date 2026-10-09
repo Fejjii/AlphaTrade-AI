@@ -17,7 +17,8 @@ from app.db.models import (
     VenueSubmitEffect,
 )
 from app.interactive_agent.actions import RecordedTradeInput
-from app.interactive_agent.recorded_trade import RecordedTradeRead, _Evidence, _finish, _require
+from app.interactive_agent.presentation import readable_number
+from app.interactive_agent.recorded_trade import RecordedTradeRead, _Evidence, _require
 from app.schemas.common import AuditEventType, JournalTradeSource
 from app.schemas.trade_plan import AuthorizationState, TradePlanRevisionSemantic
 from app.services.canonical_serialization import canonical_sha256
@@ -374,7 +375,6 @@ def _read(
         evidence.missing.append(
             "actual BloFin demo fills; the user's position report is not recorded fill proof"
         )
-    average_text = format(average.normalize(), "f") if average is not None else "unavailable"
     from app.schemas.common import MembershipRole
     from app.security.tenant import TenantContext
     from app.services.manual_demo_history import ManualDemoHistoryService
@@ -386,32 +386,80 @@ def _read(
         command.id,
     )
     lifecycle = durable.evidence
-    summary = (
-        f"Manual BloFin demo {plan.execution_instrument} "
-        f"{'long' if plan.side.value == 'BUY' else 'short'}. "
-        f"Origin: manual demo test; command {command.id}; native order "
-        f"{order_id or 'not verified'}. "
-        f"Recorded filled position: {format(total.normalize(), 'f')} contracts = "
-        f"{format((total * plan.instrument_rules.contract_multiplier).normalize(), 'f')} BTC; "
-        f"average fill price {average_text}. "
-        f"Planned stop {plan.risk_and_exits.stop.value}; planned target "
-        f"{plan.risk_and_exits.targets[0].price.value}. "
-        f"Recorded protection: {protection}. No detected strategy is claimed. "
-        f"Attempt time {durable.attempted_at}; requested {durable.requested_contracts} contracts. "
-        f"Execution: {lifecycle.execution_status}; "
-        f"recorded position lifecycle: {lifecycle.position_status}; "
-        f"current account evidence: {lifecycle.account_status}; "
-        f"recorded exit fills: {lifecycle.exit_quantity} contracts; "
-        f"exit price {lifecycle.exit_price or 'unverified'}; "
-        f"recovery: {lifecycle.recovery_status}. {lifecycle.recovery_reason} "
-        "No new order is authorized."
+    closed = (
+        lifecycle.execution_status == "closed" or lifecycle.position_status == "closed_verified"
     )
-    evidence.required.append(
-        "This is a manual BloFin demo connectivity test, excluded from strategy validation; "
-        "submitted orders, actual fills and verified protection are separate evidence."
+    entry = (
+        f"Entry filled: {readable_number(total)} contracts "
+        f"({readable_number(total * plan.instrument_rules.contract_multiplier)} BTC) "
+        f"at {_money(average)} USDT."
+        if total
+        else "No entry fill is verified."
     )
-    result = _finish(summary, evidence)
-    # A previous simulator turn cannot supply missing economic facts for this
-    # manual venue identity. The complete bounded answer is deterministic.
-    result.allow_model = False
-    return result
+    if closed:
+        entry += f" Closure verified; exit at {_money(lifecycle.exit_price)} USDT."
+        if lifecycle.gross_pnl is not None:
+            entry += f" Gross trading PnL: {_money(lifecycle.gross_pnl)} USDT."
+    elif lifecycle.exit_quantity:
+        entry += f" Verified exits: {readable_number(lifecycle.exit_quantity)} contracts."
+    if lifecycle.entry_fees is not None:
+        entry += f" Entry fee: {_money(lifecycle.entry_fees)} USDT."
+    if closed and lifecycle.funding is None:
+        issue = "Funding and net PnL remain unverified."
+    elif closed:
+        issue = ""
+    elif lifecycle.position_status == "flat_exit_unverified":
+        issue = "The account was flat at the snapshot; this trade's exit remains unverified."
+    elif lifecycle.reconciliation_freshness == "latest_read_failed":
+        issue = "The latest venue read failed; recorded fills do not establish a current position."
+    elif (
+        lifecycle.position_status == "account_position_present"
+        and lifecycle.protection != "verified"
+    ):
+        issue = "Open exposure was observed; active protection remains unverified."
+    elif total:
+        issue = "This historical entry fill does not establish a currently open position."
+    else:
+        issue = "Submission and current position state remain separate from verified fills."
+    action = (
+        "Open this attempt's Journal detail."
+        if trade is not None
+        else "Open this exact attempt to refresh native evidence."
+    )
+    reply = "\n\n".join(
+        part
+        for part in (
+            f"{durable.symbol} {'long' if plan.side.value == 'BUY' else 'short'} · "
+            "BloFin demo · manual test.",
+            entry,
+            issue,
+            action,
+        )
+        if part
+    )
+    details = "\n".join(evidence.lines)
+    details += (
+        f"\nAttempt time: {durable.attempted_at}. "
+        f"Historical protection: {lifecycle.historical_protection}; "
+        f"active protection: {lifecycle.protection}; triggered protection: "
+        f"{lifecycle.triggered_protection}. "
+        f"Current account: {lifecycle.account_status}; lifecycle: {lifecycle.position_status}. "
+        f"Entry fees: {lifecycle.entry_fees}; exit fees: {lifecycle.exit_fees}; "
+        f"gross PnL: {lifecycle.gross_pnl}; funding: {lifecycle.funding}; "
+        f"net PnL: {lifecycle.net_pnl}; fee convention: {lifecycle.fee_convention}. "
+        f"Recovery: {lifecycle.recovery_status}; {lifecycle.recovery_reason}. "
+        "Manual connectivity tests are excluded from strategy performance. "
+        "These historical facts authorize no new order."
+    )
+    gaps = list(dict.fromkeys([*evidence.missing, *lifecycle.missing_evidence]))
+    if gaps:
+        details += "\nMissing evidence: " + "; ".join(gaps)
+    return RecordedTradeRead(reply, details, evidence.refs, allow_model=False)
+
+
+def _money(value: Decimal | None) -> str:
+    if value is None:
+        return "unverified"
+    if value and abs(value) < Decimal("1"):
+        return readable_number(value)
+    return format(value, ",.2f")

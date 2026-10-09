@@ -27,6 +27,7 @@ from app.schemas.common import (
     TradeDirection,
     TradeResult,
 )
+from app.schemas.manual_demo import ManualDemoAttempt
 
 
 class PlannedTarget(StrictModel):
@@ -282,6 +283,7 @@ class JournalTradeDetail(StrictModel):
     """Journal trade with its evidence, rule checks, and observations."""
 
     trade: JournalTradeRead
+    manual_demo: ManualDemoAttempt | None = None
     evidence: list[JournalTradeEvidenceRead] = Field(default_factory=list)
     rule_checks: list[JournalTradeRuleCheckRead] = Field(default_factory=list)
     observations: list[JournalTradeObservationRead] = Field(default_factory=list)

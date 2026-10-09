@@ -85,8 +85,11 @@ def recorded_nested(monkeypatch):
     world = postgres_plan_world(factory)
     # Reproduce pre-policy authorization/execution at insertion, without rewriting history.
     with monkeypatch.context() as old_release:
-        for module in ("canonical_trade_plan", "planned_reward_risk", "execution_claim"):
+        for module in ("canonical_trade_plan", "planned_reward_risk"):
             old_release.setattr(f"app.services.{module}.planned_reward_risk", lambda _terms: None)
+        old_release.setattr(
+            "app.services.execution_claim.execution_reward_risk", lambda _terms: None
+        )
         envelope = world.plans.create(
             plan_command(
                 world,

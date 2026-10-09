@@ -41,8 +41,28 @@ pytestmark = requires_postgres
 class ManualVenue(Venue):
     cancel_count = 0
     cancelled = False
+    open_position = False
 
     def handle(self, request):
+        if (
+            request.url.path.endswith("/positions")
+            and self.order is not None
+            and self.open_position
+        ):
+            return httpx.Response(
+                200,
+                json={
+                    "code": "0",
+                    "data": [
+                        {
+                            "instId": "BTC-USDT",
+                            "positionSide": "net",
+                            "marginMode": "cross",
+                            "positions": str(self.order["size"]),
+                        }
+                    ],
+                },
+            )
         if request.url.path.endswith("orders-tpsl-history"):
             return httpx.Response(200, json={"code": "0", "data": []})
         if request.url.path.endswith("orders-history"):
@@ -242,6 +262,7 @@ def test_uncertain_post_and_restart_only_read_reconcile(world, behavior):
     "behavior", ["protection_failure", "protection_outage", "protection_wrongid"]
 )
 def test_fill_survives_failed_protection_and_holds(world, behavior):
+    world[3].open_position = True
     plan = preview(world)
     world[3].behavior = behavior
     result = confirm(world, plan)
@@ -621,7 +642,9 @@ def test_uncertain_cancellation_is_never_posted_again(world, monkeypatch):
     assert world[3].post_count == 1
 
 
-def test_actual_fill_outside_entry_range_is_recorded_and_held(world):
+@pytest.mark.parametrize("open_position", [True, False])
+def test_actual_fill_outside_entry_range_is_recorded_and_held(world, open_position):
+    world[3].open_position = open_position
     plan = preview(world)
     world[3].price = Decimal("100050")  # Dispatch quote still fits the authorized 10bps.
     original = world[4].reconcile
@@ -638,7 +661,7 @@ def test_actual_fill_outside_entry_range_is_recorded_and_held(world):
     assert result.average_fill_price == Decimal("100500")
     assert result.protection == "verified"
     with world[0]() as session:
-        assert session.scalar(select(KillSwitchState.active))
+        assert bool(session.scalar(select(KillSwitchState.active))) == open_position
         assert session.get(JournalTrade, result.journal_trade_id).entry_price == Decimal("100500")
 
 
@@ -662,6 +685,7 @@ def test_changed_native_fill_fee_cannot_overwrite_recorded_fee(world):
 
 @pytest.mark.parametrize("page_size", [2, 100])
 def test_ambiguous_or_bounded_protection_read_keeps_fills_and_holds(world, monkeypatch, page_size):
+    world[3].open_position = True
     plan = preview(world)
     original = world[3].handle
 
@@ -945,6 +969,7 @@ def test_protection_recovery_updates_same_journal_and_never_resubmits(world):
             )
             == 1
         )
+    world[3].open_position = True
     world[3].behavior = "protection_failure"
     failed = confirm(world, plan)
     assert failed.status == "protection_failed_operator_hold"

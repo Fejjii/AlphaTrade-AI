@@ -44,7 +44,7 @@ export function MobileBottomNavigation() {
               )}
             >
               <Icon
-                className={cn("h-5 w-5 shrink-0", id === "agent" && "text-accent")}
+                className="h-5 w-5 shrink-0"
                 aria-hidden="true"
               />
               <span className="whitespace-nowrap">{label}</span>

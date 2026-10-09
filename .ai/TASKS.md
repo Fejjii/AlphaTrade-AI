@@ -5,6 +5,21 @@ Validation, Recommended model. Gap-analysis items (Phase 7) are **not implemente
 
 Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DONE / BLOCKED.
 
+## AT-117 — BloFin reconciliation and presentation repair
+
+- Priority: P0 · Status: DONE (implementation; review/live acceptance pending).
+- Base: main `642d2d4` including merged PR229/230/231.
+- Scope: Independent entry/current-account/protection/exit confidence; documented
+  pagination; signed fees and gross PnL; exact Journal detail/reflections; one
+  native-account Dashboard and concise Agent/manual detail with collapsed evidence.
+- Validation: Focused lifecycle/Journal/account/Agent checks and desktop/mobile
+  browser fixtures; one final full backend gate. Exact results recorded in PR.
+- Limits: No credentials bound for authenticated native acceptance. No new orders,
+  cancellation, deployment, kill reset, unrelated hold release or migration.
+- Gate: Review/merge, verify deployed commit/head, refresh same original command,
+  inspect exact linked Journal, compare account values and Agent explanation.
+- Reference: `docs/blofin_reconciliation_presentation_repair.md`; AT-ADR-097.
+
 ## AT-116 — BloFin demo quote timing diagnosis
 
 - Status: Implementation complete; live root cause and preview recovery pending.

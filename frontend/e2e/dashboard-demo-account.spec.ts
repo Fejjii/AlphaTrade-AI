@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Browser fixtures prove presentation and request behavior; they are not venue evidence.
 for (const width of [1280, 390]) {
-  test(`demo account refresh stays separate from paper metrics at ${width}px`, async ({
+  test(`configured demo account is primary and refresh preserves evidence at ${width}px`, async ({
     page, baseURL,
   }) => {
     let reads = 0;
@@ -29,6 +29,7 @@ for (const width of [1280, 390]) {
           side: "long",
           contracts: "0.1",
           base_asset: "BTC",
+          quote_asset: "USDT",
           base_quantity: "0.0001",
           entry_price: "82894",
           mark_price: "82895",
@@ -39,7 +40,8 @@ for (const width of [1280, 390]) {
       balances_truncated: false,
       positions_truncated: false,
       position_count: 1,
-      message: "Native demo account snapshot.",
+      message: "Fixture native demo account snapshot.",
+      performance: { status: "partial", currency: "USDT", gross_pnl: "0.007656", fees: "0.0099", funding: null, net_pnl: null, verified_closed_trades: 1, unresolved_trades: 1, manual_test_trades: 2, strategy_closed_trades: 0, coverage: "Partial fixture history: only exact linked account activity. Outside venue activity unavailable." },
     };
     await page
       .context()
@@ -67,6 +69,8 @@ for (const width of [1280, 390]) {
           real_trading_enabled: false,
           must_verify_email: false,
         };
+      } else if (path === "/risk/kill-switch") {
+        body = { organization_id: "fixture-org", active: true, global_active: true, execution_blocked: true, reason: "Fixture historical reconciliation hold", scope: "global", version: 1 };
       } else if (path === "/auth/me") {
         expect(route.request().headers().authorization).toBe("Bearer browser-fixture-token");
         authenticated = true;
@@ -130,10 +134,11 @@ for (const width of [1280, 390]) {
     await expect(card).toContainText("Unrealized PnL —");
     expect(authenticated).toBe(true);
     expect(reads).toBeGreaterThan(0);
-    await expect(card).toContainText("1001.50 USD");
-    await expect(card).toContainText("Equity: 1002.25 USDT");
+    await expect(card).toContainText("1,001.50 USD");
+    await expect(card).toContainText("Equity: 1,002.25 USDT");
     await expect(card).toContainText("Base quantity: 0.0001 BTC");
     expect(refreshes).toBe(0);
+    await page.screenshot({ path: `../docs/screenshots/blofin-repair/fixture-dashboard-${width}.png`, fullPage: true });
     const initialReads = reads;
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect.poll(() => reads).toBeGreaterThan(initialReads);
@@ -160,7 +165,15 @@ for (const width of [1280, 390]) {
     fixtureNow += 180_000;
     await page.clock.fastForward(180_000);
     await expect.poll(() => refreshes).toBe(3);
+    await expect(page.getByTestId("dashboard-equity")).toContainText("1,001.50 USD");
+    await expect(page.getByTestId("dashboard-pnl")).toContainText("— USDT");
+    await expect(page.getByTestId("dashboard-open-count")).toContainText("0");
+    await expect(page.getByText("Paper portfolio", { exact: true })).toHaveCount(0);
+    await page.getByLabel("Dashboard account").selectOption("simulator");
     await expect(page.getByTestId("dashboard-equity")).toContainText("500.50");
+    await expect(page.getByTestId("dashboard-demo-account")).toHaveCount(0);
+    await page.getByLabel("Dashboard account").selectOption("blofin");
+    await expect(page.getByTestId("dashboard-equity")).toContainText("1,001.50 USD");
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth >
@@ -168,7 +181,7 @@ for (const width of [1280, 390]) {
     );
     expect(overflow).toBe(false);
     await page.screenshot({
-      path: `/tmp/blofin-dashboard-${width}.png`,
+      path: `../docs/screenshots/blofin-repair/fixture-dashboard-stale-${width}.png`,
       fullPage: true,
     });
   });

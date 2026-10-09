@@ -110,14 +110,15 @@ def record_lifecycle(
     )
     current = {f["identity"]: f for f in observation.exit_fills}
     # A failed read does not replace previously proven exits with absence.
-    if not observation.diagnostics:
-        for old in prior:
-            fact = old.redacted_metadata["fact"]
-            if current.get(fact["identity"]) != fact:
-                raise TradingPolicyError(
-                    "Native exit history conflicts or regressed; keep the command "
-                    "held. No exit identities are merged."
-                )
+    for old in prior:
+        fact = old.redacted_metadata["fact"]
+        if (fact["identity"] in current or not observation.diagnostics) and current.get(
+            fact["identity"]
+        ) != fact:
+            raise TradingPolicyError(
+                "Native exit history conflicts or regressed; keep the command "
+                "held. No exit identities are merged."
+            )
     for fact in observation.exit_fills:
         if any(old.redacted_metadata["fact"]["identity"] == fact["identity"] for old in prior):
             continue
@@ -188,7 +189,12 @@ def project_verified_exits(
         raise TradingPolicyError("Exact manual Journal entry is required for native exits.")
     facts = observation.facts()
     trade.fees = entry_fees + Decimal(str(facts["exit_fees"]))
-    if observation.position_status == "closed_verified":
+    trade.gross_pnl = (
+        Decimal(str(facts["venue_reported_fill_pnl"]))
+        if facts["venue_reported_fill_pnl"] is not None
+        else None
+    )
+    if observation.position_status == "closed_verified" and not observation.diagnostics:
         trade.status = JournalTradeStatus.CLOSED
         trade.exit_time = max(
             datetime.fromisoformat(f["occurred_at"]) for f in observation.exit_fills
@@ -211,6 +217,7 @@ def resolve_manual_lifecycle(
     if (
         not reason
         or observation.diagnostics
+        or not observation.account_verified
         or not observation.account_flat
         or not observation.account_idle
     ):

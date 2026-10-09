@@ -70,6 +70,14 @@ export type ManualDemoStatus = {
   exit_price?: string | null;
   exit_fees?: string | null;
   venue_reported_fill_pnl?: string | null;
+  historical_protection?: string;
+  triggered_protection?: string;
+  gross_pnl?: string | null;
+  entry_fees?: string | null;
+  fee_convention?: "positive_cost_negative_rebate";
+  funding?: string | null;
+  net_pnl?: string | null;
+  protection_diagnostics?: NonNullable<ManualDemoStatus["reconciliation_diagnostics"]>;
   recovery_status?: string;
   recovery_reason?: string | null;
   account_claim_command_ids?: string[];

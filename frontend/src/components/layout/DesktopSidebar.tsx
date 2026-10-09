@@ -104,14 +104,12 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
               title={collapsed ? label : undefined}
               className={cn(
                 "flex items-center rounded-control border text-sm font-medium transition-colors",
-                destination.id === "agent" ? "border-accent-border" : "border-transparent",
+                "border-transparent",
                 "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                 collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
                 active
                   ? "bg-surface-2 text-text-primary"
-                  : destination.id === "agent"
-                    ? "text-accent hover:bg-accent-muted"
-                    : "text-text-secondary hover:bg-surface-1 hover:text-text-primary",
+                  : "text-text-secondary hover:bg-surface-1 hover:text-text-primary",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

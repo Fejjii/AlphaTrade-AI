@@ -20,6 +20,7 @@ from app.db.models import (
     TradePlanRevision,
     VenueSubmitEffect,
 )
+from app.schemas.common import AuditEventType
 from app.schemas.execution_protocol import ExecutionCommandOutcome, VenueSubmitEffectState
 from app.schemas.manual_demo import (
     ManualDemoAttempt,
@@ -237,6 +238,25 @@ class ManualDemoHistoryService:
                 or facts.get("plan_content_hash") != command.plan_content_hash
             ):
                 raise NotFoundError("Manual demo native receipt integrity failed.")
+        entry_fee_rows = self.session.scalars(
+            select(AuditLog).where(
+                AuditLog.organization_id == tenant.organization_id,
+                AuditLog.user_id == tenant.user_id,
+                AuditLog.resource_type == "manual_demo_test",
+                AuditLog.resource_id == str(command.id),
+                AuditLog.action == AuditEventType.POSITION_UPDATED,
+            )
+        )
+        entry_fees_by_id = {
+            a.redacted_metadata["fill_identity"]: Decimal(a.redacted_metadata["fee"])
+            for a in entry_fee_rows
+            if "fill_identity" in a.redacted_metadata and "fee" in a.redacted_metadata
+        }
+        entry_fees = (
+            sum(entry_fees_by_id.values(), Decimal("0"))
+            if entry_fees_by_id and set(entry_fees_by_id) == set(facts.get("fill_identities", []))
+            else None
+        )
         life = lifecycle.redacted_metadata if lifecycle else {}
         exit_receipts = list(
             self.session.scalars(
@@ -334,7 +354,13 @@ class ManualDemoHistoryService:
             if effect and effect.reconciliation_disposition == "REJECTED"
             else "submission_uncertain"
         )
-        protection = "unverified" if failed else str(facts.get("protection_status", "unverified"))
+        protection = (
+            "not_required_closed"
+            if execution == "closed"
+            else "unverified"
+            if failed
+            else str(facts.get("protection_status", "unverified"))
+        )
         missing = []
         if failed:
             missing.append(
@@ -373,7 +399,7 @@ class ManualDemoHistoryService:
             else "reconciliation_unavailable_operator_hold"
             if failed
             else "protection_failed_operator_hold"
-            if filled and protection != "verified" and position != "closed_verified"
+            if filled and protection != "verified" and position == "account_position_present"
             else "filled_protected"
             if execution == "filled" and protection == "verified"
             else command.blocked_reason_code or execution
@@ -394,15 +420,24 @@ class ManualDemoHistoryService:
             filled_quantity=filled,
             remaining_quantity=remaining,
             average_fill_price=projection.weighted_price if projection else None,
-            fees=trade.fees if trade else None,
+            fees=entry_fees + (exit_fees or Decimal("0")) if entry_fees is not None else None,
             protection=protection,
+            historical_protection="configured"
+            if facts.get("protection_configured")
+            else "unverified",
+            triggered_protection=str(life.get("triggered_protection", "unverified")),
+            protection_diagnostics=tuple(life.get("protection_diagnostics", [])),
+            entry_fees=entry_fees,
+            gross_pnl=reported_pnl,
+            funding=None,
+            net_pnl=None,
             journal_trade_id=trade.id if trade else None,
             missing_evidence=tuple(missing),
             reconciliation_diagnostics=tuple(diagnostics),
             execution_status=execution,
             position_status="closed_verified" if execution == "closed" else position,
             account_status="unknown"
-            if failed or life.get("diagnostics")
+            if failed or not life.get("account_verified", not life.get("diagnostics"))
             else "flat"
             if life.get("account_flat")
             else "positions_present"
