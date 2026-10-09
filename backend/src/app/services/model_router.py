@@ -147,9 +147,8 @@ class ModelRouter:
             latency_budget_ms=_TIER_A_LATENCY_MS
             if tier is ModelRoutingTier.TIER_A
             else _TIER_B_LATENCY_MS,
-            token_budget=_TIER_A_TOKEN_BUDGET
-            if tier is ModelRoutingTier.TIER_A
-            else _TIER_B_TOKEN_BUDGET,
+            token_budget=request.max_output_tokens
+            or (_TIER_A_TOKEN_BUDGET if tier is ModelRoutingTier.TIER_A else _TIER_B_TOKEN_BUDGET),
             retention_category=retention,
             organization_id=request.context.organization_id,
             user_id=request.context.user_id,
@@ -193,6 +192,7 @@ class ModelRouter:
                         max_tokens=decision.token_budget,
                         response_format=request.response_format,
                         allow_internal_fallback=False,
+                        reasoning_effort=request.reasoning_effort,
                     )
                 )
             except Exception as exc:

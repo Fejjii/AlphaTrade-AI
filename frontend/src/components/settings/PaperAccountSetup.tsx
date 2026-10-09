@@ -21,7 +21,11 @@ export function PaperAccountSetup() {
       },
       (failure: unknown) => {
         if (active) {
-          setError(failure instanceof Error ? failure.message : "Paper account status is unavailable.");
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Paper account status is unavailable.",
+          );
         }
       },
     );
@@ -39,7 +43,11 @@ export function PaperAccountSetup() {
       const result = await api.execution.registerPaperAccount();
       setStatus({ account: result.account, can_register: true });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Paper account setup failed.");
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Paper account setup failed.",
+      );
     } finally {
       pending.current = false;
       setBusy(false);
@@ -56,13 +64,25 @@ export function PaperAccountSetup() {
           Register a PAPER/NET identity for governed paper execution. Execution
           still requires its existing approvals and safety checks.
         </p>
-        {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-400">
+            {error}
+          </p>
+        )}
         {status?.account ? (
           <div role="status" className="space-y-1 text-sm">
             <p>Paper account registered · PAPER / NET</p>
-            <p>
-              Account UUID: <code className="break-all select-all">{status.account.id}</code>
-            </p>
+            <details>
+              <summary className="min-h-11 cursor-pointer">
+                Account reference
+              </summary>
+              <p>
+                Account UUID:{" "}
+                <code className="break-all select-all">
+                  {status.account.id}
+                </code>
+              </p>
+            </details>
           </div>
         ) : status ? (
           status.can_register ? (
@@ -74,7 +94,13 @@ export function PaperAccountSetup() {
               Only an organization owner can set up a paper account.
             </p>
           )
-        ) : !error && <p role="status" className="text-sm">Checking paper account…</p>}
+        ) : (
+          !error && (
+            <p role="status" className="text-sm">
+              Checking paper account…
+            </p>
+          )
+        )}
       </CardContent>
     </Card>
   );

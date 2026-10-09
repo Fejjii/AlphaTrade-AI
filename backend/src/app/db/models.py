@@ -3778,3 +3778,37 @@ _register_canonical_eligibility_immutability()
 _register_canonical_trade_plan_immutability()
 _register_learning_attribution_immutability()
 _register_paper_evaluation_immutability()
+
+
+class AgentSavedEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """User-authored notes and draft definitions, never execution authority."""
+
+    __tablename__ = "agent_saved_entries"
+    __table_args__ = (Index("ix_agent_saved_scope", "organization_id", "user_id", "category"),)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    category: Mapped[str] = mapped_column(String(30), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    draft: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    undone: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class AgentCaptureSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Durable deduplication across retries and conversations, including Undo."""
+
+    __tablename__ = "agent_capture_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "user_id", "source_hash", name="uq_agent_capture_source"
+        ),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)

@@ -29,17 +29,23 @@ describe("CommandMenu keyboard interaction (FP2-202)", () => {
     expect(input).toHaveAttribute("aria-controls", listbox.id);
   });
 
-  it("shows the six primary destinations first without duplicating Knowledge", () => {
+  it("shows the five primary destinations first without duplicating Knowledge", () => {
     const { options } = openMenu();
     expect(
       options()
-        .slice(0, 6)
+        .slice(0, 5)
         .map((option) => option.getAttribute("href")),
-    ).toEqual(["/", "/agent", "/journal", "/strategies", "/knowledge", "/settings"]);
-    expect(options().filter((option) => option.getAttribute("href") === "/knowledge")).toHaveLength(
-      1,
-    );
-    expect(options().some((option) => option.getAttribute("href") === "/strategy-lab")).toBe(true);
+    ).toEqual(["/", "/agent", "/journal", "/strategies", "/settings"]);
+    expect(
+      options().filter(
+        (option) => option.getAttribute("href") === "/knowledge",
+      ),
+    ).toHaveLength(0);
+    expect(
+      options().some(
+        (option) => option.getAttribute("href") === "/strategy-lab",
+      ),
+    ).toBe(true);
   });
 
   it("marks the first option active and tracks it with aria-activedescendant", () => {

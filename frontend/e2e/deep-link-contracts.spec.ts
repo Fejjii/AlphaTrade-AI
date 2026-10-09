@@ -83,7 +83,7 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
     await expect(journalNotice).toContainText(/No unrelated entry was opened/i);
   });
 
-  test("invalid knowledge ?document= shows limited-window notice", async ({ page, request }) => {
+  test("invalid knowledge ?document= shows exact-source unavailable notice", async ({ page, request }) => {
     await installSharedE2ESession(page, request);
 
     await page.route((url) => isBackendApi(url, "/knowledge"), async (route) => {
@@ -100,7 +100,11 @@ test.describe("Deep-link contracts (AT-041 PR4)", () => {
     await page.goto("/knowledge?document=missing-document-id");
     const knowledgeNotice = page.getByTestId("knowledge-document-stale");
     await expect(knowledgeNotice).toBeVisible();
-    await expect(knowledgeNotice).toContainText(/not found|limited|recent|window|loaded/i);
+    await expect(knowledgeNotice).toContainText(/unavailable/i);
+    await expect(knowledgeNotice).toContainText("No unrelated document was opened");
+    await page.getByLabel("Knowledge category").selectOption("rules");
+    await expect(page).toHaveURL(/\/knowledge\?category=rules$/);
+    await expect(knowledgeNotice).toHaveCount(0);
   });
 
   test("invalid tradingview ?signal= shows missing notice and clears without selecting another", async ({

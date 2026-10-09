@@ -9,11 +9,8 @@ import {
   isPrimaryDestinationActive,
   PRIMARY_DESTINATIONS,
 } from "@/components/layout/navigation-config";
-import { StatusBadge } from "@/components/StatusBadge";
 import { IconButton } from "@/components/ui/icon-button";
-import { isPaperModeConfirmed } from "@/components/ui/paper-mode-indicator";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useSafetyPosture } from "@/contexts/AppContext";
 import { appConfig } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
@@ -25,8 +22,6 @@ type DesktopSidebarProps = {
 
 export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
   const pathname = usePathname();
-  const { executionMode, realTradingEnabled } = useSafetyPosture();
-  const paperConfirmed = isPaperModeConfirmed(executionMode, realTradingEnabled);
   // Safe SSR/hydration default: expanded. Persist after mount.
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -73,7 +68,9 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
           <p className="text-caption uppercase tracking-[0.16em] text-accent">
             {appConfig.appName}
           </p>
-          <p className="mt-1 text-sm font-semibold text-text-primary">Trading Copilot</p>
+          <p className="mt-1 text-sm font-semibold text-text-primary">
+            Trading Copilot
+          </p>
         </div>
         <IconButton
           label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -90,7 +87,10 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
         </IconButton>
       </div>
 
-      <nav aria-label="Primary destinations" className="flex-1 space-y-1 overflow-y-auto p-2">
+      <nav
+        aria-label="Primary destinations"
+        className="flex-1 space-y-1 overflow-y-auto p-2"
+      >
         {PRIMARY_DESTINATIONS.map((destination) => {
           const { href, label, icon: Icon, ariaLabel } = destination;
           const active = isPrimaryDestinationActive(pathname, destination);
@@ -100,7 +100,9 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
               aria-label={ariaLabel}
               aria-current={active ? "page" : undefined}
               data-destination={destination.id}
-              data-primary-workspace={destination.id === "agent" ? "true" : undefined}
+              data-primary-workspace={
+                destination.id === "agent" ? "true" : undefined
+              }
               title={collapsed ? label : undefined}
               className={cn(
                 "flex items-center rounded-control border text-sm font-medium transition-colors",
@@ -113,7 +115,9 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className={cn("truncate", collapsed && "sr-only")}>{label}</span>
+              <span className={cn("truncate", collapsed && "sr-only")}>
+                {label}
+              </span>
             </Link>
           );
           return (
@@ -160,15 +164,6 @@ export function DesktopSidebar({ onOpenCommandMenu }: DesktopSidebarProps) {
             </kbd>
           </button>
         )}
-        <div
-          className={cn("flex items-center px-1", collapsed && "justify-center")}
-          data-testid="sidebar-environment-chip"
-        >
-          <StatusBadge
-            label={paperConfirmed ? "Paper" : "Unverified"}
-            tone={paperConfirmed ? "paper" : "warn"}
-          />
-        </div>
       </div>
     </aside>
   );

@@ -3,6 +3,7 @@
 import { Mic, Square, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createBrowserVoiceProvider } from "@/lib/voice/browser-voice-provider";
 import type {
@@ -19,12 +20,16 @@ export function AgentVoiceControls({
   reply,
   onSend,
   createProvider = createBrowserVoiceProvider,
+  transcriptActionLabel = "Send transcript",
+  compact = false,
 }: {
   disabled: boolean;
   conversationKey: string | null;
   reply: string | null;
   onSend(transcript: string): Promise<boolean>;
   createProvider?: VoiceProviderFactory;
+  transcriptActionLabel?: string;
+  compact?: boolean;
 }) {
   const provider = useRef<VoiceProvider | null>(null);
   const inputSession = useRef<VoiceSession | null>(null);
@@ -50,6 +55,17 @@ export function AgentVoiceControls({
   const [diagnostic, setDiagnostic] = useState<"idle" | "checking" | "passed">(
     "idle",
   );
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (state !== "listening" && state !== "requesting") return;
+    const started = Date.now();
+    setElapsed(0);
+    const timer = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [state]);
   const [canDiagnose, setCanDiagnose] = useState(false);
 
   const stopSpeech = useCallback(() => {
@@ -223,7 +239,9 @@ export function AgentVoiceControls({
         : state === "transcribing"
           ? "Transcribing…"
           : sent
-            ? "Transcript sent"
+            ? transcriptActionLabel === "Use transcript"
+              ? "Transcript added to message"
+              : "Transcript sent"
             : ready
               ? "Transcript ready · review before sending"
               : "Microphone off";
@@ -231,7 +249,11 @@ export function AgentVoiceControls({
   return (
     <section
       aria-label="Voice controls"
-      className="min-w-0 space-y-3 rounded-control border border-border-subtle p-3"
+      className={
+        compact
+          ? "min-w-0 space-y-2"
+          : "min-w-0 space-y-3 rounded-control border border-border-subtle p-3"
+      }
     >
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -255,48 +277,64 @@ export function AgentVoiceControls({
           )}
           {active ? "Stop recording" : "Start recording"}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-11"
-          disabled={
-            sending ||
-            (!active &&
-              !transcript &&
-              !error &&
-              diagnostic === "idle" &&
-              speech === "idle")
-          }
-          onClick={clear}
-        >
-          Clear voice
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          disabled={disabled || sending || !ready || sent}
-          onClick={() => void send()}
-        >
-          Send transcript
-        </Button>
+        {!compact || active || transcript || error ? (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              disabled={
+                sending ||
+                (!active &&
+                  !transcript &&
+                  !error &&
+                  diagnostic === "idle" &&
+                  speech === "idle")
+              }
+              onClick={clear}
+            >
+              {active ? "Cancel recording" : "Clear voice"}
+            </Button>
+          </>
+        ) : null}
+        {!compact || transcript ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              disabled={disabled || sending || !ready || sent}
+              onClick={() => void send()}
+            >
+              {transcriptActionLabel}
+            </Button>
+          </>
+        ) : null}
       </div>
-      <p
-        role="status"
-        aria-live="polite"
-        className="text-sm text-text-secondary"
-        data-testid="agent-voice-status"
-      >
-        {status}
-      </p>
+      {active || ready || sent ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-sm text-text-secondary"
+          data-testid="agent-voice-status"
+        >
+          {status}
+          {active
+            ? ` · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+            : ""}
+        </p>
+      ) : null}
       {transcript ? (
         <div className="space-y-1" data-testid="agent-voice-transcript">
           <p className="text-xs font-medium text-text-secondary">
             {ready || sent ? "Transcript" : "Partial transcript · not sent"}
           </p>
-          <p className="whitespace-pre-wrap break-words text-sm text-text-primary [overflow-wrap:anywhere]">
-            {transcript}
-          </p>
+          <Textarea
+            aria-label="Voice transcript"
+            value={transcript}
+            disabled={!ready || sent || sending}
+            onChange={(event) => setTranscript(event.target.value)}
+          />
         </div>
       ) : null}
       {error ? (
@@ -328,57 +366,60 @@ export function AgentVoiceControls({
       ) : null}
       {!capabilities.input ? (
         <p className="text-xs text-text-secondary">
-          Voice input is unavailable in this browser. Use a supported browser
-          over HTTPS or type your message.
+          {compact
+            ? "Voice input unavailable. Type your message."
+            : "Voice input is unavailable in this browser. Use a supported browser over HTTPS or type your message."}
         </p>
-      ) : (
-        <p className="text-xs text-text-secondary">
-          Your browser handles microphone access and transcription and may send
-          audio to its speech service. Review the transcript, then send it to
-          this conversation.
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          disabled={
-            disabled ||
-            sending ||
-            active ||
-            diagnostic === "checking" ||
-            !reply ||
-            !capabilities.output ||
-            speech !== "idle"
-          }
-          onClick={speak}
-        >
-          <Volume2 className="h-4 w-4" aria-hidden="true" />
-          Read Agent reply
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          disabled={speech === "idle"}
-          onClick={stopSpeech}
-        >
-          Stop speech
-        </Button>
-        <p
-          role="status"
-          aria-live="polite"
-          className="text-sm text-text-secondary"
-          data-testid="agent-speech-status"
-        >
-          {speech === "speaking"
-            ? "Speaking"
-            : speech === "starting"
-              ? "Starting speech…"
-              : "Speech off"}
-        </p>
-      </div>
+      ) : null}
+      {!compact || reply || speech !== "idle" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={
+              disabled ||
+              sending ||
+              active ||
+              diagnostic === "checking" ||
+              !reply ||
+              !capabilities.output ||
+              speech !== "idle"
+            }
+            onClick={speak}
+          >
+            <Volume2 className="h-4 w-4" aria-hidden="true" />
+            Read Agent reply
+          </Button>
+          {!compact || speech !== "idle" ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11"
+                disabled={speech === "idle"}
+                onClick={stopSpeech}
+              >
+                Stop speech
+              </Button>
+            </>
+          ) : null}
+          {!compact || speech !== "idle" ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-sm text-text-secondary"
+              data-testid="agent-speech-status"
+            >
+              {speech === "speaking"
+                ? "Speaking"
+                : speech === "starting"
+                  ? "Starting speech…"
+                  : "Speech off"}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {!capabilities.output ? (
         <p className="text-xs text-text-secondary">
           Speech output is unavailable in this browser. Replies remain available

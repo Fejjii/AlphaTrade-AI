@@ -46,6 +46,7 @@ class LLMCompletionRequest:
     # Legacy callers may keep provider-owned mock fallback. ModelRouter sets False
     # so failed upstream attempts remain visible in actual-call telemetry.
     allow_internal_fallback: bool = True
+    reasoning_effort: str = "low"
 
 
 @dataclass(frozen=True)
@@ -394,7 +395,7 @@ class OpenAILLMProvider:
         request: LLMCompletionRequest,
         *,
         model: str,
-        reasoning_effort: str = "low",
+        reasoning_effort: str | None = None,
         timeout_seconds: float | None = None,
         max_retries: int | None = None,
     ) -> dict[str, Any]:
@@ -404,9 +405,8 @@ class OpenAILLMProvider:
             "input": input_items,
             "max_output_tokens": request.max_tokens,
             "store": False,
-            # Callers do not pass OpenAI-specific reasoning knobs through the
-            # shared LLMCompletionRequest; keep agent chat on low effort by default.
-            "reasoning": {"effort": reasoning_effort},
+            # Honor the caller reasoning budget; explicit provider overrides take precedence.
+            "reasoning": {"effort": reasoning_effort or request.reasoning_effort},
         }
         if instructions:
             body["instructions"] = instructions

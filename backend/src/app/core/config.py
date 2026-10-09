@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
@@ -294,6 +294,9 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     # Phase 2 model router — callers never supply free-form model names.
+    agent_reasoning_model: str = Field(default="gpt-6-astra", min_length=1, max_length=80)
+    agent_reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+    agent_max_output_tokens: int = Field(default=25000, ge=1024, le=65536)
     llm_tier_a_model: str = "gpt-4o"
     llm_tier_b_model: str = "gpt-4o-mini"
     model_router_policy_version: str = "model-router/v1"

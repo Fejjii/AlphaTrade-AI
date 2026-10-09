@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -128,6 +129,8 @@ class ModelTaskRequest(StrictModel):
     caller_resource_id: UUID | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     response_format: dict[str, object] | None = None
+    reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
+    max_output_tokens: int | None = Field(default=None, ge=64, le=65536)
     # Optional override is accepted only when it matches the policy model or an
     # explicitly allowed *lower* capability fallback. Elevation is rejected.
     model_override: str | None = Field(default=None, max_length=80)

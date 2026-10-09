@@ -1,173 +1,147 @@
 "use client";
 
-import { ChevronDown, RefreshCw, Search, UserRound } from "lucide-react";
+import { Search, RefreshCw } from "lucide-react";
+import { useRef } from "react";
+import { FreshnessPill } from "@/components/ui/freshness-pill";
 import { usePathname } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
-
 import { KillSwitchButton } from "@/components/KillSwitchButton";
 import { resolvePageIdentity } from "@/components/layout/navigation-config";
-import { StatusStrip } from "@/components/layout/StatusStrip";
+import { resolveExecutionDisplay } from "@/components/layout/status-strip-state";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { FreshnessPill } from "@/components/ui/freshness-pill";
 import { IconButton } from "@/components/ui/icon-button";
-import { useAppContext } from "@/contexts/AppContext";
+import { useAppContext, useSafetyPosture } from "@/contexts/AppContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useShellFreshness } from "@/contexts/ShellFreshnessContext";
-import { cn } from "@/lib/utils";
 
-type TopBarProps = {
+export function TopBar({
+  onOpenCommandMenu,
+}: {
   onOpenCommandMenu?: () => void;
-};
-
-export function TopBar({ onOpenCommandMenu }: TopBarProps) {
-  const pathname = usePathname();
-  const identity = resolvePageIdentity(pathname);
-  const { refreshStatus, loading, providers } = useAppContext();
+}) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  const identity = resolvePageIdentity(usePathname());
+  const {
+    refreshStatus,
+    loading,
+    providers,
+    killSwitchStatus,
+    killSwitchError,
+  } = useAppContext();
+  const { executionMode, realTradingEnabled, postureKnown } =
+    useSafetyPosture();
   const { user, organization, logout } = useAuth();
-  // Providers unknown (null) must never look like a healthy "0 mock" (FP2-110).
-  const mockCount = providers ? providers.providers.filter((p) => p.is_mock).length : null;
   const { freshness } = useShellFreshness();
-  const [accountOpen, setAccountOpen] = useState(false);
-  const accountWrapRef = useRef<HTMLDivElement>(null);
-  const accountTriggerRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
-
-  useEffect(() => {
-    if (!accountOpen) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!accountWrapRef.current?.contains(event.target as Node)) {
-        setAccountOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setAccountOpen(false);
-      // Restore focus to the account trigger after Escape closes the menu.
-      queueMicrotask(() => {
-        accountTriggerRef.current?.focus();
-      });
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [accountOpen]);
-
+  const mode = resolveExecutionDisplay(
+    executionMode,
+    realTradingEnabled,
+    postureKnown,
+  );
+  const known = killSwitchStatus != null && !killSwitchError;
+  const paused = known && killSwitchStatus.execution_blocked;
   return (
-    <header className="sticky top-0 z-30 overflow-x-hidden border-b border-border-subtle bg-surface-0/90 backdrop-blur">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-gutter py-3 lg:gap-3 lg:px-gutter-lg">
-        <div className="min-w-0 flex-1" data-testid="topbar-page-identity">
-          <p className="truncate text-sm font-semibold text-text-primary">{identity.title}</p>
-          {identity.subtitle ? (
-            <p className="truncate text-caption text-text-muted" data-testid="topbar-page-subtitle">
-              <span>{identity.primaryLabel}</span>
-              <span aria-hidden="true"> / </span>
-              <span>{identity.subtitle}</span>
-            </p>
-          ) : null}
+    <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-0/95 backdrop-blur">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-gutter py-2 lg:px-gutter-lg">
+        <p
+          data-testid="topbar-page-identity"
+          className="order-1 min-w-0 flex-1 basis-[calc(100%-6rem)] truncate text-sm font-semibold sm:basis-auto"
+        >
+          {identity.title}
+        </p>
+        <div
+          className="order-3 flex items-center gap-2 sm:order-2"
+          role="status"
+          aria-label="Execution status"
+          aria-live="polite"
+        >
+          <StatusBadge label={mode.label} tone={mode.tone} />
+          <StatusBadge
+            label={
+              !known ? "Pause unknown" : paused ? "Paused" : "No global pause"
+            }
+            tone={!known ? "warn" : paused ? "blocked" : "muted"}
+          />
         </div>
-
-        <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-          <div data-testid="topbar-freshness" className="hidden sm:inline-flex">
-            {freshness.state ? (
-              <FreshnessPill state={freshness.state} ageLabel={freshness.ageLabel} />
-            ) : pathname?.startsWith("/analytics") ? (
-              // FP2-226: Analytics charts own per-source freshness pills; do not imply
-              // shell-level absence while tab charts show live/stale states.
-              <span className="sr-only" data-testid="topbar-freshness-hub-managed">
-                Chart freshness is shown in Analytics panels
-              </span>
-            ) : (
-              <span className="rounded-control border border-border-subtle px-2 py-1 text-caption text-text-muted">
-                Freshness unavailable
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={onOpenCommandMenu}
-            data-testid="topbar-search"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-control border border-border-subtle px-2 py-1.5 text-caption text-text-muted hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            aria-label="Search pages and destinations"
-          >
-            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="hidden md:inline">Search</span>
-          </button>
-
-          <span className="hidden lg:inline-flex" data-testid="topbar-providers-chip">
-            {mockCount == null ? (
-              <StatusBadge label="Providers unknown" tone="warn" />
-            ) : (
-              <StatusBadge label={`${mockCount} mock`} tone="info" />
-            )}
-          </span>
-
-          <IconButton
-            label="Refresh status"
-            variant="ghost"
-            onClick={() => void refreshStatus()}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
-          </IconButton>
-
-          <div className="relative" ref={accountWrapRef} data-testid="topbar-account-control">
-            <button
-              ref={accountTriggerRef}
-              type="button"
-              className={cn(
-                "inline-flex min-h-11 max-w-[11rem] items-center gap-1.5 rounded-control border border-border-subtle px-2 py-1.5 text-caption",
-                "text-text-secondary hover:bg-surface-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-              )}
-              aria-haspopup="menu"
-              aria-expanded={accountOpen}
-              aria-controls={menuId}
-              aria-label="Account menu"
-              onClick={() => setAccountOpen((open) => !open)}
-            >
-              <UserRound className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="hidden min-w-0 truncate sm:inline">
-                {user?.email ?? "Signed in"}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            </button>
-            {accountOpen ? (
-              <div
-                id={menuId}
-                role="menu"
-                aria-label="Account"
-                className="absolute right-0 z-40 mt-2 w-64 rounded-control border border-border-subtle bg-surface-0 p-2 shadow-elevation2"
-              >
-                <div className="border-b border-border-subtle px-2 pb-2 mb-2">
-                  <p className="truncate text-sm text-text-primary">{user?.email ?? "Signed in"}</p>
-                  <p className="truncate text-caption text-text-muted">
-                    {organization?.name ?? "Tenant"}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="w-full"
-                  role="menuitem"
-                  onClick={() => {
-                    setAccountOpen(false);
-                    void logout();
-                  }}
-                >
-                  Log out
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
+        <div className="order-4 sm:order-3">
           <KillSwitchButton compact />
         </div>
+        <div className="order-5 sm:order-4">
+          <IconButton
+            label="Search pages and destinations"
+            onClick={onOpenCommandMenu}
+          >
+            <Search className="h-4 w-4" />
+          </IconButton>
+        </div>
+        <details
+          ref={menu}
+          className="relative order-2 sm:order-5"
+          data-testid="header-status-menu"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && menu.current?.open) {
+              menu.current.open = false;
+              menu.current.querySelector("summary")?.focus();
+            }
+          }}
+        >
+          <summary className="min-h-11 cursor-pointer rounded-control border border-border-subtle px-3 py-2.5 text-sm">
+            Status
+          </summary>
+          <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] space-y-3 rounded-card border border-border-subtle bg-surface-0 p-4 shadow-lg">
+            <p className="text-sm">
+              {realTradingEnabled == null
+                ? "Real trading unknown"
+                : realTradingEnabled
+                  ? "Real trading ON"
+                  : "Real trading OFF"}
+            </p>
+            <div data-testid="topbar-freshness">
+              <FreshnessPill
+                state={freshness.state ?? "unavailable"}
+                ageLabel={freshness.ageLabel}
+              />
+            </div>
+            <p className="text-caption text-text-muted">
+              {providers
+                ? `${providers.providers.filter((p) => p.is_mock).length} simulated providers`
+                : "Providers unknown"}
+            </p>
+            <p className="text-caption text-text-muted">
+              Strategy and account gates still apply.
+            </p>
+            {killSwitchError && (
+              <p role="alert" className="text-sm text-danger">
+                Pause status could not be refreshed.
+              </p>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={loading}
+              onClick={() => void refreshStatus()}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh status
+            </Button>
+            <div className="border-t border-border-subtle pt-3">
+              <p className="break-words text-sm">
+                {user?.email ?? "Signed in"}
+              </p>
+              <p className="text-caption text-text-muted">
+                {organization?.name ?? "Workspace"}
+              </p>
+              <Button
+                className="mt-2"
+                variant="outline"
+                size="sm"
+                onClick={() => void logout()}
+              >
+                Log out
+              </Button>
+            </div>
+          </div>
+        </details>
       </div>
-      <StatusStrip />
     </header>
   );
 }

@@ -88,7 +88,7 @@ async function installNotificationFixture(page: Page, supported = true) {
       json: { detail: "Unavailable in notification fixture" },
     });
   });
-  // ManualDemoActivity now loads authenticated history on Settings mount.
+  // Retained manual-history routes must also keep this fixture session usable.
   // Keep its synthetic token inside this fixture: a real backend 401 correctly
   // expires the session, whereas an unrelated read outage must keep it usable.
   await page.route((url) => url.pathname === "/execution/manual-demo/commands", async (route) => {
@@ -134,6 +134,10 @@ async function expectNotificationSession(page: Page) {
     await page.evaluate(() => sessionStorage.getItem("alphatrade_access_token")),
   ).toBe(FIXTURE_ACCESS_TOKEN);
   const settings = page.getByTestId("settings-workspace");
+  const accountGroup = settings.locator("#account-system");
+  if (!(await accountGroup.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await settings.getByText("Account & System", { exact: true }).click();
+  }
   await expect(
     settings.getByText("fixture@example.com", { exact: true }),
   ).toBeVisible();
@@ -158,7 +162,8 @@ for (const viewport of [
     await expectNotificationSession(page);
     await expect(
       page.getByRole("region", { name: "Recent manual demo activity" }),
-    ).toContainText("Manual demo history unavailable in notification fixture");
+    ).toHaveCount(0);
+    await page.getByText("Market Monitoring", { exact: true }).click();
     await expect(
       page.getByText("Watchlist configuration unavailable. Reload to try again."),
     ).toBeVisible();
@@ -170,7 +175,7 @@ for (const viewport of [
     ).toBeVisible();
     const nav = page.getByTestId("mobile-bottom-navigation");
     await expect(nav).toBeVisible();
-    await expect(nav.getByRole("link")).toHaveCount(6);
+    await expect(nav.getByRole("link")).toHaveCount(5);
     await form
       .getByLabel("Watched symbols", { exact: true })
       .selectOption("none");
@@ -208,7 +213,8 @@ for (const viewport of [
     await expectNotificationSession(page);
     await expect(
       page.getByRole("region", { name: "Recent manual demo activity" }),
-    ).toContainText("Manual demo history unavailable in notification fixture");
+    ).toHaveCount(0);
+    await page.getByText("Market Monitoring", { exact: true }).click();
     expect(
       await page.evaluate(
         () =>

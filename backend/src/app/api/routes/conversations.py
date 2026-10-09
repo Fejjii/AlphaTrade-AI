@@ -98,13 +98,54 @@ async def list_conversation_messages(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> PaginatedConversationMessages:
-    return _conversations(session).list_messages(
+    result = _conversations(session).list_messages(
         conversation_id,
         organization_id=tenant.organization_id,
         user_id=tenant.user_id,
         limit=limit,
         offset=offset,
     )
+
+    # Read canonical entries when replaying receipts, including corrections and Undo.
+    # Transcript snapshots preserve the original event; the response reflects current state.
+    from sqlalchemy import select
+
+    from app.agent_capture.store import entry_record
+    from app.db.models import AgentSavedEntry
+    from app.interactive_agent.contracts import PAYLOAD_KEY
+
+    ids = set()
+    for message in result.items:
+        capture = (message.payload.get(PAYLOAD_KEY) or {}).get("capture") or {}
+        for entry in capture.get("saved_entries", []):
+            try:
+                ids.add(uuid.UUID(entry["id"]))
+            except (ValueError, KeyError, TypeError):
+                continue
+    if ids:
+        entries = session.scalars(
+            select(AgentSavedEntry).where(
+                AgentSavedEntry.id.in_(ids),
+                AgentSavedEntry.organization_id == tenant.organization_id,
+                AgentSavedEntry.user_id == tenant.user_id,
+            )
+        )
+        canonical = {str(row.id): entry_record(row).model_dump(mode="json") for row in entries}
+        for message in result.items:
+            payload = dict(message.payload)
+            detail = dict(payload.get(PAYLOAD_KEY) or {})
+            if capture := detail.get("capture"):
+                detail["capture"] = {
+                    **capture,
+                    "saved_entries": [
+                        canonical[e["id"]]
+                        for e in capture.get("saved_entries", [])
+                        if e.get("id") in canonical
+                    ],
+                }
+                payload[PAYLOAD_KEY] = detail
+                message.payload = payload
+    return result
 
 
 @router.get(

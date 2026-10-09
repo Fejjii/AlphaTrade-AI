@@ -23,6 +23,9 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
+  // Local web servers share one SQLite database for durable write flows.
+  // PostgreSQL concurrency is exercised by the backend capture regressions.
+  workers: process.env.PLAYWRIGHT_SKIP_WEBSERVER ? undefined : 1,
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL,

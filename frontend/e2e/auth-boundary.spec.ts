@@ -77,20 +77,20 @@ test.describe("AT-017 edge auth boundary", () => {
     await page.locator("#password").fill(password);
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByLabel("Paper mode active").first()).toBeVisible();
+    await expect(page.getByRole("status", { name: "Execution status" }).getByText("PAPER", { exact: true })).toBeVisible();
 
     // Create a real history entry on a protected route before logging out.
     await page.goto("/portfolio");
     await expect(page).toHaveURL(/\/portfolio/);
 
-    await page.getByRole("button", { name: /account menu/i }).click();
-    await page.getByRole("menuitem", { name: /log out/i }).click();
+    await page.getByTestId("header-status-menu").locator("summary").click();
+    await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
     // Back navigation and direct URLs must not restore protected content.
     await page.goBack();
     await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByLabel("Paper mode active")).toHaveCount(0);
+    await expect(page.getByRole("status", { name: "Execution status" }).getByText("PAPER", { exact: true })).toHaveCount(0);
     await page.goto("/portfolio");
     await expect(page).toHaveURL(/\/login\?next=%2Fportfolio/);
   });

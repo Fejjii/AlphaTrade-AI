@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.agent_capture import routes as saved_entry_routes
 from app.api.routes import (
     alerts,
     analytics,
@@ -233,6 +234,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for r in (
         health.router,
         interactive_agent.router,
+        saved_entry_routes.router,
         metrics.router,
         providers.router,
         auth.router,
