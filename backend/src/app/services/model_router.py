@@ -189,6 +189,20 @@ class ModelRouter:
         queue = [(model, index > 0, False) for index, model in enumerate(models_to_try)]
         retry_available = True
         for index, (model, model_fallback, retry) in enumerate(queue):
+            if turn is not None and request.context.organization_id is not None:
+                from app.core.errors import QuotaExceededError
+                from app.services.quota_service import QuotaService
+
+                with turn.sessions() as quota_session:
+                    quota = QuotaService(quota_session).check_feature(
+                        request.context.organization_id,
+                        _feature_for(request.purpose),
+                        request_id=str(turn.turn_id),
+                        user_id=request.context.user_id,
+                    )
+                    quota_session.commit()
+                if quota.hard_blocked:
+                    raise QuotaExceededError(quota.message)
             attempt_started = datetime.now(UTC)
             try:
                 llm_result = self._llm.complete(

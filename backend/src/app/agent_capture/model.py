@@ -2,10 +2,11 @@
 
 import json
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from app.agent_capture.contracts import CapturePlan
 from app.core.config import Settings
+from app.interactive_agent.conversation import _correlation
 from app.providers.factory import resolve_providers
 from app.providers.llm import LLMMessage
 from app.schemas.model_routing import (
@@ -80,7 +81,7 @@ class CaptureModel:
                 caller_user_id=user_id,
                 caller_resource_type=ModelResourceType.CONVERSATION,
                 caller_resource_id=conversation_id,
-                correlation_id=f"capture:{uuid4()}",
+                correlation_id=_correlation("capture"),
                 reasoning_effort=self.settings.agent_reasoning_effort,
                 max_output_tokens=self.settings.agent_max_output_tokens,
                 response_format={

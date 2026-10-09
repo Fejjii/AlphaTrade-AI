@@ -107,7 +107,7 @@ class ConversationalResponder(Protocol):
 class ModelConversationalResponder:
     """Route one general-agent completion through the existing model router."""
 
-    def __init__(self, session: Session, settings: Settings) -> None:
+    def __init__(self, session: Session | None, settings: Settings) -> None:
         self._session = session
         self._settings = settings
         self.last_usage: dict[str, Any] = {}
@@ -133,9 +133,8 @@ class ModelConversationalResponder:
                         "model_router_fail_closed": True,
                     }
                 ),
-                # Keep telemetry off this session. An isolated usage transaction
-                # on the request connection can roll back the transcript.
-                telemetry=ModelCallTelemetryService(None),
+                # Coordinated HTTP turns supply an independent session factory.
+                telemetry=ModelCallTelemetryService(self._session),
             )
             result = router.complete(
                 ModelTaskRequest(
@@ -147,7 +146,7 @@ class ModelConversationalResponder:
                         resource_id=conversation_id,
                         purpose=ModelRoutingPurpose.GENERAL_AGENT_SYNTHESIS,
                     ),
-                    correlation_id=str(uuid.uuid4()),
+                    correlation_id=_correlation("reply"),
                     caller_organization_id=organization_id,
                     caller_user_id=user_id,
                     caller_scope=ModelCallerScope.USER,
@@ -317,3 +316,10 @@ def present_prose(text: str) -> str:
         text,
         flags=re.I,
     )
+
+
+def _correlation(stage: str) -> str:
+    from app.services.turn_context import current_turn
+
+    turn = current_turn()
+    return f"{turn.turn_id}:{stage}" if turn else str(uuid.uuid4())
