@@ -186,7 +186,7 @@ it("retrieves an exact linked document without substituting another source", asy
     }),
   );
   expect(
-    screen.getByRole("link", { name: /Back to Journal/ }),
+    await screen.findByRole("link", { name: /Back to Journal/ }),
   ).toBeInTheDocument();
   expect(screen.queryByText("Confirmation rule")).not.toBeInTheDocument();
   fireEvent.click(

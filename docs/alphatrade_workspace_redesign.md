@@ -243,7 +243,9 @@ backend/.venv/bin/python evaluation/evaluate_guardrails.py
 Additional checks after ordinary PR CI run811 identified two stale Watcher head
 expectations and a Dashboard loading-placeholder test race: migration expectations
 now follow the additive head while retaining fail-closed/ancestry checks; the missing
-equity assertion waits for the actual native balance row. The repaired safety
+equity assertion waits for the actual native balance row. Run813 subsequently exposed the same invocation-versus-render timing issue in
+the exact-document test; it now awaits the actual Back link before asserting
+source paging. No production behavior or assertions were removed. The repaired safety
 selection passed108 cases; additional migration modules passed14/skipped9. The
 full frontend suite and offline-font build passed again, and both workspace
 browser widths passed without retries. Ordinary PR CI is automatically rerun on
