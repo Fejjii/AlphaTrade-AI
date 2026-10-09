@@ -140,7 +140,7 @@ class DemoReconciliationDiagnostic(CanonicalModel):
 
 class ManualDemoProtectionHistory(CanonicalModel):
     tpsl_id: str
-    state: Literal["effective", "canceled", "order_failed"]
+    state: Literal["live", "effective", "canceled", "order_failed"]
 
 
 class ManualDemoExitFill(CanonicalModel):
@@ -171,6 +171,14 @@ class ManualDemoStatus(CanonicalModel):
     journal_trade_id: UUID | None
     missing_evidence: tuple[str, ...]
     reconciliation_diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    protection_diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    historical_protection: str = "unverified"
+    triggered_protection: str = "unverified"
+    entry_fees: Decimal | None = None
+    gross_pnl: Decimal | None = None
+    funding: Decimal | None = None
+    net_pnl: Decimal | None = None
+    fee_convention: Literal["positive_cost_negative_rebate"] = "positive_cost_negative_rebate"
     execution_status: str = "submission_uncertain"
     position_status: str = "unknown"
     account_status: str = "unknown"

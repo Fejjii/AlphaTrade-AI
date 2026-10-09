@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.db.models import (
     AuditLog,
     DailyRiskState,
+    JournalTrade,
     Membership,
     Organization,
     PaperTrade,
@@ -33,6 +34,8 @@ from app.main import create_app
 from app.schemas.common import (
     AuditEventType,
     BacktestStatus,
+    JournalTradeSource,
+    JournalTradeStatus,
     MembershipRole,
     PaperTradeStatus,
     PaperValidationStatus,
@@ -449,7 +452,7 @@ def test_dashboard_includes_discipline_score(
     assert summary.discipline_score.score is not None
 
 
-def test_open_paper_trades_includes_paper_trade_open_rows(
+def test_open_paper_trades_uses_canonical_rows_without_legacy_or_manual_double_counting(
     risk_db: tuple[sessionmaker[Session], Settings],
 ) -> None:
     factory, settings = risk_db
@@ -488,6 +491,30 @@ def test_open_paper_trades_includes_paper_trade_open_rows(
                 opened_at=now,
             )
         )
+        # Current paper summaries use canonical Journal rows. Keep the legacy
+        # fixtures above to prove they do not double count the same activity.
+        for source, symbol, direction in (
+            (JournalTradeSource.PAPER_VALIDATION, "ETHUSDT", TradeDirection.SHORT),
+            (JournalTradeSource.PAPER_EXECUTION, "BTCUSDT", TradeDirection.LONG),
+            (JournalTradeSource.MANUAL_DEMO_TEST, "BTCUSDT", TradeDirection.LONG),
+        ):
+            session.add(
+                JournalTrade(
+                    organization_id=ORG_A,
+                    user_id=USER_A,
+                    source=source,
+                    exchange="BLOFIN_DEMO"
+                    if source == JournalTradeSource.MANUAL_DEMO_TEST
+                    else "PAPER_INTERNAL",
+                    symbol=symbol,
+                    timeframe="15m",
+                    direction=direction,
+                    status=JournalTradeStatus.OPEN,
+                    entry_price=Decimal("3000"),
+                    entry_time=now,
+                    size=Decimal("0.1"),
+                )
+            )
         session.commit()
         summary = DashboardSummaryService(session, settings).summarize(
             organization_id=ORG_A,
@@ -496,6 +523,12 @@ def test_open_paper_trades_includes_paper_trade_open_rows(
     assert summary.open_paper_trades_summary is not None
     assert summary.open_paper_trades_summary.paper_validation_count == 1
     assert summary.open_paper_trades_summary.proposal_flow_count == 1
+    assert summary.open_paper_trades_summary.paper_execution_count == 1
+    assert summary.open_paper_trades_summary.total_count == 2
+    assert {item.source for item in summary.open_paper_trades_summary.items} == {
+        JournalTradeSource.PAPER_VALIDATION.value,
+        JournalTradeSource.PAPER_EXECUTION.value,
+    }
 
 
 def test_daily_pnl_includes_closed_paper_trade_rows(

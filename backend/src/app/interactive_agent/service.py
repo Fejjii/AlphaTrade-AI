@@ -440,8 +440,12 @@ class InteractiveAgentService:
             execution_explanation.recorded_evidence if execution_explanation else None
         )
         if recorded_trade is not None:
-            reply = compose_visible_reply(
-                recorded_trade.reply, factual, required_warnings=recorded_trade.warnings
+            reply = (
+                compose_visible_reply(
+                    recorded_trade.reply, factual, required_warnings=recorded_trade.warnings
+                )
+                if recorded_trade.allow_model
+                else recorded_trade.reply
             )
             recorded_evidence = factual
         full_reply = recorded_trade.reply if recorded_trade is not None else None

@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDemoAccountSnapshot } from "./useDemoAccountSnapshot";
-import { formatCount, formatDateTime, formatPrice } from "@/lib/format";
+import { TradingMetric } from "./TradingMetric";
+import { formatCount, formatDateTime, formatMoney, formatPrice, formatQuantity } from "@/lib/format";
 
 const statusLabel = {
   ok: "Fresh snapshot",
@@ -24,6 +25,9 @@ export function BloFinDemoAccountCard({
 }) {
   const { account, busy, error, status, hasData, load } =
     useDemoAccountSnapshot(refreshKey);
+  const usdt = hasData ? account?.balances.find((balance) => balance.asset === "USDT") : null;
+  const performance = account?.performance;
+  const verifiedPerformance = performance?.status === "partial";
 
   return (
     <Card data-testid="dashboard-demo-account">
@@ -70,8 +74,27 @@ export function BloFinDemoAccountCard({
           {account?.can_refresh
             ? " Native data refreshes every 3 minutes while visible; retries slow down after failures."
             : " Saved snapshots reload every 3 minutes while visible."}
-          Paper portfolio and performance metrics below have their own scope.
+          All balances and positions below use this configured account.
         </p>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <TradingMetric label="Account equity" value={`${formatMoney(hasData ? account?.total_equity_usd : null)} USD`} note="Native account valuation · USD" testId="dashboard-equity" />
+          <TradingMetric label="Available balance" value={`${formatMoney(usdt?.available)} USDT`} note="Available settlement asset" testId="dashboard-available" />
+          <TradingMetric label="Open positions" value={formatCount(hasData ? account?.position_count : null)} note={account?.positions_truncated ? "Incomplete native position coverage" : "Native account snapshot"} testId="dashboard-open-count" />
+          <TradingMetric label="Verified net PnL" value={`${formatMoney(verifiedPerformance ? performance.net_pnl : null)} USDT`} note="Verified recorded closures only" testId="dashboard-pnl" />
+        </div>
+        <p className="text-xs text-text-secondary">USD equity and USDT balances use different valuation units. Conversion differences are not trading PnL.</p>
+        <section aria-label="Verified account performance" className="space-y-2 rounded-control border border-border-subtle p-3">
+          <h3 className="text-sm font-medium">Verified performance · USDT</h3>
+          <p className="text-xs text-text-secondary">{performance?.coverage ?? "Performance unavailable. Account snapshots do not establish realized returns; complete linked trade history is required."}</p>
+          {verifiedPerformance ? <>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
+              {([["Gross trading PnL", performance.gross_pnl], ["Fees", performance.fees], ["Funding", performance.funding]] as const).map(([label, value]) => <div key={label}><dt className="text-xs text-text-secondary">{label}</dt><dd className="mt-1 tabular-nums">{formatMoney(value)} USDT</dd></div>)}
+              <div><dt className="text-xs text-text-secondary">Verified closures</dt><dd className="mt-1">{formatCount(performance.verified_closed_trades)}</dd></div>
+            </dl>
+            <p className="text-xs text-text-secondary">{performance.unresolved_trades} unresolved trades · {performance.manual_test_trades} manual connectivity tests included in account activity.</p>
+            <p className="text-xs text-text-secondary">Strategy performance unavailable for this coverage. Manual connectivity tests are excluded. Win rate and expectancy unavailable for this incomplete history.</p>
+          </> : null}
+        </section>
         {busy ? (
           <p role="status" className="text-sm text-text-secondary">
             Loading demo account snapshot…
@@ -114,12 +137,6 @@ export function BloFinDemoAccountCard({
             ) : null}
             {hasData ? (
               <>
-                <dl className="rounded-control border border-border-subtle p-3 text-sm">
-                  <dt className="font-medium text-text-primary">Native account equity (USD)</dt>
-                  <dd className="mt-2 break-words text-text-secondary">
-                    {account.total_equity_usd ?? "—"} USD
-                  </dd>
-                </dl>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {account.balances.map((balance) => (
                     <dl
@@ -130,13 +147,13 @@ export function BloFinDemoAccountCard({
                         {balance.asset} balance
                       </dt>
                       <dd className="mt-2 break-words text-text-secondary">
-                        Cash balance: {balance.total} {balance.asset}
+                        Cash balance: {formatMoney(balance.total)} {balance.asset}
                       </dd>
                       <dd className="break-words text-text-secondary">
-                        Available: {balance.available} {balance.asset}
+                        Available: {formatMoney(balance.available)} {balance.asset}
                       </dd>
                       <dd className="break-words text-text-secondary">
-                        Equity: {balance.equity ?? "—"} {balance.asset}
+                        Equity: {formatMoney(balance.equity)} {balance.asset}
                       </dd>
                     </dl>
                   ))}
@@ -167,19 +184,18 @@ export function BloFinDemoAccountCard({
                         {position.symbol} · {position.side}
                       </p>
                       <p className="mt-1 text-text-secondary">
-                        {position.contracts} contracts · Leverage{" "}
+                        {formatQuantity(position.contracts, { maximumFractionDigits: 8 })} contracts · Leverage{" "}
                         {position.leverage ?? "—"}x
                       </p>
                       <p className="break-words text-text-secondary">
-                        Base quantity: {position.base_quantity ?? "—"} {position.base_asset ?? "(unverified instrument metadata)"}
+                        Base quantity: {formatQuantity(position.base_quantity, { maximumFractionDigits: 8 })} {position.base_asset ?? "(unverified instrument metadata)"}
                       </p>
                       <p className="text-text-secondary">
                         Entry {formatPrice(position.entry_price)} · Mark{" "}
-                        {formatPrice(position.mark_price)}
+                        {formatPrice(position.mark_price)} {position.quote_asset ?? "(currency unverified)"}
                       </p>
                       <p className="break-words text-text-secondary">
-                        Unrealized PnL {position.unrealized_pnl ?? "—"} ·
-                        instrument currency
+                        Unrealized PnL {formatMoney(position.unrealized_pnl)} {position.quote_asset ?? "(currency unverified)"}
                       </p>
                     </div>
                   ))}

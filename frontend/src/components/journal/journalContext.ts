@@ -19,7 +19,7 @@ export function parseJournalQuery(searchParams: SearchParamsLike): JournalQueryC
     proposalId: searchParams.get("proposal_id"),
     positionId: searchParams.get("position_id"),
     entryId: searchParams.get("entry"),
-    tradeId: searchParams.get("trade_id"),
+    tradeId: searchParams.get("trade_id") ?? searchParams.get("trade"),
     sessionId: searchParams.get("session_id") ?? searchParams.get("run_session_id"),
   };
 }

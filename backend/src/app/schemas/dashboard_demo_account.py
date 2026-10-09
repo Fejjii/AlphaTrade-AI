@@ -22,6 +22,7 @@ class DemoAccountPosition(StrictModel):
     side: Literal["long", "short"]
     contracts: Decimal
     base_asset: str | None = None
+    quote_asset: str | None = None
     base_quantity: Decimal | None = None
     entry_price: Decimal | None = None
     mark_price: Decimal | None = None
@@ -29,9 +30,25 @@ class DemoAccountPosition(StrictModel):
     leverage: Decimal | None = None
 
 
+class DemoAccountPerformance(StrictModel):
+    status: Literal["partial", "unavailable"] = "unavailable"
+    currency: Literal["USDT"] = "USDT"
+    gross_pnl: Decimal | None = None
+    fees: Decimal | None = None
+    funding: Decimal | None = None
+    net_pnl: Decimal | None = None
+    verified_closed_trades: int = 0
+    unresolved_trades: int = 0
+    manual_test_trades: int = 0
+    strategy_closed_trades: int | None = None
+    coverage: str = "Verified performance is unavailable for this account."
+
+
 class DashboardDemoAccount(StrictModel):
     venue: Literal["BLOFIN_DEMO"] = "BLOFIN_DEMO"
     read_only: Literal[True] = True
+    account_id: UUID | None = None
+    performance: DemoAccountPerformance = Field(default_factory=DemoAccountPerformance)
     status: Literal["ok", "degraded", "stale", "unavailable", "not_synced", "inactive"]
     can_refresh: bool = False
     snapshot_id: UUID | None = None

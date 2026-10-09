@@ -14,6 +14,10 @@ const safetyPosture = {
 
 const search = new URLSearchParams();
 
+vi.mock("@/components/journal/JournalTradeScreen", () => ({ JournalTradeScreen: ({ tradeId }: { tradeId: string }) => <div data-testid="exact-trade-view">{tradeId}</div> }));
+
+vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ user: { id: "fixture-user" }, organization: { id: "fixture-org" } }) }));
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => search,
 }));
@@ -472,10 +476,10 @@ describe("Journal hub Phase C3A", () => {
     });
   });
 
-  it("does not fabricate relationships for unsupported trade_id deep links", () => {
+  it("routes trade_id to the exact canonical detail rather than the generic hub", () => {
     search.set("trade_id", "trade-abc");
     render(<JournalPage />);
-    expect(screen.getByTestId("journal-unsupported-trade")).toHaveTextContent(/trade_id=trade-abc/i);
+    expect(screen.getByTestId("exact-trade-view")).toHaveTextContent("trade-abc");
     expect(screen.queryByTestId("quick-entry-related-validation")).not.toBeInTheDocument();
   });
 

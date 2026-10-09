@@ -1,11 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "./page";
 import type { TraderDashboardData } from "@/components/dashboard/TraderDashboardView";
-import { failedSource, okSource } from "@/components/workflows/sourceResult";
+import { failedSource } from "@/components/workflows/sourceResult";
 import { UNAVAILABLE } from "@/lib/format";
-import type { DashboardSummary } from "@/lib/api/types";
 
 vi.mock("@/contexts/AppContext", () => ({
   useSafetyPosture: () => ({
@@ -50,6 +49,7 @@ afterEach(() => {
 describe("Trader dashboard unavailable sources", () => {
   it("renders unavailable figures instead of zeros", () => {
     render(<DashboardPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Dashboard account" }), { target: { value: "simulator" } });
     expect(screen.getByTestId("dashboard-equity")).toHaveTextContent(
       UNAVAILABLE,
     );
@@ -60,15 +60,9 @@ describe("Trader dashboard unavailable sources", () => {
     expect(screen.getByTestId("dashboard-equity")).not.toHaveTextContent(
       "0.00",
     );
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
-      "Open positions unavailable",
-    );
-    expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent(
-      "Recent trades unavailable",
-    );
     expect(
       screen.getByTestId("dashboard-strategy-performance"),
-    ).toHaveTextContent("Journal strategy performance unavailable");
+    ).toHaveTextContent("Closed paper strategy performance unavailable");
     expect(screen.getByTestId("dashboard-watcher-status")).toHaveTextContent(
       "Unavailable",
     );
@@ -83,18 +77,10 @@ describe("Trader dashboard unavailable sources", () => {
     expect(screen.queryByTestId("daily-review-content")).not.toBeInTheDocument();
   });
 
-  it("treats an empty open-position list as empty, not unavailable", () => {
-    asyncState.data = {
-      ...failedDashboard(),
-      summary: okSource({
-        safety: { execution_mode: "paper", real_trading_enabled: false },
-        open_paper_trades_summary: { items: [], total_count: 0 },
-      } as unknown as DashboardSummary),
-    };
+  it("never substitutes unrelated empty Journal positions for unavailable native account data", () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent(
-      "No open positions",
-    );
-    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("0");
+    expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent(UNAVAILABLE);
+    expect(screen.queryByText("No native open positions at this snapshot.")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dashboard-strategy-performance")).not.toBeInTheDocument();
   });
 });

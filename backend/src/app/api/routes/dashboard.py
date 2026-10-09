@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.attention.contracts import AttentionQueue
 from app.attention.reader import AttentionQueueService
+from app.core.config import Settings
 from app.core.dependencies import (
     BloFinSyncServiceDep,
     DashboardSummaryServiceDep,
@@ -25,12 +27,23 @@ from app.schemas.dashboard_demo_account import DashboardDemoAccount
 from app.security.rate_limit import tenant_rate_limit_dependency
 from app.security.rbac import OwnerDep, ReaderDep
 from app.services.dashboard.demo_account import demo_account_active, preserved_demo_account
+from app.services.dashboard.demo_performance import attach_demo_performance
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 _DASHBOARD_READ_LIMIT = Depends(
     tenant_rate_limit_dependency("dashboard:read", limit=120, window_seconds=3600, user_limit=120)
 )
+
+
+def _demo_account_scope(settings: Settings, organization_id: UUID) -> bool:
+    configured = settings.governed_blofin_demo_organization_id
+    if not configured:
+        return True  # Legacy read-only sync has its existing organization-scoped snapshots.
+    try:
+        return UUID(configured) == organization_id
+    except ValueError:
+        return False
 
 
 @router.get(
@@ -44,9 +57,12 @@ def demo_account(
     service: BloFinSyncServiceDep,
     settings: SettingsDep,
     response: Response,
+    session: SessionDep,
 ) -> DashboardDemoAccount:
     response.headers["Cache-Control"] = "private, no-store"
-    if not demo_account_active(settings):
+    if not demo_account_active(settings) or not _demo_account_scope(
+        settings, tenant.organization_id
+    ):
         return DashboardDemoAccount(
             status="inactive",
             message="BloFin demo sync is not configured. Configure it in Exchange settings.",
@@ -60,13 +76,14 @@ def demo_account(
             can_refresh=can_refresh,
             message="No demo snapshot yet. Refresh to retrieve balances and open positions.",
         )
-    return preserved_demo_account(
+    result = preserved_demo_account(
         snapshot,
         service=service,
         organization_id=tenant.organization_id,
         settings=settings,
         can_refresh=can_refresh,
     )
+    return attach_demo_performance(result, session=session, settings=settings, tenant=tenant)
 
 
 @router.post(
@@ -89,6 +106,8 @@ def refresh_demo_account(
     response: Response,
 ) -> DashboardDemoAccount:
     response.headers["Cache-Control"] = "private, no-store"
+    if not _demo_account_scope(settings, tenant.organization_id):
+        raise NotFoundError("BloFin demo account is not configured for this organization.")
     if not demo_account_active(settings):
         raise ExchangeDemoInactiveError("BloFin demo account sync is not configured.")
     result = service.sync(
@@ -97,13 +116,14 @@ def refresh_demo_account(
         include_instrument_metadata=True,
     )
     session.commit()
-    return preserved_demo_account(
+    account = preserved_demo_account(
         result.snapshot,
         service=service,
         organization_id=tenant.organization_id,
         settings=settings,
         can_refresh=True,
     )
+    return attach_demo_performance(account, session=session, settings=settings, tenant=tenant)
 
 
 @router.get(

@@ -73,8 +73,8 @@ describe("BloFin demo Dashboard", () => {
     render(<BloFinDemoAccountCard />);
     expect(await screen.findByText("USDT balance")).toBeInTheDocument();
     expect(screen.getByText(/0.1 contracts/)).toBeInTheDocument();
-    expect(screen.getByText("1001.50 USD")).toBeInTheDocument();
-    expect(screen.getByText("Equity: 1002.25 USDT")).toBeInTheDocument();
+    expect(screen.getByText("1,001.50 USD")).toBeInTheDocument();
+    expect(screen.getByText("Equity: 1,002.25 USDT")).toBeInTheDocument();
     expect(screen.getByText("Base quantity: 0.0001 BTC")).toBeInTheDocument();
     expect(screen.getByText(/Unrealized PnL —/)).toBeInTheDocument();
     expect(screen.getByText("BLOFIN_DEMO")).toBeInTheDocument();
@@ -366,4 +366,32 @@ describe("BloFin demo Dashboard", () => {
     expect(screen.getByText(/Base quantity: — \(unverified instrument metadata\)/)).toBeInTheDocument();
   });
 
+});
+
+it("uses native scope and verified partial performance without rounding tiny PnL to zero", async () => {
+  latest.mockResolvedValue(account({ performance: {
+    status: "partial", currency: "USDT", gross_pnl: "0.007656", fees: "0.0099", funding: null, net_pnl: null,
+    verified_closed_trades: 1, unresolved_trades: 2, manual_test_trades: 1, strategy_closed_trades: 0,
+    coverage: "Partial history: only exact linked AlphaTrade activity.",
+  } }));
+  render(<BloFinDemoAccountCard />);
+  await screen.findByText("Partial history: only exact linked AlphaTrade activity.");
+  expect(screen.getByTestId("dashboard-equity")).toHaveTextContent("1,001.50 USD");
+  expect(screen.getByTestId("dashboard-available")).toHaveTextContent("900.13 USDT");
+  expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("1");
+  expect(screen.getByTestId("dashboard-pnl")).toHaveTextContent("— USDT");
+  expect(screen.getByText("0.007656 USDT")).toBeInTheDocument();
+  expect(screen.getByText(/Manual connectivity tests are excluded/)).toBeInTheDocument();
+});
+
+it("retains original successful timestamps after failed refresh", async () => {
+  const synced = "2026-10-08T12:00:00Z";
+  latest.mockResolvedValue(account({ synced_at: synced }));
+  render(<BloFinDemoAccountCard />);
+  const timestamp = await screen.findByText(/^As of /);
+  const original = timestamp.textContent;
+  refresh.mockRejectedValue(new Error("unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh demo account" }));
+  await screen.findByRole("alert");
+  expect(screen.getByText(/^As of /).textContent).toBe(original);
 });

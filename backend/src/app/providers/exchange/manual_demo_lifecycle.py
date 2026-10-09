@@ -9,6 +9,7 @@ from app.providers.exchange.demo_reconciliation import (
     FILLS,
     PROTECTION,
     diagnostic_for,
+    history_rows,
     identity,
     number,
     occurrence,
@@ -51,6 +52,9 @@ class ManualLifecycleObservation:
         "Complete native lifecycle proof is unavailable; the account claim remains held."
     )
     diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    protection_diagnostics: tuple[DemoReconciliationDiagnostic, ...] = ()
+    triggered_protection: str = "unverified"
+    account_verified: bool = False
 
     def facts(self) -> dict[str, Any]:
         quantity = sum((Decimal(f["quantity"]) for f in self.exit_fills), Decimal("0"))
@@ -70,6 +74,11 @@ class ManualLifecycleObservation:
         )
         return {
             "position_status": self.position_status,
+            "account_verified": self.account_verified,
+            "triggered_protection": self.triggered_protection,
+            "protection_diagnostics": [
+                d.model_dump(exclude_none=True) for d in self.protection_diagnostics
+            ],
             "protection_history": list(self.protection_history),
             "exit_fills": list(self.exit_fills),
             "account_flat": self.account_flat,
@@ -89,7 +98,7 @@ class ManualLifecycleObservation:
         }
 
 
-def observe_account(provider: GovernedBloFinDemoProvider) -> tuple[bool, bool]:
+def observe_positions(provider: GovernedBloFinDemoProvider) -> bool:
     with stage("account_lookup", POSITIONS):
         positions = rows(
             provider._client.request("GET", POSITIONS.removeprefix("GET "), signed=True)
@@ -104,6 +113,10 @@ def observe_account(provider: GovernedBloFinDemoProvider) -> tuple[bool, bool]:
                 "account_position_mode_unknown",
             )
         flat = all(number(p.get("positions"), field="positions") == 0 for p in positions)
+    return flat
+
+
+def observe_account_idle(provider: GovernedBloFinDemoProvider) -> bool:
     pending = False
     for endpoint in (PENDING, PROTECTION):
         with stage("account_lookup", endpoint):
@@ -114,7 +127,7 @@ def observe_account(provider: GovernedBloFinDemoProvider) -> tuple[bool, bool]:
                     )
                 )
             )
-    return flat, not pending
+    return not pending
 
 
 def observe_lifecycle(
@@ -123,15 +136,26 @@ def observe_lifecycle(
     plan: TradePlanRevision,
     entry: DemoOrderEvidence | None,
     proven_unsent: bool = False,
+    known_protection_ids: tuple[str, ...] = (),
 ) -> ManualLifecycleObservation:
+    flat, idle = False, False
+    account_verified = False
+    protect_facts: list[dict[str, Any]] = []
+    exits: list[dict[str, Any]] = []
+    protection_diagnostics: list[DemoReconciliationDiagnostic] = []
+    triggered = "unverified"
+    triggered_orders: set[str] = set()
     try:
-        flat, idle = observe_account(provider)
+        flat = observe_positions(provider)
+        account_verified = True
+        idle = observe_account_idle(provider)
         if proven_unsent:
             return ManualLifecycleObservation(
                 provider._clock(),
                 "flat_account" if flat else "account_position_present",
                 account_flat=flat,
                 account_idle=idle,
+                account_verified=True,
                 resolution_reason="proven_unsent" if flat and idle else None,
                 recovery_reason=(
                     "Local dispatch never occurred. Recovery also requires a flat "
@@ -144,6 +168,7 @@ def observe_lifecycle(
                 "flat_exit_unverified" if flat else "account_position_present",
                 account_flat=flat,
                 account_idle=idle,
+                account_verified=True,
                 recovery_reason=(
                     "Submission remains unknown. Missing order lookup or flat account "
                     "alone cannot release this command; inspect its native client "
@@ -157,6 +182,7 @@ def observe_lifecycle(
                 "flat_account" if flat else "account_position_present",
                 account_flat=flat,
                 account_idle=idle,
+                account_verified=True,
                 resolution_reason="terminal_unfilled" if eligible else None,
                 recovery_reason=(
                     "Unfilled entry requires its native canceled/rejected/expired "
@@ -164,61 +190,67 @@ def observe_lifecycle(
                 ),
             )
         with stage("exit_lookup", HISTORY):
-            history = rows(
-                provider._client.request(
-                    "GET",
-                    HISTORY.removeprefix("GET "),
-                    params={
-                        "begin": str(int(plan.valid_from.timestamp() * 1000)),
-                        "end": str(int(provider._clock().timestamp() * 1000)),
-                        "limit": "100",
-                    },
-                    signed=True,
-                )
+            history = history_rows(
+                provider._client,
+                endpoint=HISTORY,
+                cursor_field="orderId",
+                params={
+                    "begin": str(int(plan.valid_from.timestamp() * 1000)),
+                    "end": str(int(provider._clock().timestamp() * 1000)),
+                },
             )
-        with stage("exit_lookup", TPSL_HISTORY):
-            protection = rows(
-                provider._client.request(
-                    "GET",
-                    TPSL_HISTORY.removeprefix("GET "),
-                    params={"instId": plan.execution_instrument, "limit": "100"},
-                    signed=True,
+        opposite = "sell" if plan.side.value == "BUY" else "buy"
+        linked: list[dict[str, Any]] = []
+        # Protection is a separate confidence axis. Native documented TPSL rows
+        # have no guaranteed parent orderId or generated child orderId. Never
+        # synthesize lineage from matching prices, size, or account flatness.
+        try:
+            with stage("exit_lookup", TPSL_HISTORY):
+                protection = history_rows(
+                    provider._client,
+                    endpoint=TPSL_HISTORY,
+                    cursor_field="tpslId",
+                    params={"instId": plan.execution_instrument},
                 )
+            with stage("exit_parse", TPSL_HISTORY):
+                ids = {*known_protection_ids, *entry.protection_order_ids}
+                if entry.native_tpsl_id:
+                    ids.add(entry.native_tpsl_id)
+                linked = [
+                    p
+                    for p in protection
+                    if p.get("clientOrderId") == entry.client_order_id
+                    or p.get("orderId") == entry.order_id
+                    or p.get("tpslId") in ids
+                ]
+                require(len(linked) <= 1, "protection_history_ambiguous")
+                for p in linked:
+                    pid = identity(p.get("tpslId"))
+                    require(
+                        p.get("state") in {"live", "effective", "canceled", "order_failed"},
+                        "protection_history_state_unknown",
+                    )
+                    require(
+                        p.get("instId") == plan.execution_instrument
+                        and p.get("positionSide") == "net"
+                        and p.get("marginMode") == "cross"
+                        and p.get("side") == opposite,
+                        "protection_history_terms_mismatch",
+                    )
+                    if p.get("createTime") not in {None, ""}:
+                        occurrence(p["createTime"], earliest=plan.valid_from, now=provider._clock())
+                    protect_facts.append({"tpsl_id": pid, "state": p["state"]})
+                require(bool(linked), "protection_history_link_unavailable")
+        except Exception as exc:
+            linked = []
+            protection_diagnostics.append(
+                diagnostic_for(exc, stage="exit_lookup", endpoint=TPSL_HISTORY)
             )
-        with stage("exit_parse", TPSL_HISTORY):
-            linked = [
-                p
-                for p in protection
-                if p.get("clientOrderId") == entry.client_order_id
-                or p.get("orderId") == entry.order_id
-                or (entry.native_tpsl_id is not None and p.get("tpslId") == entry.native_tpsl_id)
-                or p.get("tpslId") in entry.protection_order_ids
-            ]
-            require(len(linked) <= 1, "protection_history_ambiguous")
-            protect_facts = []
-            opposite = "sell" if plan.side.value == "BUY" else "buy"
-            for p in linked:
-                pid = identity(p.get("tpslId"))
-                require(
-                    p.get("orderId") in {None, "", entry.order_id}, "protection_identity_conflict"
-                )
-                require(
-                    p.get("state") in {"effective", "canceled", "order_failed"},
-                    "protection_history_state_unknown",
-                )
-                require(
-                    p.get("instId") == plan.execution_instrument
-                    and p.get("positionSide") == "net"
-                    and p.get("marginMode") == "cross"
-                    and p.get("side") == opposite,
-                    "protection_history_terms_mismatch",
-                )
-                occurrence(p.get("createTime"), earliest=plan.valid_from, now=provider._clock())
-                protect_facts.append({"tpsl_id": pid, "state": p["state"]})
         with stage("exit_parse", HISTORY):
-            require(len(history) <= 20, "exit_history_budget_exhausted")
+            require(len(history) <= 1000, "exit_history_budget_exhausted")
             seen = set()
             candidates = []
+            closure_conflict = False
             quantity = sum((f.quantity for f in entry.fills), Decimal("0"))
             for order in history:
                 oid = identity(order.get("orderId"))
@@ -268,49 +300,46 @@ def observe_lifecycle(
                     now=provider._clock(),
                 )
                 if category in {"tp", "sl"}:
-                    require(
-                        len(linked) == 1 and linked[0]["state"] == "effective",
-                        "effective_protection_history_missing",
-                    )
-                    expected = (
-                        plan.risk_and_exits.stop.value
-                        if category == "sl"
-                        else plan.risk_and_exits.targets[0].price.value
-                    )
-                    require(
-                        number(
-                            order.get(f"{category}TriggerPrice"), field=f"{category}TriggerPrice"
+                    # Exact order/fill identity and the isolated account sequence
+                    # establish the exit independently of missing TPSL ancestry.
+                    # Only direct native parent/child linkage establishes *which*
+                    # protection triggered. A matching trigger price is insufficient.
+                    if linked and linked[0]["state"] != "effective":
+                        closure_conflict = True
+                    if linked and (
+                        order.get("tpslId") == linked[0].get("tpslId")
+                        or linked[0].get("orderId") == oid
+                    ):
+                        expected = (
+                            plan.risk_and_exits.stop.value
+                            if category == "sl"
+                            else plan.risk_and_exits.targets[0].price.value
                         )
-                        == expected
-                        and number(
-                            linked[0].get(f"{category}TriggerPrice"),
-                            field=f"{category}TriggerPrice",
+                        require(
+                            number(
+                                linked[0].get(f"{category}TriggerPrice"),
+                                field=f"{category}TriggerPrice",
+                            )
+                            == expected,
+                            "exit_trigger_plan_mismatch",
                         )
-                        == expected,
-                        "exit_trigger_plan_mismatch",
-                    )
-                    require(
-                        number(linked[0].get("actualSize"), field="actualSize", positive=True)
-                        == total,
-                        "effective_protection_quantity_mismatch",
-                    )
+                        require(
+                            number(linked[0].get("actualSize"), field="actualSize", positive=True)
+                            == total,
+                            "effective_protection_quantity_mismatch",
+                        )
+                        triggered_orders.add(oid)
                 candidates.append((oid, total, created, category))
             if entry.status in TERMINAL:
                 require(entry.order_id in seen, "entry_history_missing")
-        exits: list[dict[str, Any]] = []
+        require(len(candidates) <= 100, "exit_history_budget_exhausted")
         for oid, total, created, category in candidates:
             with stage("exit_lookup", FILLS):
-                native_fills = rows(
-                    provider._client.request(
-                        "GET",
-                        FILLS.removeprefix("GET "),
-                        params={
-                            "instId": plan.execution_instrument,
-                            "orderId": oid,
-                            "limit": "100",
-                        },
-                        signed=True,
-                    )
+                native_fills = history_rows(
+                    provider._client,
+                    endpoint=FILLS,
+                    cursor_field="tradeId",
+                    params={"instId": plan.execution_instrument, "orderId": oid},
                 )
             with stage("exit_parse", FILLS):
                 per_order: list[dict[str, Any]] = []
@@ -355,16 +384,28 @@ def observe_lifecycle(
                     sum((Decimal(f["quantity"]) for f in per_order), Decimal("0")) == total,
                     "exit_fill_totals_incomplete",
                 )
+                require(
+                    sum((Decimal(f["quantity"]) for f in exits + per_order), Decimal("0"))
+                    <= quantity,
+                    "exit_quantity_exceeds_entry",
+                )
                 exits.extend(per_order)
+                if oid in triggered_orders:
+                    triggered = "verified"
         with stage("exit_parse", FILLS):
             require(
-                len(exits) <= 100 and len({f["identity"] for f in exits}) == len(exits),
+                len({f["identity"] for f in exits}) == len(exits),
                 "exit_fill_identity_duplicate",
             )
             total = sum((Decimal(f["quantity"]) for f in exits), Decimal("0"))
             require(total <= quantity, "exit_quantity_exceeds_entry")
+        with stage("exit_parse", TPSL_HISTORY):
+            require(not closure_conflict, "protection_history_trigger_conflict")
         # Recheck account after history IO before any release decision.
-        flat, idle = observe_account(provider)
+        account_verified = False
+        flat = observe_positions(provider)
+        account_verified = True
+        idle = observe_account_idle(provider)
         closed = total == quantity and flat and idle and entry.status in TERMINAL
         return ManualLifecycleObservation(
             provider._clock(),
@@ -388,11 +429,25 @@ def observe_lifecycle(
                 "and absent pending protection do not prove closure; inspect "
                 "native history."
             ),
+            protection_diagnostics=tuple(protection_diagnostics),
+            triggered_protection=triggered,
+            account_verified=True,
         )
     except Exception as exc:
         return ManualLifecycleObservation(
             provider._clock(),
-            "unknown",
+            "flat_exit_unverified"
+            if account_verified and flat
+            else "account_position_present"
+            if account_verified
+            else "unknown",
+            protection_history=tuple(protect_facts),
+            exit_fills=tuple(exits),
+            account_flat=flat,
+            account_idle=idle,
+            account_verified=account_verified,
+            protection_diagnostics=tuple(protection_diagnostics),
+            triggered_protection=triggered,
             diagnostics=(diagnostic_for(exc, stage="exit_lookup", endpoint=HISTORY),),
             recovery_reason=(
                 "Lifecycle evidence read failed. Inspect the safe diagnostic and "

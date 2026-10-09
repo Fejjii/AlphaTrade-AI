@@ -171,6 +171,24 @@ def test_roles_and_tenant_boundaries(demo_client, monkeypatch):
     assert client.get("/dashboard/demo-account").status_code == 401
 
 
+def test_configured_execution_account_is_not_readable_by_another_organization(
+    demo_client, monkeypatch
+):
+    client, _, settings = demo_client
+    configure(settings)
+    settings.governed_blofin_demo_organization_id = str(ORG_A)
+    seen = []
+    wire(monkeypatch, seen)
+    owner = _login(client, "at037-a@test.example")
+    assert client.post("/dashboard/demo-account/refresh", headers=owner).status_code == 200
+    other = _login(client, "at037-b@test.example")
+    read = client.get("/dashboard/demo-account", headers=other)
+    assert read.status_code == 200 and read.json()["status"] == "inactive"
+    assert read.json()["balances"] == [] and read.json()["total_equity_usd"] is None
+    assert client.post("/dashboard/demo-account/refresh", headers=other).status_code == 404
+    assert len(seen) == 4
+
+
 def test_dashboard_uses_existing_execution_demo_account_sync(demo_client, monkeypatch):
     client, _, settings = demo_client
     configure(settings)

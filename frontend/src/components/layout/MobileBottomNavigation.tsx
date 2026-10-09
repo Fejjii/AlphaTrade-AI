@@ -18,7 +18,7 @@ export function MobileBottomNavigation() {
       aria-label="Primary mobile"
       data-testid="mobile-bottom-navigation"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 border-t border-border-subtle bg-surface-0/95 backdrop-blur",
+        "fixed inset-x-0 bottom-0 z-50 border-t border-border-subtle bg-surface-0",
         "pb-[env(safe-area-inset-bottom,0px)] lg:hidden",
       )}
     >
@@ -44,7 +44,7 @@ export function MobileBottomNavigation() {
               )}
             >
               <Icon
-                className={cn("h-5 w-5 shrink-0", id === "agent" && "text-accent")}
+                className="h-5 w-5 shrink-0"
                 aria-hidden="true"
               />
               <span className="whitespace-nowrap">{label}</span>

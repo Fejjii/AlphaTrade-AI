@@ -91,7 +91,7 @@ def test_every_snapshot_read_reports_its_failing_stage_without_secret_text(stage
         else "venue_request_rejected",
         "error_type": "ExchangeAuthError" if status == 403 else "ExchangeRequestError",
         "http_status": status,
-        "venue_error_code": "51000" if status == 200 else str(status),
+        "venue_error_code": "51000",
     }
     assert reads[-1] == path
     assert len(reads) == [p for _, p in STAGES].index(path) + 1

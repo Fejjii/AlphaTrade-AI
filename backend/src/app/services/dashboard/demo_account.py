@@ -1,6 +1,7 @@
 """Project saved demo account evidence without touching order reconciliation."""
 
 import re
+from contextlib import suppress
 from datetime import UTC, timedelta
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
@@ -61,15 +62,15 @@ def _required_number(value: Any) -> Decimal:
 
 def _base_quantity(
     row: dict[str, Any], metadata: Any, size: Decimal
-) -> tuple[str | None, Decimal | None]:
+) -> tuple[str | None, Decimal | None, str | None]:
     """Convert only exact, verified native linear metadata saved with this sync."""
     if not isinstance(metadata, dict):
-        return None, None
+        return None, None, None
     if not isinstance(row.get("inst_id"), str):
-        return None, None
+        return None, None, None
     info = metadata.get(row["inst_id"])
     if not isinstance(info, dict):
-        return None, None
+        return None, None, None
     try:
         base = _token(info.get("base_asset"))
         quote = _token(info.get("quote_asset"))
@@ -81,15 +82,15 @@ def _base_quantity(
             or info.get("contract_type") != "linear"
             or info.get("source") != "/api/v1/market/instruments"
         ):
-            return None, None
+            return None, None, None
         multiplier = _required_number(info.get("contract_value"))
         if multiplier <= 0:
-            return None, None
+            return None, None, None
         with localcontext() as context:
             context.prec = max(28, len(size.as_tuple().digits) + len(multiplier.as_tuple().digits))
-            return base, size.copy_abs() * multiplier
+            return base, size.copy_abs() * multiplier, quote
     except ValueError:
-        return None, None
+        return None, None, None
 
 
 def project_demo_account(
@@ -106,6 +107,10 @@ def project_demo_account(
         expires_at=synced_at + timedelta(seconds=settings.blofin_sync_stale_after_seconds),
         message="The latest demo account sync failed. Refresh to retrieve current account data.",
     )
+    binding = snapshot.provenance.get("configured_execution_account_id")
+    if isinstance(binding, str):
+        with suppress(ValueError):
+            base.account_id = UUID(binding)
     if (
         snapshot.health_status.value == "unavailable"
         or snapshot.provider != "blofin_demo"
@@ -147,7 +152,7 @@ def project_demo_account(
                 side = "long" if size > 0 else "short"
             if side not in {"long", "short"}:
                 raise ValueError("Unknown position side")
-            base_asset, base_quantity = _base_quantity(
+            base_asset, base_quantity, quote_asset = _base_quantity(
                 row, snapshot.positions_snapshot.get("instrument_metadata"), size
             )
             positions.append(
@@ -156,6 +161,7 @@ def project_demo_account(
                     side=side,
                     contracts=size.copy_abs(),
                     base_asset=base_asset,
+                    quote_asset=quote_asset,
                     base_quantity=base_quantity,
                     entry_price=_number(row.get("entry_price")),
                     mark_price=_number(row.get("mark_price")),

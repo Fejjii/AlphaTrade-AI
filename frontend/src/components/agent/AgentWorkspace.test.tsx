@@ -294,7 +294,7 @@ describe("Agent workspace", () => {
       "Review risk before trading",
     );
     expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
-      "Recorded facts",
+      "Stored evidence",
     );
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
   });
@@ -360,7 +360,7 @@ describe("Agent workspace", () => {
       "Transcript sent",
     );
     expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent(
-      "Recorded facts",
+      "Stored evidence",
     );
     expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();

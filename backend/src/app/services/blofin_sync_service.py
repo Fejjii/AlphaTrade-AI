@@ -39,6 +39,7 @@ from app.schemas.common import (
     BloFinSyncHealthStatus,
 )
 from app.services.audit_service import AuditService
+from app.services.dashboard.demo_performance import configured_demo_account
 
 logger = structlog.get_logger(__name__)
 
@@ -84,6 +85,11 @@ class BloFinSyncService:
             "readonly_sync_enabled": self._settings.blofin_readonly_sync_enabled,
             "demo_active": self._settings.exchange_demo_active,
         }
+        configured = configured_demo_account(
+            self._session, self._settings, organization_id=organization_id, user_id=user_id
+        )
+        if configured is not None:
+            provenance["configured_execution_account_id"] = str(configured.id)
 
         try:
             provider: ExchangeAccountProvider

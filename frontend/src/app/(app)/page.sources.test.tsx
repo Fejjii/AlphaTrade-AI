@@ -36,18 +36,12 @@ vi.mock("@/lib/api", () => ({
 
 afterEach(cleanup);
 
-it("loads canonical Journal trades and summary positions without consulting the legacy stores", async () => {
+it("uses the configured native account without substituting generic Journal positions", async () => {
   render(<DashboardPage />);
-  await waitFor(() => expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("1"));
-  expect(api.journal.listTrades).toHaveBeenCalledWith({ limit: 8 });
-  expect(api.dashboard.summary).toHaveBeenCalledOnce();
+  await waitFor(() => expect(api.dashboard.summary).toHaveBeenCalledOnce());
+  expect(screen.getByTestId("dashboard-open-count")).toHaveTextContent("—");
   expect(api.positions.list).not.toHaveBeenCalled();
   expect(api.journal.list).not.toHaveBeenCalled();
-  expect(screen.getByTestId("dashboard-open-positions")).toHaveTextContent("BTCUSDT");
-  expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent("BTCUSDT");
-  expect(screen.getByTestId("dashboard-recent-trades")).toHaveTextContent("Open");
-  expect(screen.getAllByRole("link", { name: /BTCUSDT/ })).toHaveLength(2);
-  for (const link of screen.getAllByRole("link", { name: /BTCUSDT/ })) {
-    expect(link).toHaveAttribute("href", "/journal?trade_id=canonical-trade");
-  }
+  expect(screen.queryByTestId("dashboard-open-positions")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("dashboard-recent-trades")).not.toBeInTheDocument();
 });

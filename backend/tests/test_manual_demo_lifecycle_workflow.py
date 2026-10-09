@@ -230,7 +230,10 @@ def test_filters_before_latest_and_limit_and_precise_natural_agent_request(nativ
             organization_id=world[1].organization_id,
             user_id=world[1].user_id,
         )
-        assert str(first.command_id) in response.reply and "Multiple manual" not in response.reply
+        assert (
+            str(first.command_id) in response.recorded_evidence
+            and "Multiple manual" not in response.reply
+        )
         assert str(blocked.command_id) not in response.reply
 
 
@@ -276,7 +279,7 @@ def test_command_before_journal_persists_for_followup(native):
             user_id=world[1].user_id,
         )
         assert (
-            str(first.command_id) in followup.reply
+            str(first.command_id) in followup.recorded_evidence
             and "no unambiguous selected trade" not in followup.reply
         )
         assert followup.proposals == []
@@ -614,7 +617,7 @@ def test_later_exit_read_failure_does_not_reactivate_global_hold_for_recorded_cl
     with world[0]() as session:
         result = _service(world, session).reconcile(world[1], first.command_id)
         assert result.execution_status == "closed" and result.exit_quantity == Decimal(".1")
-        assert result.account_status == "unknown" and not result.can_resolve
+        assert result.account_status == "flat" and not result.can_resolve
         kill = session.scalars(select(KillSwitchState)).one_or_none()
         assert (kill.version if kill else None) == version
         assert session.scalar(select(func.count()).select_from(ManualDemoLifecycleResolution)) == 0
@@ -712,7 +715,7 @@ def test_latest_observation_can_return_to_previous_protection_receipt_without_du
             organization_id=world[1].organization_id,
             user_id=world[1].user_id,
         )
-        assert "Recorded protection: verified" in agent.reply
+        assert "active protection: verified" in agent.recorded_evidence
         assert session.scalar(select(func.count()).select_from(ExecutionFillFact)) == 1
         assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
     assert world[3].post_count == 1
@@ -720,6 +723,7 @@ def test_latest_observation_can_return_to_previous_protection_receipt_without_du
 
 def test_editable_journal_exit_does_not_prove_closure_or_suppress_protection_hold(native):
     world, changes = native
+    world[3].open_position = True
     _, first = _submit(native)
     with world[0]() as session:
         trade = session.get(JournalTrade, first.journal_trade_id)
@@ -733,3 +737,198 @@ def test_editable_journal_exit_does_not_prove_closure_or_suppress_protection_hol
         assert not result.can_resolve
         assert session.scalars(select(KillSwitchState)).one().active
     assert world[3].post_count == 1
+
+
+@pytest.mark.parametrize("history", ["missing", "unlinked", "unavailable"])
+def test_exit_identity_survives_missing_protection_ancestry_without_global_kill(native, history):
+    world, changes = native
+    _, first = _submit(native)
+    set_exit(native, first, category="tp", protection_state="effective")
+    if history == "missing":
+        changes["response"]["/api/v1/trade/orders-tpsl-history"] = []
+    elif history == "unlinked":
+        changes["response"]["/api/v1/trade/orders-tpsl-history"][0]["tpslId"] = "unrelated"
+    else:
+        changes["failure"] = "/api/v1/trade/orders-tpsl-history"
+    for _ in range(2):
+        with world[0]() as session:
+            result = _service(world, session).reconcile(world[1], first.command_id)
+            assert result.execution_status == "closed" and result.can_resolve
+            assert result.exit_quantity == Decimal(".1")
+            assert result.protection == "not_required_closed"
+            assert result.historical_protection == "configured"
+            assert result.triggered_protection == "unverified"
+            assert result.protection_diagnostics and not result.reconciliation_diagnostics
+            assert result.gross_pnl == Decimal(".0106")
+            assert result.funding is None and result.net_pnl is None
+            assert not session.scalar(select(KillSwitchState.active))
+    with world[0]() as session:
+        result = _service(world, session).resolve(world[1], first.command_id)
+        assert result.recovery_status == "resolved"
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
+        assert session.scalar(select(func.count()).select_from(ManualDemoLifecycleResolution)) == 1
+
+
+def test_native_child_tpsl_id_verifies_trigger_without_price_matching_identity(native):
+    world, changes = native
+    _, first = _submit(native)
+    _, close = set_exit(native, first, category="sl", protection_state="effective")
+    close["tpslId"] = "2411"
+    # The entry detail may omit TPSL identity once it is no longer pending.
+    # Reuse only this order's immutable, hash-checked earlier receipt.
+    changes["order"]["tpslId"] = ""
+    with world[0]() as session:
+        result = _service(world, session).reconcile(world[1], first.command_id)
+        assert result.triggered_protection == "verified" and result.can_resolve
+
+
+def test_flat_incomplete_history_keeps_claim_without_new_global_hold(native):
+    world, changes = native
+    _, first = _submit(native)
+    changes["response"]["/api/v1/trade/orders-tpsl-pending"] = []
+    changes["failure"] = "/api/v1/trade/orders-history"
+    with world[0]() as session:
+        result = _service(world, session).reconcile(world[1], first.command_id)
+        assert result.account_status == "flat"
+        assert not result.can_resolve and result.execution_status == "filled"
+        assert not session.scalar(select(KillSwitchState.active))
+        assert result.filled_quantity == Decimal(".1") and result.exit_quantity == 0
+
+
+def test_exact_journal_detail_reflection_and_tenant_denial(native):
+    from fastapi.testclient import TestClient
+
+    from app.core.config import Settings
+    from app.db.models import Membership, Organization, User
+    from app.db.session import get_session
+    from app.main import create_app
+    from app.security.tokens import create_access_token
+
+    world, _ = native
+    _, first = _submit(native)
+    settings = Settings(
+        _env_file=None,
+        environment="local",
+        provider_mode="mock",
+        execution_mode="paper",
+        enable_real_trading=False,
+        rate_limit_use_redis=False,
+        market_data_cache_use_redis=False,
+        access_token_denylist_use_redis=False,
+        require_email_verified=False,
+    )
+    app = create_app(settings=settings)
+
+    def sessions():
+        with world[0]() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = sessions
+    token, _ = create_access_token(
+        user_id=world[1].user_id,
+        organization_id=world[1].organization_id,
+        email=world[1].email,
+        settings=settings,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    path = f"/journal/trades/{first.journal_trade_id}"
+    with TestClient(app) as client:
+        detail = client.get(path, headers=headers)
+        assert detail.status_code == 200
+        original = detail.json()
+        assert original["manual_demo"]["command_id"] == str(first.command_id)
+        assert original["trade"]["id"] == str(first.journal_trade_id)
+        assert client.get(path).status_code == 401
+        reflection = client.post(
+            path + "/observations",
+            headers=headers,
+            json={"category": "behavioral", "observation": "I followed my plan."},
+        )
+        assert reflection.status_code == 201
+        updated = client.get(path, headers=headers).json()
+        assert updated["trade"] == original["trade"]
+        assert updated["observations"][0]["observation"] == "I followed my plan."
+        assert client.patch(path, headers=headers, json={"entry_price": "1"}).status_code == 422
+        foreign_org, foreign_user = uuid4(), uuid4()
+        with world[0]() as session:
+            session.add(Organization(id=foreign_org, name="Other tenant"))
+            session.add(
+                User(
+                    id=foreign_user,
+                    email="foreign-fixture@example.com",
+                    hashed_password="not-a-real-hash",
+                )
+            )
+            session.flush()
+            session.add(
+                Membership(
+                    organization_id=foreign_org,
+                    user_id=foreign_user,
+                    role=world[1].membership_role,
+                )
+            )
+            session.commit()
+        foreign, _ = create_access_token(
+            user_id=foreign_user,
+            organization_id=foreign_org,
+            email="foreign-fixture@example.com",
+            settings=settings,
+        )
+        denied = {"Authorization": f"Bearer {foreign}"}
+        assert client.get(path, headers=denied).status_code in {403, 404}
+        assert client.post(
+            path + "/observations",
+            headers=denied,
+            json={"category": "behavioral", "observation": "foreign"},
+        ).status_code in {403, 404}
+    with world[0]() as session:
+        assert session.scalar(select(func.count()).select_from(JournalTrade)) == 1
+
+
+def test_open_unprotected_refresh_preserves_existing_global_hold(native):
+    world, changes = native
+    _, first = _submit(native)
+    world[3].open_position = True
+    changes["response"]["/api/v1/trade/orders-tpsl-pending"] = []
+    with world[0]() as session:
+        session.add(
+            KillSwitchState(
+                organization_id=world[1].organization_id,
+                active=True,
+                reason="Operator hold",
+                version=17,
+            )
+        )
+        session.commit()
+        for _ in range(2):
+            current = _service(world, session).reconcile(world[1], first.command_id)
+            assert current.status == "protection_failed_operator_hold"
+            hold = session.scalars(select(KillSwitchState)).one()
+            assert hold.active and hold.version == 17 and hold.reason == "Operator hold"
+
+
+def test_exit_conflict_cannot_hide_behind_protection_diagnostic(native):
+    world, changes = native
+    _, first = _submit(native)
+    set_exit(native, first, quantity=".05", flat=False, category="tp", protection_state="effective")
+    with world[0]() as session:
+        assert _service(world, session).reconcile(
+            world[1], first.command_id
+        ).exit_quantity == Decimal(".05")
+    changes["response"]["/api/v1/trade/orders-tpsl-history"][0]["state"] = "canceled"
+    previous = world[4]._client._transport.handler
+
+    def conflicting(request):
+        response = previous(request)
+        if (
+            request.url.path.endswith("fills-history")
+            and request.url.params.get("orderId") == "390001"
+        ):
+            payload = response.json()
+            payload["data"][0]["fee"] = ".99"
+            return httpx.Response(200, json=payload)
+        return response
+
+    world[4]._client._transport.handler = conflicting
+    with world[0]() as session, pytest.raises(TradingPolicyError, match="conflicts or regressed"):
+        _service(world, session).reconcile(world[1], first.command_id)

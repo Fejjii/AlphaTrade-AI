@@ -43,6 +43,8 @@ describe("AT-040 collapsible DesktopSidebar", () => {
       "aria-current",
       "page",
     );
+    expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(within(nav).getByRole("link", { name: "Agent" })).not.toHaveClass("border-accent-border", "text-accent");
     fireEvent.click(screen.getByTestId("sidebar-command-menu"));
     expect(onOpen).toHaveBeenCalled();
   });

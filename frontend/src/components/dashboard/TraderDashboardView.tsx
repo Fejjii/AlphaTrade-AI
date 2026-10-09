@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 
 import { AttentionCard } from "./AttentionCard";
@@ -5,18 +8,13 @@ import { DailyReviewCard } from "./DailyReviewCard";
 import { BloFinDemoAccountCard } from "./BloFinDemoAccountCard";
 
 import {
-  bucketWinRate,
   closedStrategyRows,
   importantAlerts,
   marketEvidenceSummary,
-  openPositionCount,
-  openPositionRows,
   portfolioEquity,
   portfolioExpectancy,
   portfolioPnl,
   portfolioWinRate,
-  recentTradeRows,
-  strategyPerformanceRows,
   watcherTraderLabel,
 } from "@/components/dashboard/trader-dashboard";
 import { TradingMetric } from "@/components/dashboard/TradingMetric";
@@ -33,13 +31,11 @@ import {
   formatCount,
   formatDateTime,
   formatMonetary,
-  formatPrice,
   humanizeToken,
 } from "@/lib/format";
 import type {
   CanonicalMarketMonitorStatusRead,
   DashboardSummary,
-  CanonicalJournalTradeListItem,
   JournalStatsResponse,
   PaginatedCanonicalJournalTrades,
   PaperAlert,
@@ -69,34 +65,6 @@ function SectionEmpty({
   );
 }
 
-function TradeLine({ entry }: { entry: CanonicalJournalTradeListItem }) {
-  return (
-    <li className="border-b border-border-subtle last:border-b-0">
-      <Link
-        href={`/journal?trade_id=${encodeURIComponent(entry.id)}`}
-        className="flex min-h-16 items-center justify-between gap-3 rounded-control py-3 hover:bg-surface-2/50"
-      >
-        <div className="min-w-0">
-          <p className="break-words text-sm font-medium text-text-primary">
-            {entry.symbol} · {entry.direction}
-          </p>
-          <p className="mt-1 text-xs text-text-secondary">
-            {humanizeToken(
-              entry.status === "open" ? "open" : entry.result || "unavailable",
-            )} ·{" "}
-            {formatDateTime(entry.entry_time ?? entry.created_at)}
-          </p>
-          <p className="mt-1 text-xs text-text-muted">
-            {entry.exchange ?? "Venue unavailable"}
-            {entry.source ? ` · ${humanizeToken(entry.source)}` : ""}
-          </p>
-        </div>
-        <DataNumber value={formatMonetary(entry.net_pnl)} className="shrink-0" />
-      </Link>
-    </li>
-  );
-}
-
 export function TraderDashboardView({
   data,
   posture,
@@ -110,11 +78,10 @@ export function TraderDashboardView({
   refreshing?: boolean;
   demoRefreshKey?: number;
 }) {
+  const [accountScope, setAccountScope] = useState("blofin");
+  const simulator = accountScope === "simulator";
   const winRate = portfolioWinRate(data.portfolio);
   const expectancy = portfolioExpectancy(data.portfolio);
-  const positions = openPositionRows(data.summary);
-  const trades = recentTradeRows(data.journal);
-  const byStrategy = strategyPerformanceRows(data.strategyStats);
   const closedByStrategy = closedStrategyRows(data.portfolio);
   const alerts = importantAlerts(data.alerts);
   const market = marketEvidenceSummary(data.market);
@@ -141,7 +108,7 @@ export function TraderDashboardView({
     <div className="space-y-5" data-testid="trader-dashboard">
       <PageHeader
         title="Dashboard"
-        description="Your demo account, paper portfolio, and next review."
+        description="Account evidence and your next review."
         meta={
           <>
             <PaperModeIndicator active={posture.paperConfirmed} />
@@ -203,7 +170,7 @@ export function TraderDashboardView({
           {posture.conflictMessage}
         </p>
       ) : null}
-      {unavailable ? (
+      {simulator && unavailable ? (
         <div
           role="status"
           className="rounded-control border border-warning-border bg-warning-muted p-3 text-sm text-warning"
@@ -217,11 +184,22 @@ export function TraderDashboardView({
         </p>
       ) : null}
 
-      <BloFinDemoAccountCard refreshKey={demoRefreshKey} />
+      <label className="flex flex-wrap items-center gap-3 text-sm">
+        Account
+        <select aria-label="Dashboard account" value={accountScope}
+          onChange={(event) => setAccountScope(event.target.value)}
+          className="min-h-11 rounded-control border border-border-subtle bg-surface-1 px-3">
+          <option value="blofin">BloFin demo · configured account</option>
+          <option value="simulator">Internal simulator · history</option>
+        </select>
+      </label>
+      {!simulator ? <BloFinDemoAccountCard refreshKey={demoRefreshKey} /> : null}
+      {simulator ? <>
+
 
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle>Paper portfolio</CardTitle>
+          <CardTitle>Internal simulator</CardTitle>
           <p className="text-xs text-text-secondary">
             {data.portfolio.available && data.portfolio.data?.account.as_of
               ? `As of ${formatDateTime(data.portfolio.data.account.as_of)}`
@@ -230,8 +208,7 @@ export function TraderDashboardView({
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           <p className="col-span-2 text-xs text-text-secondary lg:col-span-3">
-            Portfolio value and closed-trade metrics cover proposal and validation history.
-            Open positions and recent trades use your Journal; these scopes can differ.
+            All metrics in this view cover internal simulator proposal and validation history.
           </p>
           <TradingMetric
             label="Portfolio value"
@@ -248,8 +225,8 @@ export function TraderDashboardView({
           />
           <TradingMetric
             label="Open positions"
-            value={openPositionCount(data.summary)}
-            note="Journal paper execution and validation · all accounts"
+            value={formatCount(data.portfolio.data?.account.open_trade_count)}
+            note="Internal simulator · proposal and validation history"
             testId="dashboard-open-count"
           />
           <TradingMetric
@@ -278,6 +255,8 @@ export function TraderDashboardView({
           />
         </CardContent>
       </Card>
+
+      </> : null}
 
       <AttentionCard />
       <DailyReviewCard />
@@ -468,203 +447,19 @@ export function TraderDashboardView({
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card data-testid="dashboard-open-positions">
-          <CardHeader className="flex-row flex-wrap items-center justify-between">
-            <CardTitle>Open positions</CardTitle>
-            <Link
-              href="/journal"
-              className="inline-flex min-h-11 items-center text-sm text-accent hover:underline"
-            >
-              Journal
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {positions == null ? (
-              <UnavailableState
-                message="Open positions unavailable"
-                onRetry={onRetry}
-                className="py-4"
-              />
-            ) : positions.length === 0 ? (
-              <SectionEmpty
-                title="No open positions"
-                description="No open paper execution or validation trades in your Journal across all accounts."
-              />
-            ) : (
-              <>
-                <p className="mb-2 text-right text-xs text-text-secondary">
-                  All accounts · all dates · manual demo tests excluded. Unrealized PnL unavailable.
-                </p>
-                <ul>
-                  {positions.map((position) => (
-                    <li
-                      key={position.journal_trade_id}
-                      className="flex items-center justify-between gap-3 border-b border-border-subtle py-3 last:border-b-0"
-                    >
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-medium">
-                          <Link
-                            href={`/journal?trade_id=${encodeURIComponent(position.journal_trade_id ?? "")}`}
-                            className="text-accent hover:underline"
-                          >
-                            {position.symbol} · {position.direction}
-                          </Link>
-                        </p>
-                        <p className="mt-1 text-xs text-text-secondary">
-                          Entry {formatPrice(position.entry_price)} · {" "}
-                          {position.exchange ?? "Venue unavailable"}
-                          {position.account_id
-                            ? ` · Account ${position.account_id.slice(0, 8)}`
-                            : " · Account unavailable"}
-                        </p>
-                      </div>
-                      <DataNumber
-                        value={formatMonetary(position.unrealized_pnl)}
-                        className="shrink-0"
-                      />
-                    </li>
-                  ))}
-                </ul>
-                {data.summary.data?.open_paper_trades_summary &&
-                data.summary.data.open_paper_trades_summary.total_count > positions.length ? (
-                  <p className="mt-3 text-xs text-text-secondary">
-                    Showing {positions.length} of{" "}
-                    {formatCount(data.summary.data.open_paper_trades_summary.total_count)}{" "}
-                    open positions.
-                    View the Journal for more.
-                  </p>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
-        <Card data-testid="dashboard-recent-trades">
-          <CardHeader className="flex-row flex-wrap items-center justify-between">
-            <CardTitle>Recent trades</CardTitle>
-            <Link
-              href="/journal"
-              className="inline-flex min-h-11 items-center text-sm text-accent hover:underline"
-            >
-              Journal
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {trades == null ? (
-              <UnavailableState
-                message="Recent trades unavailable"
-                onRetry={onRetry}
-                className="py-4"
-              />
-            ) : trades.length === 0 ? (
-              <SectionEmpty
-                title="No journaled trades yet"
-                description="No trade records in your Journal. All sources, accounts and dates are included."
-              />
-            ) : (
-              <>
-                <p className="mb-2 text-xs text-text-secondary">
-                  All Journal sources and accounts · newest records · recorded net PnL
-                </p>
-                <ul>
-                  {trades.map((entry) => (
-                    <TradeLine key={entry.id} entry={entry} />
-                  ))}
-                </ul>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {simulator ? <>
+      <p className="text-sm text-text-secondary">Internal simulator history · proposal and validation activity. <Link href="/portfolio" className="text-accent underline">Open simulator portfolio</Link></p>
       <Card data-testid="dashboard-strategy-performance">
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>Performance by strategy</CardTitle>
           <Link
-            href="/journal/statistics"
+            href="/portfolio"
             className="inline-flex min-h-11 items-center text-sm text-accent hover:underline"
           >
-            Full statistics
+            Simulator statistics
           </Link>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-2">
-          <div className="min-w-0">
-            <h4 className="mb-3 text-sm font-medium">Journal results</h4>
-            {byStrategy == null ? (
-              <UnavailableState
-                message="Journal strategy performance unavailable"
-                onRetry={onRetry}
-                className="py-4"
-              />
-            ) : byStrategy.length === 0 ? (
-              <SectionEmpty
-                title="No journaled strategy results yet"
-                description="Closed canonical journal trades build strategy statistics."
-              />
-            ) : (
-              <ul>
-                {byStrategy.map((bucket) => (
-                  <li
-                    key={`${bucket.key}-${bucket.label}`}
-                    className="border-b border-border-subtle py-3 last:border-b-0"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="min-w-0 break-words text-sm font-medium">
-                        {bucket.label}
-                      </p>
-                      {bucket.metrics.confidence ? (
-                        <Badge
-                          variant={
-                            bucket.metrics.confidence === "insufficient" ||
-                            bucket.metrics.confidence === "low"
-                              ? "warning"
-                              : "muted"
-                          }
-                        >
-                          {humanizeToken(bucket.metrics.confidence)} sample
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <dl className="mt-3 grid grid-cols-3 gap-2 text-xs text-text-secondary">
-                      <div>
-                        <dt>Net PnL</dt>
-                        <dd className="mt-1">
-                          <DataNumber
-                            value={formatMonetary(bucket.metrics.net_pnl_total)}
-                          />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Win rate</dt>
-                        <dd className="mt-1">
-                          <DataNumber
-                            value={bucketWinRate(
-                              bucket.metrics.trade_count,
-                              bucket.metrics.win_rate,
-                            )}
-                          />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Trades</dt>
-                        <dd className="mt-1">
-                          <DataNumber
-                            value={formatCount(bucket.metrics.trade_count)}
-                          />
-                        </dd>
-                      </div>
-                    </dl>
-                    {bucket.metrics.warnings?.length ? (
-                      <ul className="mt-2 space-y-1 text-xs text-warning">
-                        {bucket.metrics.warnings.map((warning) => (
-                          <li key={warning.code}>{warning.message}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
           <div className="min-w-0">
             <h4 className="mb-3 text-sm font-medium">Closed paper results</h4>
             {closedByStrategy == null ? (
@@ -704,6 +499,7 @@ export function TraderDashboardView({
           </div>
         </CardContent>
       </Card>
+      </> : null}
     </div>
   );
 }
