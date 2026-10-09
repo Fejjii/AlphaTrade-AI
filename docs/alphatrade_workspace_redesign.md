@@ -32,7 +32,7 @@ authenticated acceptance and dependency review add separate calendar time.
 3. **Journal & Knowledge** has two tabs. Journal shows execution-backed BloFin
    activity and independent personal reflections. Knowledge shows Rules,
    Strategies, News & Analysis and Lessons, alongside preserved source documents.
-   Search, categories and paging live in the URL. Open a note or exact trade;
+   Search, categories and paging, including original document text pages, live in the URL. Open a note or exact trade;
    Back restores the list's filters and scroll. Note correction checks the
    current revision. Original content and structured drafts remain expandable.
 4. **Strategies** starts with Nested Continuation and SFP family cards.
@@ -184,6 +184,8 @@ These are development checks on this branch, not full backend release acceptance
 | Ordinary production build | Blocked by Google Fonts fetch | Existing Inter/JetBrains Mono dependency; actual font delivery unverified |
 | Production build with existing test-only offline font fixture | Passed | Compilation, types and route generation; never use that fixture for deployment |
 | Focused backend regression selection | 177 passed, 23 skipped | Capture, typed actions, continuity, routing/provider and migration ancestry; unavailable database fixtures skipped |
+| Deployment safety selection | 108 passed | Unchanged safety/config/script/Watcher controls; migration expectations advanced |
+| Additional migration selection | 14 passed, 9 skipped | Historical head/ancestry/data-preservation assertions retained; PostgreSQL unavailable locally |
 | New capture contract evaluations | 14 passed within the selection | Representative model-output fixtures and authenticated TestClient; no live model quality claim |
 | Ruff + format | Passed, 1,155 files | Entire backend static formatting/lint selection |
 | Full mypy compared with PR232 baseline | 495 existing errors in 100 files; zero introduced diagnostics | Compared error multiset after line/literal-order normalization; not a clean mypy gate |
@@ -215,6 +217,10 @@ PYTHONPATH=src:. .venv/bin/pytest -p tests.test_interactive_agent_foundation \
   tests/test_agent_conversation_continuity.py tests/test_knowledge_file_migration.py \
   tests/test_release_wave002_migrations.py tests/test_manual_demo_migration.py \
   tests/test_phase2_model_router.py tests/test_openai_llm_responses.py -q -o addopts=''
+PYTHONPATH=src:. .venv/bin/pytest tests/test_deployment_safety.py \
+  tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q -o addopts=''
+PYTHONPATH=src:. .venv/bin/pytest tests/test_phase8_learning_persistence.py \
+  tests/test_journal_trades_alembic_empty_tenant.py tests/test_phase2_4_alembic_postgres.py -q -o addopts='' 
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 cd ../frontend
@@ -233,6 +239,15 @@ backend/.venv/bin/python evaluation/evaluate_agent.py
 backend/.venv/bin/python evaluation/evaluate_rag.py
 backend/.venv/bin/python evaluation/evaluate_guardrails.py
 ```
+
+Additional checks after ordinary PR CI run811 identified two stale Watcher head
+expectations and a Dashboard loading-placeholder test race: migration expectations
+now follow the additive head while retaining fail-closed/ancestry checks; the missing
+equity assertion waits for the actual native balance row. The repaired safety
+selection passed108 cases; additional migration modules passed14/skipped9. The
+full frontend suite and offline-font build passed again, and both workspace
+browser widths passed without retries. Ordinary PR CI is automatically rerun on
+the correction; its result is distinct from the pending complete release gate.
 
 The pytest plugin explicitly registers the shared legacy `agent_db` fixture used
 by the action selections. In this cloud environment, set `UV_CACHE_DIR` to a
