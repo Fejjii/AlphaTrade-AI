@@ -3154,6 +3154,36 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     ingestion_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    indexing_generation: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+
+
+class KnowledgeIndexingJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Durable scoped intent; no document FK so deletion tombstones survive."""
+
+    __tablename__ = "knowledge_indexing_jobs"
+    __table_args__ = (
+        Index("ix_knowledge_indexing_due", "status", "available_at"),
+        Index("ix_knowledge_indexing_document", "document_id", "organization_id", "user_id"),
+        CheckConstraint("attempts >= 0", name="knowledge_indexing_attempts"),
+        CheckConstraint("operation IN ('upsert', 'delete')", name="knowledge_indexing_operation"),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'ready', 'failed', 'superseded')",
+            name="knowledge_indexing_status",
+        ),
+    )
+
+    document_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    document_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operation: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):

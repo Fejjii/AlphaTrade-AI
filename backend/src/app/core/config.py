@@ -136,6 +136,7 @@ class Settings(BaseSettings):
 
     # --- Background worker (Slice 59 — disabled by default) ---
     worker_enabled: bool = False
+    knowledge_indexing_enabled: bool = False
     worker_mode: str = "process"  # process | in_process
     worker_name: str = "alphatrade-worker"
     worker_scan_interval_seconds: int = Field(default=60, ge=5, le=86400)

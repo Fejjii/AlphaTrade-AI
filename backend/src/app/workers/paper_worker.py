@@ -108,6 +108,7 @@ class PaperWorkerHealth:
     telegram: ComponentHealth
     stopping: bool
     authority_intact: bool
+    indexing: ComponentHealth | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +189,33 @@ class PaperWorkerSupervisor:
         self._authority_intact = True
         self._watcher = _Component("watcher", watcher_cycle, _guard(watcher_authority))
         self._telegram = _Component("telegram", telegram_cycle, _guard(telegram_authority))
+        self._indexing: _Component | None = None
+        self._indexing_stop: Callable[[], None] | None = None
         self._memory_diagnostics = WorkerMemoryDiagnostics() if memory_diagnostics_enabled else None
+
+    def attach_indexing(
+        self,
+        cycle: Callable[[], CycleOutcome],
+        *,
+        close: Callable[[], None],
+        request_stop: Callable[[], None] | None = None,
+    ) -> None:
+        """Attach an independently supervised knowledge loop before process start."""
+        self._indexing = _Component("indexing", cycle, None)
+        self._indexing_stop = request_stop
+        previous = self._on_stop
+
+        def stop() -> None:
+            try:
+                if previous:
+                    previous()
+            finally:
+                close()
+
+        self._on_stop = stop
+
+    def _components(self) -> tuple[_Component, ...]:
+        return (self._watcher, self._telegram) + ((self._indexing,) if self._indexing else ())
 
     def snapshot(self) -> PaperWorkerHealth:
         """Copy both health records. Callers cannot mutate the supervisor."""
@@ -198,13 +225,14 @@ class PaperWorkerSupervisor:
             telegram=self._telegram.health(),
             stopping=self._stop.is_set(),
             authority_intact=self._authority_intact,
+            indexing=self._indexing.health() if self._indexing else None,
         )
 
     def run_round(self) -> PaperWorkerHealth:
         """Run each component once, on this thread, Watcher then Telegram."""
 
-        self._step(self._watcher)
-        self._step(self._telegram)
+        for component in self._components():
+            self._step(component)
         self._log_health()
         return self.snapshot()
 
@@ -212,19 +240,23 @@ class PaperWorkerSupervisor:
         """Start one thread per component. A second call does not add threads."""
 
         with self._start_lock:
-            self._ensure_thread(self._watcher)
-            self._ensure_thread(self._telegram)
+            for component in self._components():
+                self._ensure_thread(component)
 
     def request_stop(self) -> None:
         """Ask both loops to finish the current cycle and not start another."""
 
         self._stop.set()
+        if self._indexing_stop:
+            self._indexing_stop()
 
     def join(self) -> None:
-        for component in (self._watcher, self._telegram):
+        for component in self._components():
             thread = component.thread
             if thread is not None:
                 thread.join(self._join_timeout_seconds)
+                if component is self._indexing and thread.is_alive():
+                    thread.join()
 
     def close(self) -> None:
         """Release runtime resources once. Safe to call more than once."""
@@ -387,6 +419,8 @@ class PaperWorkerSupervisor:
             telegram_error=health.telegram.last_error,
             telegram_heartbeat=_iso(health.telegram.last_heartbeat_at),
             telegram_last_delivery=_iso(health.telegram.last_delivery_at),
+            indexing_status=health.indexing.status if health.indexing else "disabled",
+            indexing_error=health.indexing.last_error if health.indexing else "",
             stopping=health.stopping,
             authority_intact=health.authority_intact,
             paper_only=True,
@@ -477,7 +511,7 @@ def build_paper_worker_supervisor(settings: Settings) -> PaperWorkerSupervisor:
 
     watcher_settings, telegram_settings = isolate_runtime_settings(settings)
     if settings_are_disarmed_paper_worker(settings):
-        return PaperWorkerSupervisor(
+        supervisor = PaperWorkerSupervisor(
             watcher_cycle=_static_cycle("disarmed"),
             telegram_cycle=_static_cycle("disarmed"),
             poll_seconds=float(settings.watcher_paper_poll_interval_seconds),
@@ -485,7 +519,14 @@ def build_paper_worker_supervisor(settings: Settings) -> PaperWorkerSupervisor:
             telegram_authority=authority_binding(telegram_settings),
             memory_diagnostics_enabled=settings.paper_worker_memory_diagnostics_enabled,
         )
-    return _build_armed_supervisor(watcher_settings, telegram_settings)
+    else:
+        supervisor = _build_armed_supervisor(watcher_settings, telegram_settings)
+    if settings.knowledge_indexing_enabled:
+        from app.workers.knowledge_indexing import KnowledgeIndexingCycle
+
+        cycle = KnowledgeIndexingCycle(settings.model_copy(deep=True))
+        supervisor.attach_indexing(cycle, close=cycle.close, request_stop=cycle.request_stop)
+    return supervisor
 
 
 def run_paper_worker_process(*, once: bool = False) -> str:
