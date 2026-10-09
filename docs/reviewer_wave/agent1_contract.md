@@ -1,89 +1,97 @@
 # Agent 1 — frontend reliability and API contracts
 
-Baseline: `b165b92276346f0e0fe3ccdbd2bec3443dc75d40` (current main and PR233 merge).
-Branch: `codex/reviewer-wave-frontend`. Original checkout is clean and preserved.
+Branch: `codex/reviewer-wave-frontend`. Baseline/current main at inspection:
+`b165b92276346f0e0fe3ccdbd2bec3443dc75d40` (PR233 merge, verified ancestor).
+Original `/workspace/AlphaTrade-AI` checkout remains clean. Isolated worktree:
+`/workspace/reviewer-wave-frontend`. Scope/dependencies were published in `33d3f3c`,
+then revised estimates and baseline hashes in `d24b45e`.
 
-## Owned scope
+## Completed owned work
 
-Frontend except dedicated manual order widgets; frontend dependencies; existing authenticated
-API transport; generated OpenAPI boundary types/validators and export/generation scripts.
-Logical phases: immediate acknowledged Agent turns, pagination recovery, canonical routes and
-strategy handoff, schema generation, private TanStack Query pilot, delayed-fixture verification.
-No merge, deployment, trading activation, CI workflow edits, or automatic mutation retries.
+- Agent acknowledgments render immediately with required backend IDs, freeing the
+  composer before independent history reconciliation. Exact-ID deduplication retains
+  full replies, evidence, receipts and proposal decisions through stale/incomplete/failed
+  history. Navigation/logout/unmount/out-of-order guards prevent cross-context updates.
+  No automatic mutation resend or token streaming claim.
+- All supported result filters reset offset. Empty later setup pages offer first-page
+  recovery outside hidden chart children; failed/unavailable evidence stays distinct
+  from successful empty data. Unrelated query parameters and browser history persist.
+- OpenAPI generates types/client/runtime validators together for strategy PATCH,
+  Agent turn/confirm/reject, attention and daily review. `apiFetch` remains the only
+  authenticated transport. Decimal strings, enums, omitted/null distinctions and Boolean
+  authority are validated without coercion/defaults/property stripping.
+- Independent Behaviour/Validation TanStack Query sources include organization, user,
+  endpoint and normalized filters in keys. Requests pass AbortSignal. Logout/identity
+  changes cancel and clear private caches; refresh flights cannot overwrite another login.
+  Freshness 30s, GC 5min; one transient network/5xx/429 read retry; no contract/auth/client
+  retries, focus/reconnect refetch, mutation retries or browser cache persistence.
+  Cached content remains during refresh, with explicit failed-refresh notices and original
+  evidence timestamps. Validation summary alone prefetches on tab hover/focus.
+- `/usage` and `/settings/usage` redirect to `/settings/billing#usage`; `/billing` to
+  `/settings/billing`, preserving query. `/strategy-lab/new` redirects to Agent intent;
+  `/strategy-lab/:id/edit` carries `strategy_id`. Manual authoring entry points are retired;
+  detail/version/approval/paper views and back navigation remain. An authorized strategy
+  GET precedes context use; navigation never sends/applies/activates. Useful billing/usage
+  tests target shared views. Dedicated manual-order widgets are untouched.
+- Generated strategy PATCH persisted `setup_type` through real local HTTP and disposable
+  PostgreSQL, with independent GET reload and a second tenant receiving 404.
 
-## Dependencies and narrow requests
+## Baseline schema and regeneration
 
-- Agent 2: retain required `AgentTurnResult.user_message_id` and `assistant_message_id`;
-  publish accurate `authority_mutated: bool` and Agent/provider schema changes. Frontend uses
-  existing `AgentTurnRequest.strategy_id` only after an authorized strategy read.
-- Agent 3: publish ingestion/indexing pending/ready/failed response schema and endpoints,
-  evidence timestamps and retry semantics. Indexing UI waits for this contract; no invented states.
-- Integrator: run the deterministic regeneration/drift command after Agent 2/3 integration,
-  add the check to CI, and own consolidated release/live acceptance.
-
-At initial inspection neither sibling `codex/reviewer-wave-agent` nor
-`codex/reviewer-wave-data` existed remotely. Read their manifests when published.
-No independent changes to Python provider/Agent/RAG schemas, database or manual-order widgets.
-
-## Source of truth and validation
-
-Generate from local FastAPI code with explicit offline paper settings and no lifespan/provider
-I/O; export schema hashes and exact regeneration commands here when established.
-Reuse `apiFetch` authentication, refresh, sanitized errors and cancellation. Preserve decimal
-strings, omitted/null differences, enums and Boolean authority semantics.
-Development checks: focused frontend unit/API tests, lint/typecheck/build, routed Playwright
-fixtures and export-only backend checks. These do not establish database persistence,
-authenticated live acceptance or the final integrated `.ai/RELEASE.md` gate.
-
-## Initial ledger and estimate
-
-Completed: baseline/ancestry/ownership inspection, isolated worktree, contract manifest.
-Pending: all implementation/validation phases and draft PR.
-Blocked: indexing schema until Agent 3 publishes; Mac iCloud mirroring unavailable on Linux.
-Deferred: broad redesign, React Compiler, integrated release and authenticated live acceptance.
-Estimate: several hours for implementation and validation; revise after schema export and tests.
-Open PRs inspected through GitHub connector: 217,197,184,183,182,181,180 and older work;
-none is a reviewer-wave branch. CLI GitHub API returned Forbidden; Git transport works.
-
-## Baseline generated contracts (published before backend integration)
-
-Local full OpenAPI SHA256: `7696544c1abb69b05b694ea0f56ffd985d3a69003399b4fad379f81bc109e33c`.
-Exact per-component hashes and pilot hash: `frontend/src/lib/api/generated/hashes.json`.
+Full OpenAPI SHA256:
+`7696544c1abb69b05b694ea0f56ffd985d3a69003399b4fad379f81bc109e33c`.
+Exact pilot/component hashes: `frontend/src/lib/api/generated/hashes.json`.
+Install locks: `cd backend && uv sync --extra dev`; `cd frontend && npm ci`.
 Regenerate: `cd frontend && npm run api:generate`; drift: `npm run api:check`.
-Both export fresh local code through `backend/scripts/export_openapi.py`, clear inherited
-configuration, disable Redis caches, use mock/replay paper settings and prohibit socket
-connections. No lifespan, database sessions, provider resolution or deployed credentials.
-Pinned dependency locks are required (`uv sync --extra dev`, `npm ci`).
-Generated pilot: strategy PATCH; Agent turn/confirm/reject; attention and daily review.
-AJV standalone validators and TypeScript/client derive from the same OpenAPI closure;
-no coercion, defaults or property stripping. Existing `apiFetch` owns all authentication/I/O.
-Integrator must regenerate after Agents 2 and 3 merge; do not treat this baseline as final.
 
-Sibling manifests read at Agent 2 `daa4f384` and Agent 3 `361d493b`. Agent 2 requests
-240-second waiting and an `Idempotency-Key` per intentional turn, durable timeout recovery.
-Agent 3 defines pending/ready/failed/unknown and SQL storage separately from indexing;
-concrete document response model is awaited before generation/UI integration.
-Revised estimate: core implementation is present; allow another 1–2 hours for browser
-journeys, integration fixes, schema/indexing handoff and delivery. No live acceptance claim.
+The generator uses `uv run --offline --frozen`; export clears inherited configuration,
+ignores `.env`, uses mock/replay paper settings and rejects socket connections.
+No lifespan/database sessions/provider resolution. AJV standalone validators and
+openapi-typescript types use the same schema closure; artifacts are committed.
+Added locks: Query 5.104.1, AJV 8.20.0, ajv-formats 3.0.1, openapi-typescript 7.13.0 (dev).
+No parallel handwritten pilot schemas or CI workflow changes.
 
-## Development phase status update
+## Dependencies and narrow shared requests
 
-Implemented: immediate stable-ID acknowledgment with independent cancellable history;
-all supported filter offset resets and first-page recovery; canonical usage fragment and
-Agent authoring handoffs; generated pilot boundaries; independent private Query sources,
-30-second freshness/5-minute GC, one transient read retry, no mutation retries, cache
-cancellation/clearing and transport session guards; one summary prefetch on tab intent.
-Agent waiting budget follows Agent 2's published 240-second contract.
+Sibling manifests read at Agent 2 `daa4f384` and Agent 3 `361d493b`;
+remote branches contained manifests only at the last check.
 
-Evidence so far: 100 focused cases passed; export-only backend test passed; lint/typecheck
-passed; deterministic drift check passed. Six routed Chromium journeys passed with no
-skips/retries: usage URLs/query/fragment, authorized and denied authoring handoff, delayed
-acknowledgment. A 200ms response plus 5000ms stale-history fixture measured 352ms
-click-to-answer and 92ms acknowledgment-to-visible, one turn and one history request.
-Full frontend run: 1449 passed/one obsolete Create strategy label assertion; corrected
-assertion now verifies the Agent URL. Useful usage/billing state tests are retained on
-shared views after redundant route wrappers are deleted. Final checks still in progress.
-Normal build cannot fetch Google Fonts; existing test-only offline-font production
-build passed. This does not verify real font delivery or a deployed/live release.
-Revised estimate: roughly another 30–60 minutes for final checks, API persistence journey,
-logical commits and draft PR. Indexing waits for the Agent 3 response schema publication.
+- **Agent 2:** frontend follows the requested 240-second wait and sends a fresh
+  `Idempotency-Key` per intentional turn. Baseline ignores the header. Publish durable
+  replay/conflict/recovery response schemas and semantics before timeout recovery UI.
+  Current timeout retains the draft, explains uncertain completion and directs checking
+  history; it does not resend. Preserve required message IDs and Boolean authority.
+- **Agent 3:** publish concrete ingestion/document-listing response models/endpoints
+  for indexing status, SQL commit acknowledgment, generation/version/hash and
+  attempts/retry/error metadata. Then extend generated boundaries and render stored
+  versus searchable with pending/ready/failed/unknown states through document listing.
+  A prose union is insufficient to invent response validators or refresh endpoints.
+  Indexing UI is explicitly blocked on that code/schema publication.
+- **Backend owner/integrator:** SQLite strategy responses return `created_at` without
+  a timezone, violating OpenAPI `date-time`. Please normalize timestamps or publish a
+  revised supported contract. PostgreSQL passed; validators stay strict. This is a local
+  compatibility limitation, not a deployed finding.
+- **Integrator:** regenerate after Agents 2/3 merge, add `npm run api:check` to CI,
+  review consolidated migration/schema order and own `.ai/RELEASE.md` acceptance.
+
+No independent Python Agent/provider/RAG/schema/database/manual-order edits.
+
+## Validation and final ledger
+
+Exact commands/counts/reproduction: `docs/reviewer_wave/verification.md`.
+Measurements: `browser_latency.json`; relevant screenshots: `screenshots/`.
+These are development checks. PostgreSQL used ORM `create_all`, not migration upgrade
+or staging/live acceptance. Normal build could not fetch Google Fonts; the repository's
+test-only offline-font production build passed, without claiming real font delivery.
+
+| State | Work |
+| --- | --- |
+| Completed | Agent guards/responsiveness, pagination, baseline generated pilots, private Query sources, narrow prefetch, routes/authoring retirement, PostgreSQL persistence journey, development checks |
+| Pending | Supervising review and integrator regeneration after sibling integration |
+| Blocked | Agent 3 indexing schema/UI; Agent 2 durable recovery schema/UI; SQLite timestamp compatibility; Mac iCloud mirroring/byte and hash verification |
+| Deferred | Broad redesign, React Compiler, integrated release dispatch, authenticated live acceptance, merge/deploy |
+
+Independent Agent 1 implementation is complete. Dependent UI work has no reliable
+estimate until owners publish concrete schemas. Local/cloud handoff is published;
+Mac mirror status is **UNKNOWN**. Paper mode, real trading disabled, decimal/hash
+contracts, tenant privacy, risk/approval controls and runtime settings are preserved.

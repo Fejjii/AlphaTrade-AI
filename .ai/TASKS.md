@@ -2485,7 +2485,8 @@ Status: REVIEW_REQUIRED (implementation and stated development checks complete).
 
 ## AT-REVIEWER-WAVE-1 — Frontend reliability and API contracts
 
-Status: IN_PROGRESS. Owner: Agent 1, `codex/reviewer-wave-frontend`, baseline PR233/main
+Status: REVIEW_REQUIRED (independent implementation complete; dependent schemas blocked).
+Owner: Agent 1, `codex/reviewer-wave-frontend`, baseline PR233/main
 `b165b92276346f0e0fe3ccdbd2bec3443dc75d40`. Scope, shared requests, schema hashes and
 completed/pending/deferred/blocked ledger: `docs/reviewer_wave/agent1_contract.md`.
 No Python Agent/RAG/provider, migration, dedicated manual-order widget or CI ownership changes.
