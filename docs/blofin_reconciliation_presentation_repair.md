@@ -93,7 +93,9 @@ are preserved. Only one final complete backend gate is run for this batch.
 The complete gate also exposes baseline test drift: a historical fixture patches
 a renamed execution risk function, preflight diagnostics expect HTTP status in
 place of the native error code, and several migration checks still expect the
-prior head. These fixtures are aligned with main's existing contracts while
+prior head. A legacy simulator-count fixture also needs canonical Journal rows;
+it now verifies that legacy rows and manual tests cannot double count strategy
+activity. These fixtures are aligned with main's existing contracts while
 preserving the policy, redaction, no-write, ancestry and data-preservation checks.
 The cloud executor requires a writable `UV_CACHE_DIR` for script subprocesses.
 Its complete-run result and subsequent focused corrections are reported
