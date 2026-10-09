@@ -14,6 +14,8 @@ Legend — Priority: P0 (critical) … P3 (low). Status: TODO / IN_PROGRESS / DO
   native-account Dashboard and concise Agent/manual detail with collapsed evidence.
 - Validation: Focused lifecycle/Journal/account/Agent checks and desktop/mobile
   browser fixtures; one final full backend gate. Exact results recorded in PR.
+  Align stale baseline diagnostic/risk fixtures and migration-head assertions
+  without relaxing checks; report complete-gate failures separately from fixes.
 - Limits: No credentials bound for authenticated native acceptance. No new orders,
   cancellation, deployment, kill reset, unrelated hold release or migration.
 - Gate: Review/merge, verify deployed commit/head, refresh same original command,

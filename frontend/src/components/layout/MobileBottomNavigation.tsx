@@ -18,7 +18,7 @@ export function MobileBottomNavigation() {
       aria-label="Primary mobile"
       data-testid="mobile-bottom-navigation"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 border-t border-border-subtle bg-surface-0/95 backdrop-blur",
+        "fixed inset-x-0 bottom-0 z-50 border-t border-border-subtle bg-surface-0",
         "pb-[env(safe-area-inset-bottom,0px)] lg:hidden",
       )}
     >

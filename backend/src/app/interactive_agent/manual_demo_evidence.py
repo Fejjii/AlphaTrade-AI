@@ -461,5 +461,6 @@ def _money(value: Decimal | None) -> str:
     if value is None:
         return "unverified"
     if value and abs(value) < Decimal("1"):
-        return readable_number(value)
+        # Preserve a meaningful nonzero native fee/PnL even below eight decimals.
+        return readable_number(value, places=max(8, min(20, 2 - value.adjusted())))
     return format(value, ",.2f")

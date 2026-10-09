@@ -90,6 +90,15 @@ executor; an explicitly opted-in existing font-response fixture permits local
 build validation without claiming real font delivery. Ordinary required PR checks
 are preserved. Only one final complete backend gate is run for this batch.
 
+The complete gate also exposes baseline test drift: a historical fixture patches
+a renamed execution risk function, preflight diagnostics expect HTTP status in
+place of the native error code, and several migration checks still expect the
+prior head. These fixtures are aligned with main's existing contracts while
+preserving the policy, redaction, no-write, ancestry and data-preservation checks.
+The cloud executor requires a writable `UV_CACHE_DIR` for script subprocesses.
+Its complete-run result and subsequent focused corrections are reported
+separately in the PR; a corrected focused run is not a clean complete gate.
+
 ## Authenticated acceptance after review and deployment
 
 No BloFin execution/read-only credentials or owner session are bound in this
