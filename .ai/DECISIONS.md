@@ -3082,7 +3082,8 @@ policy or orders. Uploaded instructions are untrusted data. Existing typed tool
 permissions/confirmations/execution fences remain authoritative.
 
 An additive migration follows a7manualrecovery001; no deployed database was
-changed. Ordinary chat/capture remains available during execution pause. PR232
-acceptance, live checks and the supervised consolidated gate remain separate.
+changed. Disposable PostgreSQL migration/concurrency checks pass. Private capture
+uses FOR NO KEY UPDATE so unrelated user foreign-key references remain available. Ordinary chat/capture remains available during execution pause. PR232
+was accepted and integrated; live checks and the supervised consolidated gate remain separate.
 Implementation, fixture verification and presentation guide:
 `docs/alphatrade_workspace_redesign.md`.

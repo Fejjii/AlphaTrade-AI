@@ -1,10 +1,10 @@
 # AlphaTrade workspace and conversational capture
 
 Status: implementation available for review; release and authenticated acceptance pending.
-Dependency: PR [232](https://github.com/Fejjii/AlphaTrade-AI/pull/232), head
-`9ddd3d79547927f6ef355808d36e92f51aacb09d`, inspected and reused directly.
-It remains draft/open/unmerged. This branch is stacked on its head; integrate the
-accepted dependency before final review. No merge or deployment occurred.
+Dependency: PR [232](https://github.com/Fejjii/AlphaTrade-AI/pull/232) was merged
+on 2026-10-09. Its accepted head `9d44decf31617135a152fc9fc64241ad448207b7` and
+main merge `d175613f01646e03e87cec65fd568d1160a0b5c5` are integrated into this
+branch. PR233 now targets main. This task has not merged PR233 or deployed anything.
 
 The controlling request is the supplied user prompt. The attached design notes
 inform presentation; their recovery, activation and deployment instructions do
@@ -128,7 +128,8 @@ conversations. Duplicate transcript messages are retained as actual events.
 
 An additive migration `a8agentcapture001` follows PR232's `a7manualrecovery001`.
 It creates only `agent_saved_entries` and `agent_capture_sources`. It has not been
-applied to a deployed database. PostgreSQL migration/locking acceptance is pending.
+applied to a deployed database. Disposable PostgreSQL17 migration and capture
+concurrency checks passed; deployment migration and live acceptance remain pending.
 
 `POST /agent/turns` accepts an optional owner-scoped `source_document_id` after
 existing Knowledge preview/import. Uploads cannot carry an explicit tool action.
@@ -142,8 +143,10 @@ targeted question. These structural controls do not prove semantic faithfulness
 of an untested live model.
 
 Persistence runs inside a savepoint and deduplicates a whitespace-normalized
-content hash per organization/user. A user-row lock serializes note capture, not
-trading state. The outer API transaction commits before returning Saved. If
+content hash per organization/user. A PostgreSQL `FOR NO KEY UPDATE` user-row
+lock serializes private capture while allowing unrelated foreign-key references.
+Concurrent duplicate capture produces one entry; competing corrections reject a
+stale revision. These behaviors were verified with separate PostgreSQL sessions. The outer API transaction commits before returning Saved. If
 capture fails, the source conversation remains committed and the response says
 capture failed. Owner-private endpoints provide:
 
@@ -181,16 +184,17 @@ These are development checks on this branch, not full backend release acceptance
 | --- | --- | --- |
 | Frontend unit suite | 1,420 passed, 231 files | Actual UI/API contract assertions; mocked network sources |
 | Frontend lint/typecheck | Passed | No ESLint warnings/errors |
-| Ordinary production build | Blocked by Google Fonts fetch | Existing Inter/JetBrains Mono dependency; actual font delivery unverified |
+| Ordinary production build | Passed in CI run 814 on `0dcd847`; local font fetch unavailable | Final published-ref CI is recorded in PR233; deployed font delivery unverified |
 | Production build with existing test-only offline font fixture | Passed | Compilation, types and route generation; never use that fixture for deployment |
-| Focused backend regression selection | 177 passed, 23 skipped | Capture, typed actions, continuity, routing/provider and migration ancestry; unavailable database fixtures skipped |
+| Focused backend regression selection with PostgreSQL17 | 228 passed, no skips | Capture, typed actions, continuity, provider/routing, migrations and PR232 review regressions; fixture reasoning |
 | Deployment safety selection | 108 passed | Unchanged safety/config/script/Watcher controls; migration expectations advanced |
-| Additional migration selection | 14 passed, 9 skipped | Historical head/ancestry/data-preservation assertions retained; PostgreSQL unavailable locally |
-| New capture contract evaluations | 14 passed within the selection | Representative model-output fixtures and authenticated TestClient; no live model quality claim |
-| Ruff + format | Passed, 1,155 files | Entire backend static formatting/lint selection |
+| PostgreSQL migration/dependency selection | 26 passed, included in the 228 | Previously skipped database cases and three inherited PR232 regressions; ancestry/data preservation retained |
+| New capture contract evaluations | 16 passed within the selection | 14 representative model-output/HTTP cases plus two PostgreSQL concurrency cases; no live model quality claim |
+| Ruff + format | Passed, 1,157 files | Entire backend static formatting/lint selection |
 | Full mypy compared with PR232 baseline | 495 existing errors in 100 files; zero introduced diagnostics | Compared error multiset after line/literal-order normalization; not a clean mypy gate |
 | Agent / RAG / narrative guardrail runners | 16/16, 5/5, 7/7 | Existing deterministic/mock evaluation suites |
-| Chromium desktop/mobile | Six unique cases passed, no retries | 1280×900 and 390×900; new workspace plus inherited account polling and exact Journal/reflection/Agent cases |
+| Full Chromium API/UI smoke | 47 passed, 13 opt-in staging skips, no retries | Desktop, portrait and landscape; local shared SQLite fixture uses one worker; live staging remains pending |
+| Exact legacy document/filter paths | Four latest cases passed, no retries | Missing exact source is explicit; changing filters clears both URL aliases |
 
 The new capture evaluations map to the requested scenarios:
 
@@ -205,22 +209,27 @@ The new capture evaluations map to the requested scenarios:
 | Upload injection / unauthorized arguments | Untrusted reference only; extra executable fields and invented targets rejected |
 | Tenant / execution isolation | Same-org other user and other organization denied; no execution-table writes |
 | Provider / fallback / usage | Mock provider unavailable; strict model/effort/schema wiring and token/latency provenance |
-| Additive migration | SQLite upgrade/downgrade preserves sentinel native evidence and checks unique dedupe constraint |
+| Additive migration | SQLite roundtrip preserves sentinel evidence; actual PostgreSQL Alembic chain preserves prior plan/native contracts |
+| Concurrent save / corrections | Separate PostgreSQL sessions dedupe to one entry, allow unrelated user references and refuse stale revisions |
 
 Reproduction from the repository root:
 
 ```sh
 cd backend
+# Use a disposable PostgreSQL database for this focused selection.
+export AT028_POSTGRES_URL=postgresql+psycopg://alphatrade:alphatrade@127.0.0.1:5432/alphatrade_test
 PYTHONPATH=src:. .venv/bin/pytest -p tests.test_interactive_agent_foundation \
-  tests/test_agent_capture.py tests/test_interactive_agent_foundation.py \
+  tests/test_agent_capture.py tests/test_agent_capture_postgres.py \
+  tests/test_interactive_agent_foundation.py \
   tests/test_agent_action_orchestration.py tests/test_agent_action_application.py \
   tests/test_agent_conversation_continuity.py tests/test_knowledge_file_migration.py \
   tests/test_release_wave002_migrations.py tests/test_manual_demo_migration.py \
-  tests/test_phase2_model_router.py tests/test_openai_llm_responses.py -q -o addopts=''
+  tests/test_phase2_model_router.py tests/test_openai_llm_responses.py \
+  tests/test_pr232_review_regressions.py tests/test_phase8_learning_persistence.py \
+  tests/test_journal_trades_alembic_empty_tenant.py tests/test_phase2_4_alembic_postgres.py \
+  -q -o addopts=''
 PYTHONPATH=src:. .venv/bin/pytest tests/test_deployment_safety.py \
   tests/test_deployment_scripts.py tests/test_config.py tests/test_watcher_paper_activation.py -q -o addopts=''
-PYTHONPATH=src:. .venv/bin/pytest tests/test_phase8_learning_persistence.py \
-  tests/test_journal_trades_alembic_empty_tenant.py tests/test_phase2_4_alembic_postgres.py -q -o addopts=''
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 cd ../frontend
@@ -231,25 +240,33 @@ npm run test
 npm run build
 # Restricted-network build verification only:
 NEXT_FONT_GOOGLE_MOCKED_RESPONSES="$PWD/test-fixtures/offline-fonts.cjs" npm run build
-PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e -- \
-  e2e/workspace-redesign.spec.ts e2e/dashboard-demo-account.spec.ts \
-  e2e/blofin-repair.spec.ts --retries=0
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e -- --retries=0
 cd ..
 backend/.venv/bin/python evaluation/evaluate_agent.py
 backend/.venv/bin/python evaluation/evaluate_rag.py
 backend/.venv/bin/python evaluation/evaluate_guardrails.py
 ```
 
-Additional checks after ordinary PR CI run811 identified two stale Watcher head
-expectations and a Dashboard loading-placeholder test race: migration expectations
-now follow the additive head while retaining fail-closed/ancestry checks; the missing
-equity assertion waits for the actual native balance row. Run813 subsequently exposed the same invocation-versus-render timing issue in
-the exact-document test; it now awaits the actual Back link before asserting
-source paging. No production behavior or assertions were removed. The repaired safety
-selection passed108 cases; additional migration modules passed14/skipped9. The
-full frontend suite and offline-font build passed again, and both workspace
-browser widths passed without retries. Ordinary PR CI is automatically rerun on
-the correction; its result is distinct from the pending complete release gate.
+Ordinary CI exposed stale navigation/head expectations and two async unit-test
+races; the checks now await rendered native/document state and use the current
+five destinations. Trading, authentication, ancestry and data-preservation
+assertions remain. Browser smoke also found legacy document and Settings anchors;
+these now resolve the exact source/group and preserve filter behavior.
+
+A two-worker local smoke run passed 46 cases but encountered a SQLite write lock
+between Agent source import and the Journal API flow. The shared local fixture
+now defaults to one worker; the complete serial run passed 47/skipped 13 without
+retries. External-server runs keep normal worker selection. No application DB,
+authentication limit or runtime flag was changed. Actual PostgreSQL concurrency
+is covered separately rather than inferred from serial SQLite checks.
+
+The final228-case PostgreSQL selection passed with no skips. PostgreSQL17 was
+extracted under `/tmp`, bound to loopback, and used only with synthetic disposable
+data; no system installation or external database was changed. CI uses PostgreSQL16.
+The new concurrency fixture initially omitted a required strict-schema field;
+that test setup was corrected before the clean228-case run. Ordinary PR CI on
+the final published head is recorded in PR233 and remains distinct from the
+complete supervised release gate.
 
 The pytest plugin explicitly registers the shared legacy `agent_db` fixture used
 by the action selections. In this cloud environment, set `UV_CACHE_DIR` to a
@@ -258,10 +275,10 @@ permission. Neither adjustment changes application behavior.
 
 ## Pending acceptance and handoff
 
-1. Accept PR232 and integrate its accepted head, resolving any subsequent contract
-   changes. The dependent draft does not claim integration with an accepted PR.
-2. Review/apply the additive migration to disposable PostgreSQL and run the skipped
-   ancestry/database cases plus concurrent capture/revision checks there.
+1. Review PR233 against accepted PR232/main. The accepted head and main merge are
+   integrated; subsequent base changes still require affected checks.
+2. Review the additive migration for the deployed PostgreSQL version and rollout.
+   Disposable migration/database and concurrent capture/revision checks passed.
 3. With authorized model access, run the nine scenarios against actual reasoning
    output, score faithfulness/destination/uncertainty/recall, capture two-call
    latency/token/billing distributions, and verify account-specific model access.
@@ -273,7 +290,7 @@ permission. Neither adjustment changes application behavior.
    `gh workflow run ci.yml --ref <reviewed-release-ref> -f full_backend=true`.
    It is deliberately not dispatched during implementation. Ordinary PR CI is
    focused and does not replace the complete gate.
-6. Verify normal production font delivery and the Mac/iCloud handoff mirror.
+6. Verify deployed font delivery and the Mac/iCloud handoff mirror.
    GitHub publication is available; local Mac mirror/hash confirmation is not.
 
 No deployment, monitoring activation, safety reset, risk policy change or native
