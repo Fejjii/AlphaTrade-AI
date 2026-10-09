@@ -57,9 +57,18 @@ def test_lexical_fallback_finds_relevant_document_after_old_200_sample(retrieval
         assert any("lexical fallback" in n for n in notes)
 
 
+@pytest.mark.parametrize("schema_only", [False, True])
 def test_vector_service_preserves_shared_private_templates_and_full_passages(
-    retrieval_db, monkeypatch
+    retrieval_db, monkeypatch, schema_only
 ):
+    if schema_only:
+        from app.schemas.rag import RagQuery
+
+        class SchemaOnlyQuery(RagQuery):
+            include_shared: bool = False
+
+        # Agent 3's schema publication alone must not activate old own-only service filtering.
+        monkeypatch.setattr("app.interactive_agent.vector_adapter.RagQuery", SchemaOnlyQuery)
     factory, settings = retrieval_db
     store, embeddings = InMemoryVectorStore(), MockEmbeddingsProvider()
     monkeypatch.setattr(

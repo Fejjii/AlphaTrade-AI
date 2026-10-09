@@ -41,7 +41,7 @@ Owner branch: `codex/reviewer-wave-agent`. No merge, deployment or trading activ
 
 ## Request to Agent 3
 
-Read Agent 3 contract at `361d493b1955fc67732011535624ebcf7ebc5e06`. It specifies `RagQuery.include_shared` and asynchronous
+Read Agent 3 contract at `3ab96b0` (previous contract `361d493b`). It specifies `RagQuery.include_shared` and asynchronous
 indexing generations. Agent retrieval adapter is owned here. No turn migration
 is needed: existing transcript storage supplies durable coordination.
 Please support `RagService.search`/vector filters with both private own documents
@@ -49,6 +49,10 @@ and organization-shared documents when user_id is supplied, reload/check BOTH
 chunk and parent document scope, and include STRATEGY_TEMPLATE in
 `retrieve_for_agent`. Search overfetch must remain bounded. Keep original/named
 full document SQL access. Expose honest degraded/fallback/index freshness state.
+The latest remote publishes the schema/outbox migration but retains the old search
+implementation. A schema field alone must not activate own-only filtering. Please
+add `RagService.supports_shared_search = True` with the implemented shared/private
+SQL/vector semantics, so independently shipped schemas preserve safe compatibility.
 No competing RagService edits or migration will be created on this branch.
 
 ## Integrator verification contract
@@ -66,9 +70,12 @@ supervised per `.ai/RELEASE.md`.
 - Completed: baseline/ancestry verification, isolated worktree, scope/dependency contract.
 - Completed: pinned official SDK transport, 142 focused provider checks; shared admission
   and vector adapter; durable SQL phases and replay (implementation verified in focused checks).
-- In progress: remaining affected cross-module regression, baseline type comparison, review/publish.
+- Completed: affected cross-module regressions, PostgreSQL stall/rollback checks,
+  baseline type comparison and Ruff. See `agent2_runtime_review.md` for exact results.
+- In progress: draft PR and cloud handoff publication.
 - Dependency: Agent 3 shared vector visibility and strategy-template semantics. The adapter
-  detects `RagQuery.include_shared` when present. Until then it safely overfetches 50
+  uses `RagQuery.include_shared` when RagService advertises
+  `supports_shared_search = True`. Until then it safely overfetches 50
   organization hits and checks both SQL scopes; a dominating foreign private set may
   crowd out permitted relevance. Integrator must test combined branches with include_shared
   and indexing generations before release. No unbounded search is substituted.

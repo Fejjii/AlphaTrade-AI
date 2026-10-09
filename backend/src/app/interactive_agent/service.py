@@ -159,6 +159,7 @@ class InteractiveAgentService:
         self._paper_execution = paper_execution
         self._conversations = ConversationService(session)
         self.confirmation_changed = False
+        self.pending_reply_warnings: tuple[str, ...] = ()
 
     def catalog(self) -> AgentCapabilityCatalog:
         catalog = capability_catalog(self._settings)
@@ -547,6 +548,7 @@ class InteractiveAgentService:
             and daily_review is None
             and not (action is not None and action[0].name == "paper_trade.prepare_execution")
         ):
+            self.pending_reply_warnings = recorded_trade.warnings if recorded_trade else ()
             model_text = self._responder.compose(
                 organization_id=organization_id,
                 user_id=user_id,

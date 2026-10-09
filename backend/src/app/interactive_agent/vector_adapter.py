@@ -91,13 +91,16 @@ class AgentVectorAdapter:
         # Agent 3 owns include-shared vector filter semantics. Query organization
         # scope until that contract lands, then independently verify SQL scope.
         self.usage.principal_id = query.user_id
+        supports_shared = "include_shared" in RagQuery.model_fields and bool(
+            getattr(self.rag, "supports_shared_search", False)
+        )
         search_query = (
             query.model_copy(update={"include_shared": True})
-            if "include_shared" in RagQuery.model_fields
+            if supports_shared
             else query.model_copy(update={"user_id": None, "top_k": 50})
         )
         result = self.rag.search(search_query)
-        if "include_shared" not in RagQuery.model_fields:
+        if not supports_shared:
             result = result.model_copy(
                 update={
                     "detail": "Shared visibility filter upgrade pending; organization search "
@@ -122,13 +125,35 @@ class AgentVectorAdapter:
                 if loaded is None or loaded[1].id != hit.document_id or hit.chunk_id in seen:
                     continue
                 seen.add(hit.chunk_id)
-                permitted.append(hit)
+                chunk, document = loaded
+                permitted.append(
+                    hit.model_copy(
+                        update={
+                            "content": chunk.content,
+                            "title": document.title,
+                            "source_type": document.source_type,
+                            "chunk_ordinal": chunk.ordinal,
+                        }
+                    )
+                )
         permitted = permitted[: query.top_k]
         ids = {hit.chunk_id for hit in permitted}
+        canonical = {hit.chunk_id: hit for hit in permitted}
         return result.model_copy(
             update={
                 "chunks": permitted,
-                "citations": [c for c in result.citations if c.chunk_id in ids],
+                "citations": [
+                    c.model_copy(
+                        update={
+                            "document_id": canonical[c.chunk_id].document_id,
+                            "title": canonical[c.chunk_id].title,
+                            "source_type": canonical[c.chunk_id].source_type,
+                            "snippet": canonical[c.chunk_id].content[:240],
+                        }
+                    )
+                    for c in result.citations
+                    if c.chunk_id in ids
+                ],
             }
         )
 

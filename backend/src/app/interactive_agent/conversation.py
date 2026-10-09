@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.interactive_agent.presentation import readable_number
 from app.providers.factory import resolve_providers
-from app.providers.llm import LLMMessage
+from app.providers.llm import LLMMessage, OpenAILLMProvider
 from app.schemas.model_routing import (
     ModelCallerScope,
     ModelContextScope,
@@ -124,6 +124,9 @@ class ModelConversationalResponder:
     ) -> str:
         try:
             providers = resolve_providers(self._settings)
+            if self._session is not None and isinstance(providers.llm, OpenAILLMProvider):
+                logger.warning("interactive_agent_model_requires_detached_phase")
+                return MODEL_REPLY_UNAVAILABLE
             router = ModelRouter.from_settings(
                 providers.llm,
                 self._settings.model_copy(
