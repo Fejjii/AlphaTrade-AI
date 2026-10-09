@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
+import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { FileUp, Send } from "lucide-react";
 import { SavedReceipt } from "@/components/agent/SavedReceipt";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { acknowledgedMessages, mergeProposals, proposalsFromMessages, reconcileMessages } from "./acknowledged-turn";
 import { AgentMessageContent } from "./AgentMessageContent";
 import { AgentVoiceControls } from "@/components/agent/AgentVoiceControls";
 import { Button } from "@/components/ui/button";
@@ -28,7 +31,7 @@ type LoadState<T> = {
 };
 
 const emptyLoad = { items: [], error: null, loading: true };
-export const AGENT_TURN_TIMEOUT_MS = 180_000;
+export const AGENT_TURN_TIMEOUT_MS = 240_000;
 
 function messageLabel(role: ConversationMessageRecord["role"]): string {
   if (role === "user") return "You";
@@ -44,6 +47,9 @@ function visibleReply(reply: string | null): string | null {
 
 export function AgentWorkspace() {
   const params = useSearchParams();
+  const strategyId = params.get("strategy_id");
+  const [strategyContext, setStrategyContext] = useState<{ id: string; name: string } | null>(null);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
@@ -67,6 +73,15 @@ export function AgentWorkspace() {
   const sendInFlight = useRef(false);
   const turnAbort = useRef<AbortController | null>(null);
   const turnConversation = useRef<string | null>(null);
+  const contextGeneration = useRef(0);
+  const activeConversation = useRef<string | null>(params.get("conversation"));
+  const retainedMessages = useRef(new Map<string, ConversationMessageRecord[]>());
+  const historyAbort = useRef<AbortController | null>(null);
+  const decisionAbort = useRef<AbortController | null>(null);
+  const strategyAbort = useRef<AbortController | null>(null);
+  const historyGeneration = useRef(0);
+  const mounted = useRef(true);
+  const conversationListGeneration = useRef(0);
   const [voiceContextKey, setVoiceContextKey] = useState(0);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesRetry, setMessagesRetry] = useState(0);
@@ -85,14 +100,98 @@ export function AgentWorkspace() {
   const [proposals, setProposals] = useState<AgentStructuredProposal[]>([]);
   const [decidingId, setDecidingId] = useState<string | null>(null);
 
-  useEffect(() => () => turnAbort.current?.abort(), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      turnAbort.current?.abort();
+      historyAbort.current?.abort();
+      decisionAbort.current?.abort();
+      strategyAbort.current?.abort();
+    };
+  }, []);
+
+  function changeConversation(id: string | null) {
+    contextGeneration.current++;
+    activeConversation.current = id;
+    turnAbort.current?.abort();
+    historyAbort.current?.abort();
+    decisionAbort.current?.abort();
+    setConversationId(id);
+    setMessages(id ? retainedMessages.current.get(id) ?? [] : []);
+    setLatest(null);
+    setProposals(id ? proposalsFromMessages(retainedMessages.current.get(id) ?? []) : []);
+    setDecidingId(null);
+    setDraft("");
+    setAttached(null);
+    setAttachmentPreview(null);
+    setSourceDocumentId(null);
+    setSendError(null);
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    strategyAbort.current = controller;
+    contextGeneration.current++;
+    turnAbort.current?.abort();
+    setStrategyContext(null);
+    setStrategyError(null);
+    if (strategyId) void api.strategies.get(strategyId, { signal: controller.signal }).then((strategy) => {
+      if (!controller.signal.aborted && strategy.id === strategyId)
+        setStrategyContext({ id: strategy.id, name: strategy.name });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setStrategyError(error instanceof Error ? error.message : "Strategy unavailable");
+    });
+    return () => controller.abort();
+  }, [strategyId]);
+
+  const urlConversation = params.get("conversation");
+  useEffect(() => {
+    if (urlConversation !== activeConversation.current) changeConversation(urlConversation);
+  }, [urlConversation]);
+
+  const reconcileHistory = useCallback(async (id: string) => {
+    historyAbort.current?.abort();
+    const controller = new AbortController();
+    historyAbort.current = controller;
+    const generation = ++historyGeneration.current;
+    const isCurrent = () => mounted.current && activeConversation.current === id &&
+      generation === historyGeneration.current && !controller.signal.aborted;
+    setMessagesError(null);
+    setMessagesLoading(true);
+    try {
+      const page = await api.conversations.listMessages(id, { limit: 100 }, { signal: controller.signal });
+      if (!isCurrent()) return;
+      const merged = reconcileMessages(page.items, retainedMessages.current.get(id) ?? []);
+      retainedMessages.current.set(id, merged);
+      setMessages(merged);
+      setProposals(current => mergeProposals(current, proposalsFromMessages(merged)));
+    } catch (error) {
+      if (isCurrent()) setMessagesError(error instanceof Error ? error.message : "Messages unavailable");
+    } finally {
+      if (isCurrent()) setMessagesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => onSessionCleared(() => {
+    retainedMessages.current.clear();
+    strategyAbort.current?.abort();
+    setStrategyContext(null);
+    changeConversation(null);
+    setConversations({ items: [], error: null, loading: false });
+  }), []);
 
   const refreshConversations = useCallback(async () => {
+    const generation = ++conversationListGeneration.current;
+    const session = sessionGeneration();
+    const isCurrent = () => mounted.current && generation === conversationListGeneration.current && session === sessionGeneration();
     setConversations((current) => ({ ...current, loading: true, error: null }));
     try {
       const page = await api.conversations.list({ limit: 30 });
+      if (!isCurrent()) return;
       setConversations({ items: page.items, error: null, loading: false });
     } catch (error) {
+      if (!isCurrent()) return;
       setConversations({
         items: [],
         error:
@@ -118,32 +217,9 @@ export function AgentWorkspace() {
       turnConversation.current = null;
       return;
     }
-    let cancelled = false;
-    setMessages([]);
-    setMessagesError(null);
-    setMessagesLoading(true);
-    void api.conversations
-      .listMessages(conversationId, { limit: 100 })
-      .then((page) => {
-        if (!cancelled) {
-          setMessages(page.items);
-          setMessagesError(null);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setMessagesError(
-            error instanceof Error ? error.message : "Messages unavailable",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setMessagesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, messagesRetry]);
+    setMessages(retainedMessages.current.get(conversationId) ?? []);
+    void reconcileHistory(conversationId);
+  }, [conversationId, messagesRetry, reconcileHistory]);
 
   useEffect(() => {
     if (threadRef.current)
@@ -156,8 +232,10 @@ export function AgentWorkspace() {
   ): Promise<boolean> {
     const text =
       message.trim() || (attached ? "Please organize this document." : "");
-    if (!text || sendInFlight.current || messagesLoading || messagesError)
+    if (!text || sendInFlight.current || (strategyId && !strategyContext) || (messagesLoading && messages.length === 0))
       return false;
+    const generation = contextGeneration.current;
+    const isCurrent = () => mounted.current && generation === contextGeneration.current;
     sendInFlight.current = true;
     const controller = new AbortController();
     turnAbort.current = controller;
@@ -176,68 +254,41 @@ export function AgentWorkspace() {
           attachmentPreview.preview_receipt,
         );
         documentId = imported.document_id;
+        if (!isCurrent()) return false;
         setSourceDocumentId(documentId);
       }
       const result = await api.agent.turn(
         {
           message: text,
+          strategy_id: strategyContext?.id,
           conversation_id: conversationId ?? undefined,
           source_document_id: documentId ?? undefined,
         },
-        { signal: controller.signal },
+        { signal: controller.signal, headers: { "Idempotency-Key": crypto.randomUUID() } },
       );
+      if (!isCurrent()) return false;
       setAttached(null);
       setAttachmentPreview(null);
       setSourceDocumentId(null);
       setLatest(result);
-      setProposals(result.proposals);
+      setProposals(current => mergeProposals(current, result.proposals ?? []));
       if (conversationId !== result.conversation_id)
         turnConversation.current = result.conversation_id;
+      activeConversation.current = result.conversation_id;
       setConversationId(result.conversation_id);
+      const retained = reconcileMessages(retainedMessages.current.get(result.conversation_id) ?? [],
+        acknowledgedMessages(text, result));
+      retainedMessages.current.set(result.conversation_id, retained);
+      setMessages(retained);
+      setMessagesError(null);
       if (source === "text")
         setDraft((current) => (current.trim() === text ? "" : current));
-      try {
-        const page = await api.conversations.listMessages(
-          result.conversation_id,
-          { limit: 100 },
-          { signal: controller.signal },
-        );
-        setMessages(page.items);
-        setMessagesError(null);
-      } catch {
-        const localTurnId = crypto.randomUUID();
-        setMessages((current) => [
-          ...current,
-          {
-            id: `local-user-${localTurnId}`,
-            conversation_id: result.conversation_id,
-            organization_id: "",
-            user_id: "",
-            role: "user",
-            content: text,
-            created_at: new Date().toISOString(),
-          },
-          {
-            id: `local-agent-${localTurnId}`,
-            conversation_id: result.conversation_id,
-            organization_id: "",
-            user_id: "",
-            role: "assistant",
-            content: result.reply,
-            payload: {
-              interactive_agent: {
-                recorded_evidence: result.recorded_evidence,
-                full_reply: result.full_reply,
-                sources: result.connections,
-              },
-            },
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      }
+      // History never delays the acknowledged reply or composer. It can be stale or fail.
+      void reconcileHistory(result.conversation_id);
       void refreshConversations();
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       setSendError(
         controller.signal.aborted
           ? "Agent response timed out. The request may have completed; check conversation history before resending."
@@ -250,7 +301,7 @@ export function AgentWorkspace() {
       clearTimeout(timeout);
       turnAbort.current = null;
       sendInFlight.current = false;
-      setSending(false);
+      if (mounted.current) setSending(false);
     }
   }
 
@@ -259,6 +310,10 @@ export function AgentWorkspace() {
     statement: "I confirm" | "I reject",
   ) {
     if (decidingId) return;
+    const generation = contextGeneration.current;
+    const controller = new AbortController();
+    decisionAbort.current = controller;
+    const isCurrent = () => mounted.current && generation === contextGeneration.current && !controller.signal.aborted;
     setDecidingId(proposal.proposal_id);
     setSendError(null);
     try {
@@ -269,19 +324,31 @@ export function AgentWorkspace() {
       };
       const updated =
         statement === "I confirm"
-          ? await api.agent.confirmProposal(proposal.proposal_id, request)
-          : await api.agent.rejectProposal(proposal.proposal_id, request);
+          ? await api.agent.confirmProposal(proposal.proposal_id, request, { signal: controller.signal })
+          : await api.agent.rejectProposal(proposal.proposal_id, request, { signal: controller.signal });
+      if (!isCurrent()) return;
+      const retained = retainedMessages.current.get(updated.conversation_id) ?? [];
+      const next = retained.map(message => {
+        const values = proposalsFromMessages([message]);
+        if (!values.some(item => item.proposal_id === updated.proposal_id)) return message;
+        return { ...message, payload: { ...message.payload, interactive_agent: {
+          ...(message.payload?.interactive_agent as Record<string, unknown>),
+          proposals: values.map(item => item.proposal_id === updated.proposal_id ? updated : item),
+        } } };
+      });
+      retainedMessages.current.set(updated.conversation_id, next);
       setProposals((current) =>
         current.map((item) =>
           item.proposal_id === updated.proposal_id ? updated : item,
         ),
       );
     } catch (error) {
+      if (!isCurrent()) return;
       setSendError(
         error instanceof Error ? error.message : "Proposal decision failed",
       );
     } finally {
-      setDecidingId(null);
+      if (isCurrent()) setDecidingId(null);
     }
   }
 
@@ -291,15 +358,19 @@ export function AgentWorkspace() {
       data-testid="agent-workspace"
     >
       <h1 className="sr-only">Agent</h1>
+      {strategyId ? <div className="flex flex-wrap gap-3 text-sm" data-testid="agent-strategy-context">
+        {strategyContext ? <><span>Strategy: {strategyContext.name}</span>
+          <Link href={`/strategy-lab/${encodeURIComponent(strategyContext.id)}`} className="underline">Back to strategy</Link></> :
+          strategyError ? <p role="alert">Strategy unavailable: {strategyError}</p> : <p role="status">Loading strategy context…</p>}
+      </div> : null}
       <div className="flex flex-wrap gap-2" aria-label="Conversation controls">
         <Button
           type="button"
           variant="secondary"
           className="min-h-11"
-          disabled={sending}
           onClick={() => {
             setVoiceContextKey((value) => value + 1);
-            setConversationId(null);
+            changeConversation(null);
             setMessages([]);
             setLatest(null);
             setProposals([]);
@@ -391,15 +462,14 @@ export function AgentWorkspace() {
                           item.id === conversationId ? "true" : undefined
                         }
                         onClick={() => {
-                          if (sending || item.id === conversationId) return;
+                          if (item.id === conversationId) return;
                           setVoiceContextKey((value) => value + 1);
                           setLatest(null);
                           setProposals([]);
                           setSendError(null);
-                          setConversationId(item.id);
+                          changeConversation(item.id);
                           setHistoryOpen(false);
                         }}
-                        disabled={sending}
                       >
                         {item.title?.trim() || "Untitled"}
                       </button>
@@ -437,11 +507,11 @@ export function AgentWorkspace() {
                 className="flex min-h-48 max-h-[50dvh] flex-col gap-4 overflow-y-auto overscroll-contain pr-1 lg:min-h-64 lg:max-h-[32rem]"
                 data-testid="agent-thread"
               >
-                {messagesLoading ? (
+                {messagesLoading && messages.length === 0 ? (
                   <p role="status" className="py-6 text-sm text-text-secondary">
                     Loading conversation…
                   </p>
-                ) : messagesError ? null : messages.length === 0 ? (
+                ) : messages.length === 0 ? (
                   <p className="py-4 text-sm text-text-muted">
                     Start a conversation.
                   </p>
@@ -450,6 +520,7 @@ export function AgentWorkspace() {
                     <div
                       key={message.id}
                       data-testid="agent-message"
+                      data-message-id={message.id}
                       data-role={message.role}
                       className={cn(
                         "min-w-0 max-w-[95%] rounded-card border px-4 py-3 text-sm leading-relaxed sm:max-w-[85%]",
@@ -584,8 +655,8 @@ export function AgentWorkspace() {
                     type="submit"
                     disabled={
                       sending ||
-                      messagesLoading ||
-                      Boolean(messagesError) ||
+                      Boolean(strategyId && !strategyContext) ||
+                      (messagesLoading && messages.length === 0) ||
                       (!draft.trim() && !attached) ||
                       (Boolean(attached) && !attachmentPreview)
                     }
@@ -606,7 +677,7 @@ export function AgentWorkspace() {
                 </div>
                 <AgentVoiceControls
                   disabled={
-                    sending || messagesLoading || Boolean(messagesError)
+                    sending || Boolean(strategyId && !strategyContext) || (messagesLoading && messages.length === 0)
                   }
                   conversationKey={String(voiceContextKey)}
                   reply={visibleReply(
@@ -685,7 +756,6 @@ export function AgentWorkspace() {
                       <Button
                         type="button"
                         variant="ghost"
-                        disabled={sending}
                         onClick={() => {
                           setAttached(null);
                           setAttachmentPreview(null);

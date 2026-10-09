@@ -15,8 +15,9 @@ import {
 import * as browserVoice from "@/lib/voice/browser-voice-provider";
 import type { VoiceProvider } from "@/lib/voice/types";
 
+let testParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => testParams,
 }));
 
 const apiMocks = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ const apiMocks = vi.hoisted(() => ({
   rejectProposal: vi.fn(),
   listPositions: vi.fn(),
   listStrategies: vi.fn(),
+  getStrategy: vi.fn(),
   marketStatus: vi.fn(),
   previewFile: vi.fn(),
   importFile: vi.fn(),
@@ -47,7 +49,7 @@ vi.mock("@/lib/api", () => ({
       rejectProposal: apiMocks.rejectProposal,
     },
     positions: { list: apiMocks.listPositions },
-    strategies: { list: apiMocks.listStrategies },
+    strategies: { list: apiMocks.listStrategies, get: apiMocks.getStrategy },
     canonical: { getMarketStatus: apiMocks.marketStatus },
     knowledge: {
       previewFile: apiMocks.previewFile,
@@ -63,6 +65,7 @@ vi.mock("@/contexts/AppContext", () => ({
 
 describe("Agent workspace", () => {
   beforeEach(() => {
+    testParams = new URLSearchParams();
     apiMocks.listConversations.mockResolvedValue({
       items: [{ id: "c1", title: "BTC plan" }],
       total: 1,
@@ -105,6 +108,7 @@ describe("Agent workspace", () => {
       symbol: "BTCUSDT",
     });
     apiMocks.agentTurn.mockResolvedValue({
+      user_message_id: "m1", assistant_message_id: "m2",
       conversation_id: "c1",
       reply: "Noted.\n\nRecorded facts (not a confirmation):\nDraft only.",
       capability: "general_conversation",
@@ -266,6 +270,7 @@ describe("Agent workspace", () => {
   it("keeps full evidence available when the post-turn history request fails", async () => {
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     apiMocks.agentTurn.mockResolvedValue({
+      user_message_id: "m1", assistant_message_id: "m2",
       conversation_id: "c1",
       reply:
         "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
@@ -322,7 +327,7 @@ describe("Agent workspace", () => {
             conversation_id: "c1",
             source_document_id: undefined,
           },
-          { signal: expect.any(AbortSignal) },
+          { signal: expect.any(AbortSignal), headers: { "Idempotency-Key": expect.any(String) } },
         ),
       );
       expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
@@ -447,7 +452,7 @@ describe("Agent workspace", () => {
           conversation_id: undefined,
           source_document_id: "stored-doc",
         },
-        { signal: expect.any(AbortSignal) },
+        { signal: expect.any(AbortSignal), headers: { "Idempotency-Key": expect.any(String) } },
       ),
     );
     expect(apiMocks.importFile).toHaveBeenCalledWith(
@@ -519,6 +524,7 @@ describe("Agent workspace", () => {
 
   it("confirms a proposal only from the explicit button", async () => {
     apiMocks.agentTurn.mockResolvedValue({
+      user_message_id: "m1", assistant_message_id: "m2",
       conversation_id: "c1",
       reply: "Drafted a journal proposal.",
       capability: "journal_capture",
@@ -558,7 +564,7 @@ describe("Agent workspace", () => {
       conversation_id: "c1",
       expected_content_hash: "a".repeat(64),
       statement: "I confirm",
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(await screen.findByTestId("agent-proposals")).toHaveTextContent(
       "applied",
     );
@@ -594,4 +600,123 @@ describe("Agent workspace", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Agent offline");
     expect(screen.getByLabelText("Message")).toHaveValue("Review my risk");
   });
+  it.each(["empty", "incomplete", "same IDs", "failed"])("renders acknowledgment immediately and retains it through %s history", async (mode) => {
+    let finish!: (value: unknown) => void;
+    let fail!: (error: Error) => void;
+    apiMocks.listMessages.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Stable turn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findAllByTestId("agent-message");
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Next intentional turn" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.getAllByTestId("agent-message").map(m => m.dataset.messageId)).toEqual(["m1", "m2"]);
+    expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent("Noted.");
+    await act(async () => {
+      if (mode === "failed") fail(new Error("Refresh offline"));
+      else finish({ items: mode === "empty" ? [] : mode === "incomplete" ? [{ id: "m1", role: "user", content: "Stable turn", created_at: "2026-10-09" }] : [
+        { id: "m1", role: "user", content: "Stable turn", created_at: "2026-10-09" },
+        { id: "m2", role: "assistant", content: "Noted.", created_at: "2026-10-09" },
+      ] });
+    });
+    expect(screen.getAllByTestId("agent-message")).toHaveLength(2);
+    expect(screen.getAllByTestId("agent-message")[1]).toHaveTextContent("Stored evidence");
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an acknowledged turn arriving after conversation navigation", async () => {
+    let finish!: (value: unknown) => void;
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const { rerender } = render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Old context" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    testParams = new URLSearchParams("conversation=other");
+    apiMocks.listMessages.mockResolvedValue({ items: [{ id: "other-message", role: "assistant", content: "Other conversation", created_at: "2026-10-09" }] });
+    rerender(<AgentWorkspace />);
+    await screen.findByText("Other conversation");
+    await act(async () => finish({ conversation_id: "c1", user_message_id: "m1", assistant_message_id: "m2", reply: "Late private response", proposals: [] }));
+    expect(screen.queryByText("Late private response")).not.toBeInTheDocument();
+    expect(screen.queryByText("Old context")).not.toBeInTheDocument();
+  });
+
+  it("ignores history arriving out of order after switching conversation", async () => {
+    let finish!: (value: unknown) => void;
+    apiMocks.listMessages.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    testParams = new URLSearchParams("conversation=first");
+    const { rerender } = render(<AgentWorkspace />);
+    testParams = new URLSearchParams("conversation=second");
+    apiMocks.listMessages.mockResolvedValue({ items: [{ id: "second-message", role: "assistant", content: "Second history", created_at: "2026-10-09" }] });
+    rerender(<AgentWorkspace />);
+    await screen.findByText("Second history");
+    await act(async () => finish({ items: [{ id: "first-message", role: "assistant", content: "Late first history", created_at: "2026-10-09" }] }));
+    expect(screen.queryByText("Late first history")).not.toBeInTheDocument();
+  });
+
+  it("authorizes strategy context before sending and performs no navigation mutation", async () => {
+    testParams = new URLSearchParams("strategy_id=owned-strategy");
+    apiMocks.getStrategy.mockResolvedValue({ id: "owned-strategy", name: "Owned plan" });
+    render(<AgentWorkspace />);
+    await screen.findByText("Strategy: Owned plan");
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Back to strategy" })).toHaveAttribute("href", "/strategy-lab/owned-strategy");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Discuss changes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledWith(expect.objectContaining({ strategy_id: "owned-strategy", message: "Discuss changes" }), expect.any(Object)));
+  });
+
+  it("blocks sending when strategy access fails", async () => {
+    testParams = new URLSearchParams("strategy_id=unauthorized");
+    apiMocks.getStrategy.mockRejectedValue(new Error("Not found"));
+    render(<AgentWorkspace />);
+    await screen.findByText("Strategy unavailable: Not found");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Discuss changes" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+  });
+
+  it("aborts a turn on logout and discards its late acknowledgment", async () => {
+    const { sessionCleared } = await import("@/lib/auth/session-events");
+    let finish!: (value: unknown) => void;
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Private pending turn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const signal = apiMocks.agentTurn.mock.calls[0][1].signal;
+    act(() => sessionCleared());
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish({ conversation_id: "old", user_message_id: "u", assistant_message_id: "a", reply: "Late private acknowledgment" }));
+    expect(screen.queryByText("Late private acknowledgment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Private pending turn")).not.toBeInTheDocument();
+  });
+
+  it("a pending proposal decision cannot alter a newly selected conversation", async () => {
+    let finish!: (value: unknown) => void;
+    apiMocks.agentTurn.mockResolvedValue({ conversation_id: "c1", user_message_id: "u", assistant_message_id: "a", reply: "Draft proposal",
+      proposals: [{ proposal_id: "p1", conversation_id: "c1", summary: "Draft journal", status: "proposed", kind: "propose_journal_entry" }] });
+    apiMocks.confirmProposal.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const { rerender } = render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm proposal" }));
+    testParams = new URLSearchParams("conversation=other");
+    apiMocks.listMessages.mockResolvedValue({ items: [] });
+    rerender(<AgentWorkspace />);
+    await act(async () => finish({ proposal_id: "p1", conversation_id: "c1", status: "applied" }));
+    expect(screen.queryByTestId("agent-proposals")).not.toBeInTheDocument();
+  });
+
+  it("cancels a pending turn on unmount and starts no history reconciliation for a late reply", async () => {
+    let finish!: (value: unknown) => void;
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const { unmount } = render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Pending" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const signal = apiMocks.agentTurn.mock.calls[0][1].signal;
+    unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish({ conversation_id: "old", user_message_id: "u", assistant_message_id: "a", reply: "Late" }));
+    expect(apiMocks.listMessages).not.toHaveBeenCalled();
+  });
+
 });
