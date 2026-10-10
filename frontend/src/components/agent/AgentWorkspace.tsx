@@ -7,15 +7,18 @@ import { FileUp, Send } from "lucide-react";
 import { SavedReceipt } from "@/components/agent/SavedReceipt";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { AGENT_TURN_TIMEOUT_MS, waitForAgent } from "@/lib/agent-turn-budget";
+import type { VoiceTurn, VoiceTurnResult } from "@/lib/voice/conversation-types";
+import { createAgentVoiceTransport } from "./agent-voice-transport";
 import { ApiError } from "@/lib/api/client";
 import { agentTurnRequest } from "@/lib/api/generated/validators";
-import { clearPendingTurns, pendingFor, persistPending, recoveryDetails, removePending, type PendingTurn, type TurnBody } from "./turn-recovery";
+import { clearPendingTurns, pendingFor, persistPending, persistTypedDraft, typedDraftFor, recordTerminal, subscribeRecovery, recoveryDetails, removePending, type PendingTurn, type TurnBody } from "./turn-recovery";
 import { StrategyDraftReview } from "./StrategyDraftReview";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { acknowledgedMessages, mergeProposals, proposalsFromMessages, reconcileMessages } from "./acknowledged-turn";
 import { AgentMessageContent } from "./AgentMessageContent";
-import { AgentVoiceControls } from "@/components/agent/AgentVoiceControls";
+import { VoiceConversationControls } from "./VoiceConversationControls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
@@ -36,7 +39,7 @@ type LoadState<T> = {
 };
 
 const emptyLoad = { items: [], error: null, loading: true };
-export const AGENT_TURN_TIMEOUT_MS = 360_000;
+export { AGENT_TURN_TIMEOUT_MS } from "@/lib/agent-turn-budget";
 
 function messageLabel(role: ConversationMessageRecord["role"]): string {
   if (role === "user") return "You";
@@ -58,7 +61,10 @@ function sourceDocumentFor(messages: ConversationMessageRecord[], messageId?: st
 
 export function AgentWorkspace() {
   const { user, organization } = useAuth();
+  const [sessionLive, setSessionLive] = useState(true);
   const recoveryScope = user && organization ? `${organization.id}:${user.id}` : null;
+  const currentScope = useRef(recoveryScope);
+  currentScope.current = recoveryScope;
   const params = useSearchParams();
   const strategyId = params.get("strategy_id");
   const [strategyContext, setStrategyContext] = useState<{ id: string; name: string } | null>(null);
@@ -106,9 +112,14 @@ export function AgentWorkspace() {
   const [messages, setMessages] = useState<ConversationMessageRecord[]>([]);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const typedDrafts = useRef(new Map<string | null, string>());
+  const draftScope = useRef<string | null>(null);
   const [setupType, setSetupType] = useState("htf_trend_pullback");
   const [importOpen, setImportOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendOrigin, setSendOrigin] = useState<"text" | "voice" | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [latest, setLatest] = useState<AgentTurnResult | null>(null);
   const [proposals, setProposals] = useState<AgentStructuredProposal[]>([]);
@@ -126,12 +137,36 @@ export function AgentWorkspace() {
   }, [recoveryScope]);
 
   useEffect(() => {
-    contextGeneration.current++;
-    turnAbort.current?.abort();
+    if (!sessionLive || !recoveryScope) { draftScope.current = null; return; }
+    if (draftScope.current !== recoveryScope) {
+      draftScope.current = recoveryScope;
+      setDraft(typedDraftFor(recoveryScope, conversationId));
+      return;
+    }
+    persistTypedDraft(recoveryScope, conversationId, draft);
+  }, [draft, conversationId, recoveryScope, sessionLive]);
+
+  useEffect(() => {
     const value = recoveryScope ? pendingFor(recoveryScope, conversationId) : null;
     pendingRef.current = value;
     setPending(value);
   }, [recoveryScope, conversationId]);
+
+  useEffect(() => {
+    contextGeneration.current++;
+    turnAbort.current?.abort();
+    typedDrafts.current.clear();
+  }, [recoveryScope]);
+
+  useEffect(() => {
+    setSessionLive(Boolean(recoveryScope));
+    if (!recoveryScope) return;
+    return subscribeRecovery(recoveryScope, () => {
+      const value = pendingFor(recoveryScope, activeConversation.current);
+      pendingRef.current = value;
+      if (mounted.current) setPending(value);
+    });
+  }, [recoveryScope]);
 
   useEffect(() => {
     mounted.current = true;
@@ -144,9 +179,18 @@ export function AgentWorkspace() {
     };
   }, []);
 
-  function changeConversation(id: string | null) {
+  const changeConversation = useCallback((id: string | null, preserveDraft = true) => {
+    if (preserveDraft) {
+      typedDrafts.current.set(activeConversation.current, draftRef.current);
+      if (recoveryScope && sessionLive) persistTypedDraft(recoveryScope, activeConversation.current, draftRef.current);
+    }
+    setVoiceContextKey(value => value + 1);
     contextGeneration.current++;
     activeConversation.current = id;
+    const address = new URL(window.location.href);
+    if (id) address.searchParams.set("conversation", id);
+    else address.searchParams.delete("conversation");
+    window.history.replaceState(null, "", address.pathname + address.search);
     turnAbort.current?.abort();
     historyAbort.current?.abort();
     decisionAbort.current?.abort();
@@ -155,14 +199,14 @@ export function AgentWorkspace() {
     setLatest(null);
     setProposals(id ? proposalsFromMessages(retainedMessages.current.get(id) ?? []) : []);
     setDecidingId(null);
-    setDraft("");
+    setDraft(typedDrafts.current.get(id) ?? (recoveryScope ? typedDraftFor(recoveryScope, id) : ""));
     setAttached(null);
     setAttachmentPreview(null);
     setSourceDocumentId(null);
     setSendError(null);
     setStrategyContext(null);
     setStrategyError(null);
-  }
+  }, [recoveryScope, sessionLive]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,7 +235,7 @@ export function AgentWorkspace() {
   const urlConversation = params.get("conversation");
   useEffect(() => {
     if (urlConversation !== activeConversation.current) changeConversation(urlConversation);
-  }, [urlConversation]);
+  }, [urlConversation, changeConversation]);
 
   const reconcileHistory = useCallback(async (id: string) => {
     historyAbort.current?.abort();
@@ -217,15 +261,19 @@ export function AgentWorkspace() {
   }, []);
 
   useEffect(() => onSessionCleared(() => {
+    setSessionLive(false);
     clearPendingTurns();
+    typedDrafts.current.clear();
     pendingRef.current = null;
     setPending(null);
     retainedMessages.current.clear();
     strategyAbort.current?.abort();
     setStrategyContext(null);
-    changeConversation(null);
+    changeConversation(null, false);
+    typedDrafts.current.clear();
+    setDraft("");
     setConversations({ items: [], error: null, loading: false });
-  }), []);
+  }), [changeConversation]);
 
   const refreshConversations = useCallback(async () => {
     const generation = ++conversationListGeneration.current;
@@ -272,105 +320,170 @@ export function AgentWorkspace() {
       threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages, sending]);
 
-  async function sendMessage(
+  async function runTurn(
     message = draft,
     source: "text" | "voice" = "text",
     recovery?: PendingTurn,
     strategyDraft = false,
-  ): Promise<boolean> {
-    const text =
-      recovery?.body.message ?? (message.trim() || (attached ? "Please organize this document." : ""));
-    if (!text || sendInFlight.current || (!recovery && pendingRef.current) || (!recovery && !conversationId && strategyId && !strategyContext) || (messagesLoading && messages.length === 0))
-      return false;
+    voice?: VoiceTurn & { signal: AbortSignal },
+  ): Promise<VoiceTurnResult> {
+    const text = recovery?.body.message ?? (message.trim() || (attached ? "Please organize this document." : ""));
+    if (!text || !sessionLive || !recoveryScope || sendInFlight.current ||
+        (!recovery && pendingRef.current) || (!recovery && !conversationId && strategyId && !strategyContext) ||
+        (messagesLoading && messages.length === 0) || (voice && voice.conversationId !== activeConversation.current))
+      return { outcome: "rejected" };
     const generation = contextGeneration.current;
-    const isCurrent = () => mounted.current && generation === contextGeneration.current;
+    const session = sessionGeneration();
+    const scope = recoveryScope;
+    const isSameSession = () => session === sessionGeneration() && currentScope.current === scope;
+    const isCurrent = () => mounted.current && isSameSession() && generation === contextGeneration.current;
+    source = recovery?.origin ?? source;
     sendInFlight.current = true;
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    voice?.signal.addEventListener("abort", abort, { once: true });
+    if (voice?.signal.aborted) controller.abort();
     turnAbort.current = controller;
-    const timeout = setTimeout(() => controller.abort(), AGENT_TURN_TIMEOUT_MS);
+    const timeout = setTimeout(abort, AGENT_TURN_TIMEOUT_MS);
     setSending(true);
+    setSendOrigin(source);
     setSendError(null);
+    let request: PendingTurn | null = null;
     try {
       let documentId = sourceDocumentId;
       if (!recovery && attached && !documentId) {
-        if (!attachmentPreview)
-          throw new Error("Preview the attachment before sending.");
-        const imported = await api.knowledge.importFile(
-          attached,
-          attached.name.replace(/\.[^.]+$/, ""),
-          "general_note",
-          attachmentPreview.preview_receipt,
-        );
+        if (!attachmentPreview) throw new Error("Preview the attachment before sending.");
+        const imported = await waitForAgent(api.knowledge.importFile(
+          attached, attached.name.replace(/\.[^.]+$/, ""), "general_note", attachmentPreview.preview_receipt,
+        ), controller.signal);
         documentId = imported.document_id;
-        if (!isCurrent()) return false;
+        if (!isCurrent()) return { outcome: "rejected" };
         setSourceDocumentId(documentId);
       }
       const body: TurnBody = recovery?.body ?? {
-          message: text,
-          strategy_id: strategyContext?.id,
-          conversation_id: conversationId ?? undefined,
-          source_document_id: strategyDraft ? undefined : documentId ?? undefined,
-          ...(strategyDraft ? { action: {
-            name: strategyContext ? "strategy.refinement" : "strategy.create",
-            arguments: { text: (attachmentPreview?.extracted_text ?? text).slice(0, 4000), ...(documentId ? { evidence_document_ids: [documentId] } : {}), ...(strategyContext ? { strategy_id: strategyContext.id } : { setup_type: setupType }) },
-          } } : {}),
+        message: text, strategy_id: strategyContext?.id,
+        conversation_id: voice?.conversationId ?? conversationId ?? undefined,
+        source_document_id: strategyDraft ? undefined : documentId ?? undefined,
+        ...(strategyDraft ? { action: {
+          name: strategyContext ? "strategy.refinement" : "strategy.create",
+          arguments: { text: (attachmentPreview?.extracted_text ?? text).slice(0, 4000),
+            ...(documentId ? { evidence_document_ids: [documentId] } : {}),
+            ...(strategyContext ? { strategy_id: strategyContext.id } : { setup_type: setupType }) },
+        } } : {}),
       };
-      // Local rejection cannot have an uncertain server outcome. Validate the complete
-      // body with the transport's generated schema before retaining it for recovery.
-      if (!agentTurnRequest(body))
-        throw new ApiError("Invalid API request. Check the supplied fields.", 0, null);
-      const request: PendingTurn = recovery ?? { key: crypto.randomUUID(), body,
-        conversationId: conversationId, state: "uncertain", createdAt: new Date().toISOString() };
+      // A locally rejected complete body never becomes an ambiguous saved request.
+      if (!agentTurnRequest(body)) throw new ApiError("Invalid API request. Check the supplied fields.", 0, null);
+      controller.signal.throwIfAborted();
+      request = recovery ?? { key: voice?.turnKey ?? crypto.randomUUID(), body,
+        conversationId: voice?.conversationId ?? conversationId, state: "uncertain", createdAt: new Date().toISOString(), origin: source,
+        ...(voice ? { voice: { turnKey: voice.turnKey, transcript: voice.transcript,
+          conversationId: voice.conversationId, origin: "voice" as const } } : {}) };
       rememberPending(request);
-      const result = await api.agent.turn(
-        request.body,
-        { signal: controller.signal, headers: { "Idempotency-Key": request.key } },
-      );
-      if (!isCurrent()) return false;
-      setAttached(null);
-      setAttachmentPreview(null);
-      setSourceDocumentId(null);
-      setLatest(result);
-      setProposals(current => mergeProposals(current, result.proposals ?? []));
-      if (conversationId !== result.conversation_id)
-        turnConversation.current = result.conversation_id;
-      activeConversation.current = result.conversation_id;
-      const address = new URL(window.location.href);
-      address.searchParams.set("conversation", result.conversation_id);
-      window.history.replaceState(null, "", address.pathname + address.search);
-      setConversationId(result.conversation_id);
-      const retained = reconcileMessages(retainedMessages.current.get(result.conversation_id) ?? [],
-        acknowledgedMessages(text, result, request.body.source_document_id ?? undefined));
-      retainedMessages.current.set(result.conversation_id, retained);
-      setMessages(retained);
-      setMessagesError(null);
-      if (result.capture_status === "unavailable" && result.capture_error?.includes("pending"))
-        rememberPending({ ...request, conversationId: result.conversation_id, state: "turn_capture" });
-      else rememberPending(null);
-      if (source === "text")
-        setDraft((current) => (current.trim() === text ? "" : current));
-      // History never delays the acknowledged reply or composer. It can be stale or fail.
-      void reconcileHistory(result.conversation_id);
-      void refreshConversations();
-      return true;
+      const original = request;
+      const publish = (result: AgentTurnResult): VoiceTurnResult => {
+        if (typeof result?.reply !== "string" || typeof result.conversation_id !== "string" ||
+            (original.body.conversation_id && result.conversation_id !== original.body.conversation_id))
+          throw new ApiError("API returned an invalid response.", 200, null);
+        if (!isSameSession()) return { outcome: "uncertain" };
+        const retained = reconcileMessages(retainedMessages.current.get(result.conversation_id) ?? [],
+          acknowledgedMessages(text, result, original.body.source_document_id ?? undefined));
+        retainedMessages.current.set(result.conversation_id, retained);
+        const capturePending = result.capture_status === "unavailable" && Boolean(result.capture_error?.includes("pending"));
+        if (capturePending) persistPending(scope, { ...original, conversationId: result.conversation_id, state: "turn_capture" });
+        else recordTerminal(scope, { turnKey: original.key, conversationId: result.conversation_id,
+          outcome: "acknowledged", origin: original.origin });
+        // Keep replies in their own conversation; a late A response cannot mutate B.
+        if (mounted.current && (isCurrent() || activeConversation.current === result.conversation_id)) {
+          if (isCurrent()) {
+            setAttached(null); setAttachmentPreview(null); setSourceDocumentId(null);
+            if (source === "text") setDraft(current => current.trim() === text ? "" : current);
+          }
+          setLatest(result);
+          setProposals(current => mergeProposals(current, result.proposals ?? []));
+          if (activeConversation.current !== result.conversation_id) {
+            if (activeConversation.current === null) {
+              typedDrafts.current.delete(null);
+              persistTypedDraft(scope, null, "");
+            }
+            turnConversation.current = result.conversation_id;
+            activeConversation.current = result.conversation_id;
+            const address = new URL(window.location.href);
+            address.searchParams.set("conversation", result.conversation_id);
+            window.history.replaceState(null, "", address.pathname + address.search);
+            setConversationId(result.conversation_id);
+          }
+          setMessages(retained); setMessagesError(null);
+          // Publish the acknowledgment before awaiting or fetching history.
+          void reconcileHistory(result.conversation_id);
+          void refreshConversations();
+        }
+        return capturePending ? { outcome: "uncertain" }
+          : { outcome: "acknowledged", reply: visibleReply(result.reply) ?? result.reply };
+      };
+      // Observe proven late acknowledgments even when the caller stopped waiting.
+      const response = api.agent.turn(original.body,
+        { signal: controller.signal, headers: { "Idempotency-Key": original.key } }).then(publish);
+      return await waitForAgent(response, controller.signal);
     } catch (error) {
-      if (!isCurrent()) return false;
+      if (!isSameSession()) return { outcome: "uncertain" };
       const conflict = error instanceof ApiError && error.status === 409 ? recoveryDetails(error.body) : null;
-      if (conflict && pendingRef.current)
-        rememberPending({ ...pendingRef.current, state: conflict.reason, conversationId: conflict.conversation_id });
-      setSendError(
-        controller.signal.aborted
-          ? "Agent response timed out. Keep this request and recover its saved result."
-          : error instanceof Error
-            ? error.message
-            : "Message failed",
-      );
-      return false;
+      if (conflict && request) persistPending(scope, { ...request, state: conflict.reason, conversationId: conflict.conversation_id });
+      if (isCurrent()) setSendError(controller.signal.aborted
+        ? "Agent response timed out or was interrupted. Keep this request and recover its saved result."
+        : error instanceof Error ? error.message : "Message failed");
+      return { outcome: request ? "uncertain" : "rejected" };
     } finally {
       clearTimeout(timeout);
-      turnAbort.current = null;
-      sendInFlight.current = false;
-      if (mounted.current) setSending(false);
+      voice?.signal.removeEventListener("abort", abort);
+      if (turnAbort.current === controller) {
+        turnAbort.current = null;
+        sendInFlight.current = false;
+        if (mounted.current) { setSending(false); setSendOrigin(null); }
+      }
+    }
+  }
+
+  async function sendMessage(message = draft, source: "text" | "voice" = "text", recovery?: PendingTurn, strategyDraft = false): Promise<boolean> {
+    return (await runTurn(message, source, recovery, strategyDraft)).outcome === "acknowledged";
+  }
+
+  const voiceRun = useRef(runTurn);
+  voiceRun.current = runTurn;
+  const voiceTransport = useMemo(() => createAgentVoiceTransport(recoveryScope ?? "", (request, recovery) =>
+    voiceRun.current(request.transcript, "voice", recovery, false, request)), [recoveryScope]);
+
+  async function ensureConversation(signal: AbortSignal): Promise<string | null> {
+    if (activeConversation.current) return activeConversation.current;
+    if (!sessionLive || !recoveryScope || sendInFlight.current || pendingRef.current || (strategyId && !strategyContext)) return null;
+    const generation = contextGeneration.current;
+    const session = sessionGeneration();
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) controller.abort();
+    sendInFlight.current = true;
+    turnAbort.current = controller;
+    setSending(true); setSendOrigin("voice");
+    const timer = setTimeout(abort, AGENT_TURN_TIMEOUT_MS);
+    try {
+      const conversation = await waitForAgent(api.conversations.create(strategyContext ? { strategy_id: strategyContext.id } : {}), controller.signal);
+      if (!mounted.current || generation !== contextGeneration.current || session !== sessionGeneration()) return null;
+      typedDrafts.current.delete(null);
+      persistTypedDraft(recoveryScope, null, "");
+      activeConversation.current = conversation.id;
+      turnConversation.current = conversation.id;
+      setConversationId(conversation.id);
+      const address = new URL(window.location.href);
+      address.searchParams.set("conversation", conversation.id);
+      window.history.replaceState(null, "", address.pathname + address.search);
+      void refreshConversations();
+      return conversation.id;
+    } finally {
+      clearTimeout(timer); signal.removeEventListener("abort", abort);
+      if (turnAbort.current === controller) {
+        turnAbort.current = null; sendInFlight.current = false;
+        if (mounted.current) { setSending(false); setSendOrigin(null); }
+      }
     }
   }
 
@@ -438,7 +551,6 @@ export function AgentWorkspace() {
           variant="secondary"
           className="min-h-11"
           onClick={() => {
-            setVoiceContextKey((value) => value + 1);
             changeConversation(null);
             setMessages([]);
             setLatest(null);
@@ -532,7 +644,6 @@ export function AgentWorkspace() {
                         }
                         onClick={() => {
                           if (item.id === conversationId) return;
-                          setVoiceContextKey((value) => value + 1);
                           setLatest(null);
                           setProposals([]);
                           setSendError(null);
@@ -621,7 +732,7 @@ export function AgentWorkspace() {
                   ? "The request is still processing. Recovery uses its original message and key."
                   : pending.state === "uncertain" ? "The response is uncertain. Recover the original request before starting another."
                     : `Request state: ${pending.state}. Review history before deliberately starting a new turn.`}</p>
-                <Button disabled={sending} onClick={() => void sendMessage(pending.body.message, "text", pending)}>Recover original request</Button>
+                {pending.origin !== "voice" ? <Button disabled={sending} onClick={() => void sendMessage(pending.body.message, "text", pending)}>Recover original request</Button> : null}
                 {pending.conversationId ? <Button variant="outline" onClick={() => {
                   changeConversation(pending.conversationId);
                   void reconcileHistory(pending.conversationId!);
@@ -743,7 +854,7 @@ export function AgentWorkspace() {
                   <Button
                     type="submit"
                     disabled={
-                      sending || Boolean(pending) ||
+                      !sessionLive || sending || Boolean(pending) ||
                       Boolean(!conversationId && strategyId && !strategyContext) ||
                       (messagesLoading && messages.length === 0) ||
                       (!draft.trim() && !attached) ||
@@ -753,16 +864,21 @@ export function AgentWorkspace() {
                     <Send className="h-4 w-4" aria-hidden="true" />
                     {sending ? "Sending…" : "Send"}
                   </Button>
-                  <Button type="button" variant="outline"
-                    disabled={sending || Boolean(pending) || (!draft.trim() && !attachmentPreview) || Boolean(strategyError) || Boolean(!conversationId && strategyId && !strategyContext)}
-                    onClick={() => void sendMessage(draft, "text", undefined, true)}>
-                    Review strategy draft
-                  </Button>
-                  {!strategyContext ? <Select aria-label="Strategy setup type" value={setupType}
-                    onChange={event => setSetupType(event.target.value)}>
-                    {['htf_trend_pullback', 'liquidity_sweep_reversal', 'countertrend_short_build', 'passive_level_order', 'profit_protection', 'green_day_guard', 'mental_capital_guard', 'nested_continuation', 'sfp', 'manual_review'].map(type =>
-                      <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
-                  </Select> : null}
+                  <details className="text-sm">
+                    <summary className="min-h-11 cursor-pointer content-center text-text-secondary">Strategy options</summary>
+                    <div className="flex flex-wrap gap-2 py-2">
+                      <Button type="button" variant="outline"
+                        disabled={!sessionLive || sending || Boolean(pending) || (!draft.trim() && !attachmentPreview) || Boolean(strategyError) || Boolean(!conversationId && strategyId && !strategyContext)}
+                        onClick={() => void sendMessage(draft, "text", undefined, true)}>
+                        Review strategy draft
+                      </Button>
+                      {!strategyContext ? <Select aria-label="Strategy setup type" value={setupType}
+                        onChange={event => setSetupType(event.target.value)}>
+                        {['htf_trend_pullback', 'liquidity_sweep_reversal', 'countertrend_short_build', 'passive_level_order', 'profit_protection', 'green_day_guard', 'mental_capital_guard', 'nested_continuation', 'sfp', 'manual_review'].map(type =>
+                          <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
+                      </Select> : null}
+                    </div>
+                  </details>
                   <Button
                     type="button"
                     variant="outline"
@@ -774,25 +890,20 @@ export function AgentWorkspace() {
                     {importOpen ? "Close attachment" : "Attach document"}
                   </Button>
                 </div>
-                <AgentVoiceControls
-                  disabled={
-                    sending || Boolean(pending) || Boolean(!conversationId && strategyId && !strategyContext) || (messagesLoading && messages.length === 0)
-                  }
-                  conversationKey={String(voiceContextKey)}
-                  reply={visibleReply(
-                    latest?.reply ??
-                      [...messages]
-                        .reverse()
-                        .find((message) => message.role === "assistant")
-                        ?.content ??
-                      null,
-                  )}
-                  compact
-                  transcriptActionLabel="Use transcript"
-                  onSend={async (transcript) => {
-                    setDraft(transcript);
-                    return true;
-                  }}
+                <VoiceConversationControls
+                  conversationId={conversationId}
+                  sessionKey={recoveryScope}
+                  authenticated={Boolean(recoveryScope) && sessionLive}
+                  contextKey={voiceContextKey}
+                  disabled={(sending && sendOrigin !== "voice") ||
+                    Boolean(pending && pending.origin !== "voice") ||
+                    Boolean(!conversationId && strategyId && !strategyContext) ||
+                    (messagesLoading && messages.length === 0) || (Boolean(attached) && !attachmentPreview)}
+                  typedDraft={draft}
+                  onTypedDraftChange={setDraft}
+                  transport={voiceTransport}
+                  ensureConversation={ensureConversation}
+                  showReply={false}
                 />
                 {sendError ? (
                   <p

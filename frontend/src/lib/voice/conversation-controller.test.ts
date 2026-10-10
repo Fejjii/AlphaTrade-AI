@@ -238,4 +238,26 @@ describe("voice conversation controller", () => {
     expect(s.controller.getSnapshot().unresolved).toEqual(pending);
     s.controller.dispose();
   });
+
+  it("reconciles a matching terminal proof after navigation without trusting missing storage", async () => {
+    const s = setup();
+    vi.mocked(s.transport.submit).mockResolvedValue({ outcome: "uncertain" });
+    s.start(); s.finish(); await Promise.resolve();
+    const turn = s.controller.getSnapshot().unresolved!;
+    s.controller.setContext("conversation-2", true);
+    s.transport.pending = () => null;
+    s.controller.setContext("conversation-1", true);
+    expect(s.controller.getSnapshot().unresolved).toEqual(turn);
+    s.controller.setContext("conversation-2", true);
+    Object.assign(s.transport, { terminal: () => ({ turnKey: "other-key", conversationId: "conversation-1", outcome: "acknowledged" }) });
+    s.controller.setContext("conversation-1", true);
+    expect(s.controller.getSnapshot().unresolved).toEqual(turn);
+    s.controller.setContext("conversation-2", true);
+    Object.assign(s.transport, { terminal: () => ({ turnKey: turn.turnKey, conversationId: turn.conversationId, outcome: "acknowledged" }) });
+    s.controller.setContext("conversation-1", true);
+    expect(s.controller.getSnapshot().unresolved).toBeNull();
+    s.controller.start();
+    expect(s.provider.listen).toHaveBeenCalledTimes(2);
+    s.controller.dispose();
+  });
 });

@@ -17,12 +17,23 @@ export type VoiceTurnResult =
   | { outcome: "rejected" }
   | { outcome: "uncertain" };
 
+export type VoiceTerminalProof = Readonly<{
+  turnKey: string;
+  conversationId: string;
+  outcome: "acknowledged" | "rejected";
+  /** Local provenance only; never added to the generated Agent request. */
+  origin?: "text" | "voice";
+}>;
+
 /** Route both methods through the existing Agent admission/turn/recovery pipeline. */
 export interface VoiceAgentTransport {
   submit(request: VoiceTurn & { signal: AbortSignal }): Promise<VoiceTurnResult>;
   recover(request: VoiceTurn & { signal: AbortSignal }): Promise<VoiceTurnResult>;
   /** Restore a pending voice envelope from the authoritative, user-scoped turn store. */
   pending?(conversationId: string): VoiceTurn | null;
+  /** Explicit terminal evidence for the exact turn. Missing pending storage is not evidence. */
+  terminal?(turn: VoiceTurn): VoiceTerminalProof | null;
+  subscribe?(listener: () => void): () => void;
 }
 
 export type VoiceConversationSnapshot = Readonly<{

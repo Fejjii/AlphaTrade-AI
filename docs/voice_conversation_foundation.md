@@ -1,239 +1,140 @@
-# Voice conversation foundation
+# Agent voice conversation integration — PR238 handoff
 
-Feature package for the PR237 integrator. Package milestones: **100% complete**
-after publication of the draft feature PR; production mounting/activation and
-physical-browser acceptance remain separate integration work.
+Updated 2026-10-10. Continued from `43996d54052239657cdbace5a93e1098d00956b9`
+on `codex/voice-conversation-foundation`. PR238 remains a draft based on PR237
+(`bda597c2fffbf1a49beadc64d757100808094ca2`).
 
-Recorded requested baseline: `4e515ddb8de20f4b2cfb7498ed6ce9bbbd2d2f2f`.
-Refreshed PR237 on 2026-10-10: `bda597c2fffbf1a49beadc64d757100808094ca2`
-on `codex/reviewer-wave-integration`. The isolated feature branch
-`codex/voice-conversation-foundation` starts from that exact published head and
-targets the PR237 branch. No AgentWorkspace, its tests, backend, generated API,
-migration, CI, model, budget, provider credential or runtime activation changes.
+## Result and ownership
 
-## Modules and lifecycle
+The actual `/agent` page now mounts one `VoiceConversationControls` beside the
+typed composer. Spoken turns enter `AgentWorkspace.runTurn`, the same admission,
+validation, attachment, idempotency and acknowledgment pipeline as typed turns.
+`agent-voice-transport.ts` adapts the controller to that function; it has no API calls.
+The only Agent turn request remains the existing `api.agent.turn` path.
 
-- `frontend/src/lib/voice/conversation-types.ts`: voice envelope, discriminated
-  outcome and injected Agent transport contracts.
-- `frontend/src/lib/voice/conversation-controller.ts`: framework-independent,
-  half-duplex state machine. It owns temporary voice state, not Agent orchestration.
-- `frontend/src/components/agent/VoiceConversationControls.tsx`: compact UI beside
-  the existing typed composer. Default mode is review; microphone startup requires
-  a click. `AgentVoiceControls` and its consumers retain their existing interface.
-- Browser provider: optional `listen(callbacks, { turnCompletion: "utterance" })`
-  chooses non-continuous Web Speech recognition. Calls without options retain
-  continuous manual recording. Playback first cancels microphone recognition.
+This continuation owns AgentWorkspace, its adapter, local session metadata and
+related tests. PR237 retains CI, generated clients and activity views. Backend,
+migrations, generated files, CI and activity views are unchanged by the continuation.
+No provider activation, model change, deployment, merge or full CI was performed.
 
-```mermaid
-stateDiagram-v2
-  [*] --> idle
-  idle --> requesting: explicit Start
-  requesting --> listening: browser starts
-  listening --> preparing: Stop or browser end
-  preparing --> waiting: explicit Send or eligible conversation final
-  waiting --> speaking: acknowledged, playback enabled
-  speaking --> requesting: playback ends, session active
-  waiting --> requesting: acknowledged, playback disabled, session active
-  waiting --> paused: uncertain or cancellation
-  paused --> waiting: explicit Recover original request
-  paused --> requesting: explicit Resume, no pending turn
-  requesting --> error: permission or provider failure
-  listening --> error: empty speech or provider failure
-  speaking --> paused: Stop speaking
-  waiting --> error: known rejection
-  error --> requesting: explicit retry, no transcript or pending turn
-```
+## Interaction and lifecycle
 
-Explicit states are `idle`, `requesting`, `listening`, `preparing`, `waiting`,
-`speaking`, `paused`, `error`. Preparing covers browser transcription completion
-and editable transcript review. Partial/cumulative transcript events only update
-the preview. A completion latch prevents repeated final events from resubmitting.
+Review mode is the default. Record produces an editable transcript; clearing its
+value keeps the editor mounted and disables Send, Append and Replace until text is
+entered. Sending speech preserves the typed draft. Append and Replace change the
+typed draft only through explicit actions.
 
-**Turn completion policy:** conversation mode consumes one browser utterance:
-only non-empty finalized text at recognition end may be submitted. Browser-defined
-silence ends the utterance; partial transcripts never submit. Existing deadlines
-remain permission 12s, recording 60s (finalize), transcription 8s, playback 120s.
-There is no silence-triggered retry or continuous empty-speech loop. The controller
-adds a 45s Agent deadline. At timeout, it aborts the client signal, preserves the
-original envelope, pauses progression and offers explicit recovery.
+Conversation mode is explicit opt-in. A completed utterance submits automatically
+when the typed draft is empty. A nonempty typed draft routes the utterance to review.
+After a terminal acknowledgment, the Agent reply appears immediately in the canonical
+thread; history reconciles in the background. Optional browser playback completes
+before recognition resumes. Stop speaking pauses; another gesture restarts voice.
 
-If the live typed draft is non-empty at completion, automatic submission pauses
-for review. Send submits the voice text while preserving the typed draft. Append
-inserts a newline after the existing draft; Replace requires its own deliberate
-button click. Append, Replace and Cancel end the active voice session. An edited
-review transcript does not auto-submit when the typed draft later becomes empty.
+Starting voice from a new conversation uses the existing `api.conversations.create`
+flow, retaining authorized strategy context. Creation shares admission and the Agent
+timeout budget. Navigation, cancellation, logout and hidden tabs prevent a late
+creation response from starting capture. The existing creation API has no abort
+parameter: a cancelled wait may still leave an empty server conversation.
 
-Recognition is cancelled before submission and stays cancelled during playback.
-Only the current session's callbacks can change state. Playback completion resumes
-listening only in an enabled conversation session. Stop speaking pauses immediately;
-End conversation cancels voice and aborts the client request signal. An unresolved
-Agent envelope survives End and navigation in the controller's per-conversation
-map. Returning to that conversation exposes recovery. Neither action proves the
-server cancelled a turn.
+Typed drafts are stored locally per organization/user and conversation, including
+the new-conversation draft. They survive conversation changes and tab reloads.
+Pending speech retains its original voice envelope; terminal local evidence retains
+its origin. Logout clears drafts, pending metadata and terminal evidence. No voice
+origin field is added to `AgentTurnRequest`, and server provenance is not claimed.
 
-Hidden tabs pause; becoming visible requires a fresh click. Conversation changes
-and authority disable signals pause/reset the voice UI, retaining pending identity.
-Changes to the organization/user `sessionKey`, logout (`authenticated=false`),
-provider factory, transport identity, or unmount dispose the old controller/provider.
-They reject late callbacks. The integration's user-scoped pending store restores
-recovery across remounts; this package introduces no second storage system.
+One microphone controller is mounted. Navigation, logout, hidden tabs, identity
+changes and unmount stop capture and playback and invalidate late speech callbacks.
+Typed submission also stops capture and shares the same admission gate. Optional
+strategy authoring/setup controls are inside Strategy options. Proposal confirmation
+and rejection remain explicit; existing execution and kill-switch policy is unchanged.
+Unavailable browser speech leaves the typed composer usable.
 
-## Mount contract for the PR237 owner
+## Request and recovery guarantees
 
-Prepare a stable `VoiceAgentTransport` adapter around the existing Agent turn and
-recovery pipeline, then mount this component beside the existing typed composer.
-The following names for adapter/authority state are illustrative integration
-variables, not newly exported repository APIs:
+The controller supplies the voice turn key as the existing `Idempotency-Key`.
+AgentWorkspace validates the complete generated request before retaining or sending
+it. Invalid local requests remain editable and never become saved ambiguous requests.
+Recovery reuses the retained complete body, document references and key, with a new
+cancellation signal. It does not rebuild context from today's composer or reimport
+an attachment. Double recovery clicks share admission; there is no automatic retry.
 
-```tsx
-import { VoiceConversationControls } from "@/components/agent/VoiceConversationControls";
+The pending store uses session storage with an actor-scoped in-memory fallback.
+Missing storage alone does not clear ambiguity. A validated terminal reply records
+explicit evidence for the exact turn key and conversation, then removes pending
+metadata. The controller subscribes to those outcomes and reconciles its own pending
+map when returning from another conversation. A mismatched key or conversation
+cannot release the voice gate.
 
-<VoiceConversationControls
-  conversationId={conversationId}
-  sessionKey={user && organization ? `${organization.id}:${user.id}` : null}
-  authenticated={Boolean(user && organization)}
-  disabled={voiceAuthorityBlocked || unrelatedTurnIsActive}
-  typedDraft={draft}
-  onTypedDraftChange={setDraft}
-  transport={stableVoiceTransport}
-/>
-```
+Late acknowledgments are retained in their own conversation while the authenticated
+session is unchanged. They do not alter another conversation or play unsolicited
+audio after navigation. This works when the transport actually delivers a proven
+reply after cancellation. An aborted browser fetch does not establish server success;
+the original request remains recoverable through the existing idempotency flow.
+Neither absent history nor absent local pending storage is terminal evidence.
 
-Require an existing conversation ID; create/select the conversation through the
-existing Agent path before enabling voice. Do not mount two microphone controllers
-for one composer. Keep the factory/transport referentially stable, scoped to the
-authenticated user. Dispose/remount on identity changes. `disabled` represents
-authority blocks, kill switch or an unrelated active turn. **Do not derive it from
-the voice request's own `sending` flag**: doing so would abort that same request.
-
-The current `AgentWorkspace.sendMessage` returns `Promise<boolean>`, creates its own
-key, builds context/attachment fields and stores recovery. It cannot directly serve
-this richer interface. The PR237 owner must extend/extract that existing pipeline
-so voice can supply its stable key and receive an explicit outcome. Do not add a
-direct `api.agent.turn` call inside the voice component/controller or construct an
-independent backend orchestration path.
-
-### Transport guarantees
-
-Both `submit` and `recover` accept `{ turnKey, transcript, conversationId,
-origin: "voice", signal }`. The envelope is frozen; recovery gets a new cancellation
-signal with the same key and payload. Use `turnKey` as the existing `Idempotency-Key`.
-
-The integrator must:
-
-1. Arbitrate typed and voice turns through the existing per-conversation admission
-   gate. Only one new submitted turn may be active; this controller already blocks
-   further voice submissions while its envelope is unresolved.
-2. Build and validate the **complete** generated `AgentTurnRequest`, including
-   current context and any attachments, before persisting/dispatching. Retain that
-   exact body under the supplied key. The controller only knows a voice envelope;
-   it must never rebuild attachment/context fields on recovery.
-3. Persist recovery before dispatch through the existing user/organization-scoped
-   pending store. Extend its local metadata to retain voice origin and the original
-   envelope; restore it with `transport.pending(conversationId)` when mounting.
-   This hook only restores pending **voice** envelopes. Any pending typed turn must
-   block new voice admission via the same shared gate/disabled state.
-4. Return outcomes according to the table below. Publish acknowledged messages and
-   proposals through `acknowledged-turn.ts` / the existing history reconciliation
-   flow before resolving to the voice controller. Keep the canonical full reply in
-   history; the component also retains its returned reply as readable text.
-5. `recover` uses the existing explicit recovery/status path with the original
-   saved body/key. It must reconcile even if a prior client promise never settles.
-   It may reuse backend idempotency only according to the existing recovery policy;
-   it is not a blind new submission. Update/clear the canonical pending store after
-   a proven terminal result. A recovered reply leaves voice paused; Resume is explicit.
-
-| Outcome | Meaning and voice behavior |
+| Result | Behavior |
 | --- | --- |
-| `acknowledged` with `reply` | Validated reply for this exact key/conversation and recovery complete; clear local envelope; read automatically if conversation mode/playback/session are enabled. |
-| `rejected` | Proven terminal admission/validation rejection with no unresolved turn. Unlock and retain editable transcript. Do not classify arbitrary HTTP failures this way. |
-| `uncertain` | Timeout, interrupted/ambiguous transport, malformed successful response, conflict/in-progress or pending capture. Retain original identity; pause and recover explicitly. |
+| Valid terminal acknowledgment | Display reply immediately, persist matching terminal evidence, release pending admission, reconcile history asynchronously. |
+| Local validation/admission rejection before dispatch | Retain editable speech; no ambiguous request persisted. |
+| Timeout, interruption, failed/malformed transport or conflict | Retain original body/key and voice provenance; pause for explicit recovery. |
+| Reply acknowledged while capture is still pending | Display the reply, retain `turn_capture`, and require recovery before another spoken turn. |
 
-For current PR237 behavior, a valid reply with `capture_status="unavailable"` and
-a pending capture error still has recovery outstanding (`turn_capture`); the adapter
-must treat progression as uncertain until that original request is resolved. Do
-not turn the existing boolean `false` into a known rejection or `true` into an
-unqualified terminal acknowledgment. History reload failure alone need not delay
-a validated terminal acknowledgment, as the existing reconciliation pipeline owns it.
+The controller and shared request wait both use `AGENT_TURN_TIMEOUT_MS = 360_000`.
+The wait is bounded even when an injected transport ignores AbortSignal; a delivered
+late terminal reply can still reconcile metadata. Browser input/output timers retain
+their existing budgets. Recovery completes with voice inactive; restarting capture
+requires a user gesture.
 
-`submit`/`recover` thrown errors and malformed result envelopes are conservatively
-uncertain. Cancelling an AbortSignal affects the client wait; it does not authorize
-forgetting the server request. Transport-side persistence is required for durability
-after disposal; the controller's in-memory map alone is insufficient.
+## Verification
 
-### Voice origin and authority
+Focused unit/component/integration suite: **162 passed in eight files**, no skips.
+This includes controller and provider behavior, compact and legacy controls, Agent
+integration, shared adapter, recovery metadata and acknowledged-history reconciliation.
+Coverage includes both reported defects, two consecutive spoken turns, complete-body
+rejection, local provenance, original attachment/key recovery after remount, duplicate
+clicks, pending capture, six-minute timeout, lost storage, late A acknowledgment while
+viewing B, typed admission and logout.
 
-`origin: "voice"` survives controller submission and recovery. Current generated
-`AgentTurnRequest` has no origin field; existing `sendMessage` uses `source` locally
-to preserve typed drafts. The integrator should keep voice origin in its local
-pending metadata and, if durable server provenance is required, coordinate a
-separate additive backend/generated-schema change. Do not inject unknown fields
-into the current generated request or claim server provenance exists today.
+Deterministic Chromium: **eight actual Agent page checks** and **five standalone
+component harness checks** passed. Actual-page checks exercise new conversation
+creation, successive spoken turns, immediate replies surviving stale history,
+clear-and-replace review, typed drafts across navigation/reload, exact attachment
+recovery, hidden-tab/navigation cancellation and unsupported speech fallback.
+Widths: 320×720, 390×844 and 1440×1000; controls have at least 44px button heights
+and no horizontal overflow. [Actual Agent screenshots](screenshots/voice-agent/README.md)
+and [standalone evidence](screenshots/voice-conversation/README.md) use synthetic data.
 
-Speech is independent of reasoning-model routing. No paid provider, model upgrade,
-spending limit, runtime setting, order execution, or extra permission is included.
-Existing tool confirmation, proposal decisions, kill switch and execution policy
-remain authoritative; spoken text is ordinary Agent input.
-
-## Verification and interface evidence
+Repository TypeScript checking, changed-file ESLint with zero warnings,
+`git diff --check`, scoped secret inspection and ownership comparison passed.
 
 Run from `frontend/`:
 
 ```sh
-npm run test -- src/lib/voice/conversation-controller.test.ts src/lib/voice/browser-voice-provider.test.ts src/components/agent/VoiceConversationControls.test.tsx src/components/agent/AgentVoiceControls.test.tsx
+npx vitest run src/lib/voice/conversation-controller.test.ts src/lib/voice/browser-voice-provider.test.ts src/components/agent/VoiceConversationControls.test.tsx src/components/agent/AgentVoiceControls.test.tsx src/components/agent/AgentWorkspace.test.tsx src/components/agent/turn-recovery.test.ts src/components/agent/agent-voice-transport.test.ts src/components/agent/acknowledged-turn.test.ts
 npm run typecheck
-npx eslint src/lib/voice/conversation-types.ts src/lib/voice/conversation-controller.ts src/lib/voice/conversation-controller.test.ts src/lib/voice/types.ts src/lib/voice/browser-voice-provider.ts src/lib/voice/browser-voice-provider.test.ts src/components/agent/VoiceConversationControls.tsx src/components/agent/VoiceConversationControls.test.tsx voice-harness/main.tsx voice-harness/vite.config.ts ui-tests/voice-conversation.spec.ts playwright.voice-conversation.config.ts --max-warnings 0
+NEXT_FONT_GOOGLE_MOCKED_RESPONSES="$PWD/test-fixtures/offline-fonts.cjs" PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npx playwright test --config playwright.voice.config.ts
 npx playwright test --config playwright.voice-conversation.config.ts
 ```
 
-Focused unit tests cover acknowledged playback/resume, duplicate/partial events,
-silence, feedback suppression, manual review, drafts, uncertain/throw/timeout/
-malformed envelopes, rejection, exact recovery identity, cancellation, navigation,
-logout, hidden tabs, unmount, identity changes, permission/playback fallback,
-and unchanged legacy consumers. Final local result: **98 passed in four files**
-(3.76s), no skips. Repository TypeScript checking and changed-file ESLint with
-`--max-warnings 0` passed. `git diff --check` passed. Protected-file comparison
-against the refreshed base confirms the excluded ownership paths are unchanged.
+The browser checks use the real browser voice provider with simulated Web Speech
+events and fixture Agent responses. They verify integration and layout, not native
+speech recognition. Actual microphone capture, permissions/service connectivity,
+speaker feedback, Safari/WebKit, Firefox and physical iPhone remain unverified.
+No production build or full frontend/backend CI was run. No acoustic barge-in,
+echo cancellation or premium realtime speech is claimed. Browser speech may use
+a browser-managed remote service, disclosed in Voice details; AlphaTrade's voice
+modules do not store audio.
 
-The separate Vite harness (`frontend/voice-harness`) mounts only this component,
-the typed draft and deterministic browser/Agent fixtures. No AgentWorkspace route,
-backend server or paid provider is involved. It uses the real browser provider
-against fake Web Speech APIs. Run it with
-`npx vite --config voice-harness/vite.config.ts` and open `http://127.0.0.1:4175`.
-The harness has no application route and is not activated by the product build.
+## Precise next handoff
 
-Five deterministic Chromium browser checks cover successive turns, playback and
-explicit interruption, draft review/append, exact uncertain recovery, typed fallback,
-320×720, 390×844 and 1440×1000 widths, 44px buttons, and no horizontal clipping.
-[Listening/speaking screenshots](screenshots/voice-conversation/README.md) are fixture
-evidence. Full backend/frontend CI, a production build, staging/live providers,
-real microphone capture and physical-device checks were not run for this package.
+PR238 integration work is complete for this scope; no implementation blocker remains.
+Review the consolidated commit and this handoff alongside PR237. PR237's owner should
+retain ownership of CI, generated clients and activity views and resolve any later
+overlap in the shared Agent baseline without introducing another API path. Keep the
+matching key/conversation terminal proof and complete saved request semantics intact.
 
-## Supported behavior and remaining work
-
-Browser-managed input/output only. This is a functional foundation with explicit
-turn boundaries, not premium realtime speech. No acoustic barge-in or echo
-cancellation is claimed; use Stop speaking. Browsers may require a fresh gesture
-for subsequent recognition or playback: a failure pauses with typed fallback and
-explicit retry. Missing output starts with playback disabled and replies remain
-text. Failed playback retains the reply and pauses. Browser speech may use a
-browser-managed remote service; this is disclosed in Voice details. No audio is
-stored or uploaded by AlphaTrade's voice modules.
-
-Recognition accuracy, silence timing, microphone permissions, service connectivity,
-audio leakage from physical speakers, Safari/WebKit, Firefox and physical iOS are
-unverified. Fake API checks in Chromium establish controller/interface behavior,
-not native speech compatibility. The browser controls speech language and voice.
-
-| Package milestone | Progress |
-| --- | --- |
-| Refreshed isolated baseline and ownership contracts | 100% |
-| Controller, compact controls and additive provider interface | 100% |
-| Focused deterministic and layout evidence | 100% |
-| Integration documentation and draft delivery | 100% upon draft publication |
-
-Completed: this isolated package and reviewable integration contract.
-Next: PR237 owner connects its existing admission/recovery pipeline and local
-provenance store, mounts the component, then verifies native speech on intended
-browsers/hardware before any activation. Current package blockers: none. Runtime
-integration and browser/hardware acceptance remain outstanding. No merge or deploy.
+Before claiming native voice support, verify microphone capture and two spoken turns
+on the intended desktop browser, Safari and a physical iPhone. Check browser gesture
+requirements, permission denial, hiding/navigation/logout, interruption and speaker
+feedback. These hardware/browser checks are separate from the passing simulation.
+Merging, deployment and provider activation require their own authorization.

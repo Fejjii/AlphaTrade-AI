@@ -1,9 +1,10 @@
 import type { VoiceError, VoiceSession } from "./types";
+import { AGENT_TURN_TIMEOUT_MS } from "@/lib/agent-turn-budget";
 import type {
   VoiceConversationOptions, VoiceConversationSnapshot, VoiceTurn, VoiceTurnResult,
 } from "./conversation-types";
 
-export const VOICE_AGENT_TIMEOUT_MS = 45_000;
+export const VOICE_AGENT_TIMEOUT_MS = AGENT_TURN_TIMEOUT_MS;
 
 /** Half-duplex conversation; no Agent APIs, model routing, storage, or tool execution here. */
 export class VoiceConversationController {
@@ -62,13 +63,31 @@ export class VoiceConversationController {
     this.cancelAgent();
     this.conversationId = conversationId;
     this.allowed = allowed;
+    this.reconcilePending();
     const restored = conversationId ? this.options.transport.pending?.(conversationId) : null;
     if (restored && restored.conversationId === conversationId && restored.origin === "voice") {
       this.pending.set(conversationId!, Object.freeze({ ...restored }));
     }
     const unresolved = conversationId ? this.pending.get(conversationId) ?? null : null;
     this.update({ state: unresolved ? "paused" : "idle", sessionActive: false,
-      transcript: "", ready: false, reply: "", error: null, startedAt: null, unresolved });
+      transcript: unresolved?.transcript ?? "", ready: false, reply: "", error: null, startedAt: null, unresolved });
+  }
+
+  reconcilePending() {
+    if (this.disposed) return;
+    for (const [id, turn] of this.pending) {
+      // The current request consumes its own result to preserve playback behavior.
+      if (id === this.conversationId && this.snapshot.state === "waiting") continue;
+      const proof = this.options.transport.terminal?.(turn);
+      if (proof?.turnKey === turn.turnKey && proof.conversationId === turn.conversationId &&
+          (proof.outcome === "acknowledged" || proof.outcome === "rejected")) {
+        this.pending.delete(id);
+        if (this.snapshot.unresolved?.turnKey === turn.turnKey) {
+          this.update({ unresolved: null, state: "paused", sessionActive: false,
+            transcript: "", ready: false, error: null });
+        }
+      }
+    }
   }
 
   setVisible(visible: boolean) {
@@ -195,6 +214,7 @@ export class VoiceConversationController {
       this.cancelAgent();
       this.update({ state: "paused", sessionActive: false,
         error: { message: "Reply uncertain. Recover the original request." } });
+      this.reconcilePending();
     };
     this.deadline = setTimeout(uncertain, this.options.agentTimeoutMs ?? VOICE_AGENT_TIMEOUT_MS);
     const complete = (result: VoiceTurnResult) => {

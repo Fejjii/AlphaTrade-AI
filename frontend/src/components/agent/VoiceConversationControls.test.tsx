@@ -61,6 +61,42 @@ describe("compact voice conversation controls", () => {
     expect(props.onTypedDraftChange).toHaveBeenLastCalledWith("Replacement");
   });
 
+  it("keeps the review editor mounted when cleared and allows a replacement", async () => {
+    render(<VoiceConversationControls {...props} typedDraft="Keep typed" />);
+    conversation(); act(() => input.onComplete("Voice text"));
+    const editor = screen.getByRole("textbox", { name: "Voice transcript" });
+    fireEvent.change(editor, { target: { value: "" } });
+    expect(screen.getByRole("textbox", { name: "Voice transcript" })).toBe(editor);
+    expect(screen.getByRole("button", { name: "Send transcript" })).toBeDisabled();
+    fireEvent.change(editor, { target: { value: "Replacement speech" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Send transcript" })));
+    expect(transport.submit).toHaveBeenCalledWith(expect.objectContaining({ transcript: "Replacement speech" }));
+    expect(props.onTypedDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("creates the conversation through the supplied flow before starting capture", async () => {
+    let finish!: (id: string) => void;
+    const ensureConversation = vi.fn(() => new Promise<string>(resolve => { finish = resolve; }));
+    render(<VoiceConversationControls {...props} conversationId={null} ensureConversation={ensureConversation} />);
+    fireEvent.click(screen.getByRole("button", { name: "Record" }));
+    expect(provider.listen).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Preparing conversation…" })).toBeDisabled();
+    await act(async () => finish("created"));
+    expect(provider.listen).toHaveBeenCalledOnce();
+  });
+
+  it("cancels conversation creation on navigation and ignores its late result", async () => {
+    let finish!: (id: string) => void;
+    const ensureConversation = vi.fn<(signal: AbortSignal) => Promise<string>>(() => new Promise<string>(resolve => { finish = resolve; }));
+    const view = render(<VoiceConversationControls {...props} conversationId={null} ensureConversation={ensureConversation} />);
+    fireEvent.click(screen.getByRole("button", { name: "Record" }));
+    view.rerender(<VoiceConversationControls {...props} conversationId="other" contextKey={1} ensureConversation={ensureConversation} />);
+    expect(ensureConversation.mock.calls[0][0].aborted).toBe(true);
+    await act(async () => finish("created"));
+    expect(provider.listen).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
+  });
+
   it("cancels recording and ignores delayed transcripts", () => {
     render(<VoiceConversationControls {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Record" }));
