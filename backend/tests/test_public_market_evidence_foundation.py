@@ -15,6 +15,7 @@ from app.evidence_pipeline.service import CanonicalEvidenceService
 from app.interactive_agent.canonical_market import CanonicalPerpetualQuoteReader
 from app.interactive_agent.contracts import AgentTurnRequest
 from app.interactive_agent.service import InteractiveAgentService
+from app.market_contracts.adapters.aggtrade_cache import TtlValueCache
 from app.market_contracts.adapters.binance_usdm import BinanceUsdmPerpetualSource
 from app.market_contracts.adapters.book_sequence import BookSequenceGuard
 from app.market_contracts.adapters.bybit_usdt_perpetual import BybitUsdtPerpetualSource
@@ -23,7 +24,12 @@ from app.market_contracts.adapters.request_budget import request_weight
 from app.market_contracts.context import MarketEvidenceContext
 from app.market_contracts.derivatives import DerivativeMetric, derivative_observation
 from app.market_contracts.enums import VenueId
-from app.market_contracts.errors import GapDetectedError, MarketContractError, WrongSourceError
+from app.market_contracts.errors import (
+    GapDetectedError,
+    MarketContractError,
+    StaleEvidenceError,
+    WrongSourceError,
+)
 from app.market_contracts.order_book import (
     hash_order_book,
     require_order_book,
@@ -398,13 +404,21 @@ def test_shared_bybit_page_is_collected_once_for_multiple_flow_consumers():
     from uuid import uuid4
 
     from app.evidence_pipeline.market_intelligence import read_order_flow
-    from app.market_contracts.order_flow import closed_order_flow_bounds, order_flow_identity
+    from app.market_contracts.order_flow import (
+        closed_order_flow_bounds,
+        order_flow_identity,
+        require_order_flow,
+    )
 
-    requests = []
+    requests, ticks = [], [0.0]
     src, _ = provider(VenueId.BYBIT, requests=requests)
     src._reuse_recent_pages = True  # Same mode wired by the production process factory.
+    # Flow reduction runtime is not elapsed cache time. Keep the production one-second
+    # TTL, but advance its monotonic clock explicitly so a slow CI host cannot expire it.
+    src._recent_print_cache = TtlValueCache(max_entries=1, ttl_seconds=1, clock=lambda: ticks[0])
     start, end = closed_order_flow_bounds(NOW)
-    for _ in range(2):
+    for elapsed in (0.0, 0.5):
+        ticks[0] = elapsed
         flow = src.fetch_order_flow_snapshot(
             identity=order_flow_identity(identity(VenueId.BYBIT)),
             instrument=instrument(VenueId.BYBIT),
@@ -415,15 +429,62 @@ def test_shared_bybit_page_is_collected_once_for_multiple_flow_consumers():
         )
         assert flow.coverage.completeness.value == "complete"
     assert sum(r.url.path.endswith("recent-trade") for r in requests) == 1
-    assert (
-        read_order_flow(
-            src,
-            identity=identity(VenueId.BYBIT),
-            instrument=instrument(VenueId.BYBIT),
-            observed_at=NOW,
-        ).availability
-        is State.AVAILABLE
+    ticks[0] = 1.0
+    reused = read_order_flow(
+        src,
+        identity=identity(VenueId.BYBIT),
+        instrument=instrument(VenueId.BYBIT),
+        observed_at=NOW,
     )
+    assert reused.availability is State.AVAILABLE
+    assert sum(r.url.path.endswith("recent-trade") for r in requests) == 1
+    require_order_flow(reused, identity=identity(VenueId.BYBIT), evaluated_at=NOW)
+    with pytest.raises(StaleEvidenceError):
+        require_order_flow(
+            reused,
+            identity=identity(VenueId.BYBIT),
+            evaluated_at=NOW + timedelta(minutes=10),
+        )
+
+    ticks[0] = 1.001
+    refreshed = read_order_flow(
+        src,
+        identity=identity(VenueId.BYBIT),
+        instrument=instrument(VenueId.BYBIT),
+        observed_at=NOW,
+    )
+    assert refreshed.availability is State.AVAILABLE
+    assert refreshed.event_time == reused.event_time
+    assert sum(r.url.path.endswith("recent-trade") for r in requests) == 2
+
+
+def test_shared_bybit_page_coalesces_concurrent_collectors(monkeypatch):
+    requests = []
+    src, _ = provider(VenueId.BYBIT, requests=requests)
+    src._reuse_recent_pages = True
+    src._recent_print_cache = TtlValueCache(max_entries=1, ttl_seconds=1, clock=lambda: 0)
+    entered, release, second_started = Event(), Event(), Event()
+    original_loader = src._load_recent_prints
+
+    def load_recent_prints():
+        entered.set()
+        assert release.wait(5)
+        return original_loader()
+
+    def second_consumer():
+        second_started.set()
+        return src._cached_recent_prints(NOW)
+
+    monkeypatch.setattr(src, "_load_recent_prints", load_recent_prints)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(src._cached_recent_prints, NOW)
+        assert entered.wait(5)
+        second = pool.submit(second_consumer)
+        assert second_started.wait(5)
+        release.set()
+        first_rows, second_rows = first.result(), second.result()
+    assert first_rows == second_rows
+    assert first_rows is not second_rows and first_rows[0] is not second_rows[0]
     assert sum(r.url.path.endswith("recent-trade") for r in requests) == 1
 
 
