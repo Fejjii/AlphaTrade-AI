@@ -15,6 +15,10 @@ import {
 import * as browserVoice from "@/lib/voice/browser-voice-provider";
 import type { VoiceProvider } from "@/lib/voice/types";
 import { agentTurnFixture } from "@/test/pilot-fixtures";
+import { agentTurn } from "@/lib/api/generated/client";
+import { pendingFor } from "./turn-recovery";
+
+const recoveryScope = "00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000002";
 
 let testParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
@@ -75,7 +79,7 @@ describe("Agent workspace", () => {
     apiMocks.getConversation.mockResolvedValue({ strategy_id: null });
     testParams = new URLSearchParams();
     apiMocks.listConversations.mockResolvedValue({
-      items: [{ id: "c1", title: "BTC plan" }],
+      items: [{ id: "11111111-1111-4111-8111-111111111111", title: "BTC plan" }],
       total: 1,
       limit: 30,
       offset: 0,
@@ -117,7 +121,7 @@ describe("Agent workspace", () => {
     });
     apiMocks.agentTurn.mockResolvedValue({
       user_message_id: "m1", assistant_message_id: "m2",
-      conversation_id: "c1",
+      conversation_id: "11111111-1111-4111-8111-111111111111",
       reply: "Noted.\n\nRecorded facts (not a confirmation):\nDraft only.",
       capability: "general_conversation",
       operation: "read",
@@ -129,7 +133,7 @@ describe("Agent workspace", () => {
     });
     apiMocks.confirmProposal.mockResolvedValue({
       proposal_id: "p1",
-      conversation_id: "c1",
+      conversation_id: "11111111-1111-4111-8111-111111111111",
       kind: "propose_journal_entry",
       artifact_kind: "journal_entry",
       status: "applied",
@@ -144,6 +148,7 @@ describe("Agent workspace", () => {
     cleanup();
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
     apiMocks.killSwitchActive = false;
   });
@@ -279,7 +284,7 @@ describe("Agent workspace", () => {
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     apiMocks.agentTurn.mockResolvedValue({
       user_message_id: "m1", assistant_message_id: "m2",
-      conversation_id: "c1",
+      conversation_id: "11111111-1111-4111-8111-111111111111",
       reply:
         "Conclusion: wait.\n\nRecorded facts (not a confirmation):\nExcerpt.",
       recorded_evidence: "Full governed evidence beyond the reply budget.",
@@ -332,7 +337,7 @@ describe("Agent workspace", () => {
         expect(apiMocks.agentTurn).toHaveBeenCalledExactlyOnceWith(
           {
             message: text + " carefully",
-            conversation_id: "c1",
+            conversation_id: "11111111-1111-4111-8111-111111111111",
             source_document_id: undefined,
           },
           { signal: expect.any(AbortSignal), headers: { "Idempotency-Key": expect.any(String) } },
@@ -380,6 +385,119 @@ describe("Agent workspace", () => {
     expect(apiMocks.agentTurn.mock.calls[1][0]).toEqual(original[0]);
     expect(apiMocks.agentTurn.mock.calls[1][1].headers).toEqual(original[1].headers);
     expect(original[0].conversation_id).toBeUndefined();
+  });
+
+  it("lets locally rejected input be corrected and submitted through the generated client", async () => {
+    apiMocks.agentTurn.mockImplementation(agentTurn);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(agentTurnFixture)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AgentWorkspace />);
+    const invalid = "x".repeat(8001);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: invalid } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(/Invalid API request/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pendingFor(recoveryScope, null)).toBeNull();
+    expect(screen.queryByTestId("agent-turn-recovery")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveValue(invalid);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Corrected intent" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(agentTurnFixture.reply);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message: "Corrected intent" });
+    expect(screen.queryByTestId("agent-turn-recovery")).not.toBeInTheDocument();
+  });
+
+  it("retains the attachment preview and imported reference after local rejection", async () => {
+    apiMocks.agentTurn.mockImplementation(agentTurn);
+    const documentId = "44444444-4444-4444-8444-444444444444";
+    apiMocks.previewFile.mockResolvedValue({ title: "rules", extracted_text: "My rules", warnings: [], preview_receipt: "receipt" });
+    apiMocks.importFile.mockResolvedValue({ document_id: documentId });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(agentTurnFixture)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AgentWorkspace />);
+    const file = new File(["My rules"], "rules.txt", { type: "text/plain" });
+    fireEvent.click(screen.getByRole("button", { name: "Attach document" }));
+    fireEvent.change(screen.getByLabelText("Attach document"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview attachment" }));
+    await screen.findByLabelText("Attachment preview");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "x".repeat(8001) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(/Invalid API request/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Attachment preview")).toHaveValue("My rules");
+    expect(screen.queryByTestId("agent-turn-recovery")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Use my rules" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(agentTurnFixture.reply);
+    expect(apiMocks.importFile).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message: "Use my rules", source_document_id: documentId });
+  });
+
+  it("retains a timed-out generated request across remount and only replays it on explicit recovery", async () => {
+    apiMocks.agentTurn.mockImplementation(agentTurn);
+    const fetchMock = vi.fn().mockImplementationOnce((_url, options: RequestInit) => new Promise((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    })).mockResolvedValue(new Response(JSON.stringify(agentTurnFixture)));
+    vi.stubGlobal("fetch", fetchMock);
+    const first = render(<AgentWorkspace />);
+    await waitFor(() => expect(apiMocks.listConversations).toHaveBeenCalled());
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Original intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
+    expect(screen.getByRole("alert")).toHaveTextContent("recover its saved result");
+    const original = fetchMock.mock.calls[0][1];
+    const pending = pendingFor(recoveryScope, null)!;
+    expect(pending.body).toEqual(JSON.parse(original.body));
+    expect(pending.key).toBe(original.headers["Idempotency-Key"]);
+    await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
+    expect(fetchMock).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+    first.unmount();
+    render(<AgentWorkspace />);
+    await screen.findByTestId("agent-turn-recovery");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "A separate edited draft" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Recover original request" }));
+    await screen.findByText(agentTurnFixture.reply);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].body).toBe(original.body);
+    expect(fetchMock.mock.calls[1][1].headers["Idempotency-Key"]).toBe(pending.key);
+    expect(screen.getByLabelText("Message")).toHaveValue("A separate edited draft");
+    expect(pendingFor(recoveryScope, agentTurnFixture.conversation_id)).toBeNull();
+  });
+
+  it.each([
+    ["a contract-invalid body", JSON.stringify({ reply: "Possibly completed" }), /API response did not match its contract/],
+    ["invalid JSON", "{", /API returned an invalid response/],
+  ])("retains recovery after a successful HTTP response with %s", async (_label, body, error) => {
+    apiMocks.agentTurn.mockImplementation(agentTurn);
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(body, { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify(agentTurnFixture)));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Original intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(error);
+    expect(screen.getByTestId("agent-turn-recovery")).toBeVisible();
+    const original = fetchMock.mock.calls[0][1];
+    const pending = pendingFor(recoveryScope, null)!;
+    expect(pending.body).toEqual(JSON.parse(original.body));
+    expect(pending.key).toBe(original.headers["Idempotency-Key"]);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Edited intent" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Recover original request" }));
+    await screen.findByText(agentTurnFixture.reply);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].body).toBe(original.body);
+    expect(fetchMock.mock.calls[1][1].headers["Idempotency-Key"]).toBe(pending.key);
+    expect(screen.queryByTestId("agent-turn-recovery")).not.toBeInTheDocument();
   });
 
   it("allows ordinary chat and voice while execution is globally paused", async () => {
@@ -450,7 +568,7 @@ describe("Agent workspace", () => {
   it("previews an attachment before sending and passes only its persisted document reference", async () => {
     apiMocks.agentTurn.mockResolvedValue({
       ...agentTurnFixture, user_message_id: "m1", assistant_message_id: "m2",
-      conversation_id: "c1", capture_status: "failed", saved_entries: [],
+      conversation_id: "11111111-1111-4111-8111-111111111111", capture_status: "failed", saved_entries: [],
       capture_source_message_id: "m1", capture_error: "Capture failed; reply saved.",
     });
     apiMocks.previewFile.mockResolvedValue({
@@ -459,7 +577,7 @@ describe("Agent workspace", () => {
       warnings: [],
       preview_receipt: "preview-receipt",
     });
-    apiMocks.importFile.mockResolvedValue({ document_id: "stored-doc" });
+    apiMocks.importFile.mockResolvedValue({ document_id: "44444444-4444-4444-8444-444444444444" });
     render(<AgentWorkspace />);
     fireEvent.click(screen.getByRole("button", { name: "Attach document" }));
     const file = new File(["Risk remains governed."], "rules.txt", {
@@ -483,7 +601,7 @@ describe("Agent workspace", () => {
         {
           message: "Use my rules",
           conversation_id: undefined,
-          source_document_id: "stored-doc",
+          source_document_id: "44444444-4444-4444-8444-444444444444",
         },
         { signal: expect.any(AbortSignal), headers: { "Idempotency-Key": expect.any(String) } },
       ),
@@ -497,7 +615,7 @@ describe("Agent workspace", () => {
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
     expect(await screen.findByText(/Source document retained in this conversation/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Open original document" })).toHaveAttribute(
-      "href", "/journal?tab=knowledge&document_id=stored-doc",
+      "href", "/journal?tab=knowledge&document_id=44444444-4444-4444-8444-444444444444",
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Capture failed");
   });
@@ -563,14 +681,14 @@ describe("Agent workspace", () => {
   it("confirms a proposal only from the explicit button", async () => {
     apiMocks.agentTurn.mockResolvedValue({
       user_message_id: "m1", assistant_message_id: "m2",
-      conversation_id: "c1",
+      conversation_id: "11111111-1111-4111-8111-111111111111",
       reply: "Drafted a journal proposal.",
       capability: "journal_capture",
       operation: "propose",
       proposals: [
         {
           proposal_id: "p1",
-          conversation_id: "c1",
+          conversation_id: "11111111-1111-4111-8111-111111111111",
           kind: "propose_journal_entry",
           artifact_kind: "journal_entry",
           status: "proposed",
@@ -599,7 +717,7 @@ describe("Agent workspace", () => {
       expect(apiMocks.confirmProposal).toHaveBeenCalledTimes(1),
     );
     expect(apiMocks.confirmProposal).toHaveBeenCalledWith("p1", {
-      conversation_id: "c1",
+      conversation_id: "11111111-1111-4111-8111-111111111111",
       expected_content_hash: "a".repeat(64),
       statement: "I confirm",
     }, { signal: expect.any(AbortSignal) });
@@ -609,7 +727,7 @@ describe("Agent workspace", () => {
   it("clears the previous conversation while loading another and preserves failed message drafts", async () => {
     apiMocks.listConversations.mockResolvedValue({
       items: [
-        { id: "c1", title: "BTC plan" },
+        { id: "11111111-1111-4111-8111-111111111111", title: "BTC plan" },
         { id: "c2", title: "ETH review" },
       ],
     });
@@ -671,7 +789,7 @@ describe("Agent workspace", () => {
     apiMocks.listMessages.mockResolvedValue({ items: [{ id: "other-message", role: "assistant", content: "Other conversation", created_at: "2026-10-09" }] });
     rerender(<AgentWorkspace />);
     await screen.findByText("Other conversation");
-    await act(async () => finish({ conversation_id: "c1", user_message_id: "m1", assistant_message_id: "m2", reply: "Late private response", proposals: [] }));
+    await act(async () => finish({ conversation_id: "11111111-1111-4111-8111-111111111111", user_message_id: "m1", assistant_message_id: "m2", reply: "Late private response", proposals: [] }));
     expect(screen.queryByText("Late private response")).not.toBeInTheDocument();
     expect(screen.queryByText("Old context")).not.toBeInTheDocument();
   });
@@ -690,15 +808,15 @@ describe("Agent workspace", () => {
   });
 
   it("authorizes strategy context before sending and performs no navigation mutation", async () => {
-    testParams = new URLSearchParams("strategy_id=owned-strategy");
-    apiMocks.getStrategy.mockResolvedValue({ id: "owned-strategy", name: "Owned plan" });
+    testParams = new URLSearchParams("strategy_id=55555555-5555-4555-8555-555555555555");
+    apiMocks.getStrategy.mockResolvedValue({ id: "55555555-5555-4555-8555-555555555555", name: "Owned plan" });
     render(<AgentWorkspace />);
     await screen.findByText("Strategy: Owned plan");
     expect(apiMocks.agentTurn).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "Back to strategy" })).toHaveAttribute("href", "/strategy-lab/owned-strategy");
+    expect(screen.getByRole("link", { name: "Back to strategy" })).toHaveAttribute("href", "/strategy-lab/55555555-5555-4555-8555-555555555555");
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Discuss changes" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledWith(expect.objectContaining({ strategy_id: "owned-strategy", message: "Discuss changes" }), expect.any(Object)));
+    await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledWith(expect.objectContaining({ strategy_id: "55555555-5555-4555-8555-555555555555", message: "Discuss changes" }), expect.any(Object)));
   });
 
   it("blocks sending when strategy access fails", async () => {
@@ -728,8 +846,8 @@ describe("Agent workspace", () => {
 
   it("a pending proposal decision cannot alter a newly selected conversation", async () => {
     let finish!: (value: unknown) => void;
-    apiMocks.agentTurn.mockResolvedValue({ conversation_id: "c1", user_message_id: "u", assistant_message_id: "a", reply: "Draft proposal",
-      proposals: [{ proposal_id: "p1", conversation_id: "c1", summary: "Draft journal", status: "proposed", kind: "propose_journal_entry" }] });
+    apiMocks.agentTurn.mockResolvedValue({ conversation_id: "11111111-1111-4111-8111-111111111111", user_message_id: "u", assistant_message_id: "a", reply: "Draft proposal",
+      proposals: [{ proposal_id: "p1", conversation_id: "11111111-1111-4111-8111-111111111111", summary: "Draft journal", status: "proposed", kind: "propose_journal_entry" }] });
     apiMocks.confirmProposal.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const { rerender } = render(<AgentWorkspace />);
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Draft" } });
@@ -738,7 +856,7 @@ describe("Agent workspace", () => {
     testParams = new URLSearchParams("conversation=other");
     apiMocks.listMessages.mockResolvedValue({ items: [] });
     rerender(<AgentWorkspace />);
-    await act(async () => finish({ proposal_id: "p1", conversation_id: "c1", status: "applied" }));
+    await act(async () => finish({ proposal_id: "p1", conversation_id: "11111111-1111-4111-8111-111111111111", status: "applied" }));
     expect(screen.queryByTestId("agent-proposals")).not.toBeInTheDocument();
   });
 

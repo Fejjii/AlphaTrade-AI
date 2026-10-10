@@ -41,9 +41,13 @@ duplicate does not add an event. Embedding batches/retries record actual or
 explicitly estimated provider usage under `rag_indexing`; each batch checks the
 existing monthly token/cost and daily request budget before its remote call.
 Blocked budgets produce `indexing_quota_exhausted` and bounded pending/failure,
-without a provider call. Admission plus indexing events both count toward the
-existing daily request counter; review that conservative accounting when sizing
-worker throughput. Estimates do not claim billing-grade cost.
+without a provider call. The daily request counter counts content/turn admissions;
+`rag_indexing` batches and retries do not add request admissions. They still retain
+usage event, token and cost accounting, and the worker checks the current daily
+admission budget before each remote batch. Attempts covered by a durable turn
+admission likewise do not add admissions; historical events without that marker
+retain conservative legacy counting. Size worker throughput against provider and
+token/cost capacity separately. Estimates do not claim billing-grade cost.
 
 `POST /knowledge/documents/{id}/retry-indexing` retries an exhausted/unknown job in
 the exact authenticated owner scope, preserves identity and returns pending.

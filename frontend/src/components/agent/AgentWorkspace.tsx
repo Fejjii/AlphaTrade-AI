@@ -8,6 +8,7 @@ import { SavedReceipt } from "@/components/agent/SavedReceipt";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiError } from "@/lib/api/client";
+import { agentTurnRequest } from "@/lib/api/generated/validators";
 import { clearPendingTurns, pendingFor, persistPending, recoveryDetails, removePending, type PendingTurn, type TurnBody } from "./turn-recovery";
 import { StrategyDraftReview } from "./StrategyDraftReview";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -314,6 +315,10 @@ export function AgentWorkspace() {
             arguments: { text: (attachmentPreview?.extracted_text ?? text).slice(0, 4000), ...(documentId ? { evidence_document_ids: [documentId] } : {}), ...(strategyContext ? { strategy_id: strategyContext.id } : { setup_type: setupType }) },
           } } : {}),
       };
+      // Local rejection cannot have an uncertain server outcome. Validate the complete
+      // body with the transport's generated schema before retaining it for recovery.
+      if (!agentTurnRequest(body))
+        throw new ApiError("Invalid API request. Check the supplied fields.", 0, null);
       const request: PendingTurn = recovery ?? { key: crypto.randomUUID(), body,
         conversationId: conversationId, state: "uncertain", createdAt: new Date().toISOString() };
       rememberPending(request);

@@ -9,6 +9,15 @@ vi.mock("./client", async (importOriginal) => {
 });
 
 describe("generated HTTP boundaries", () => {
+  it("rejects overlong requests before transport and accepts the schema boundary", async () => {
+    vi.mocked(apiFetch).mockClear().mockResolvedValue(agentTurnFixture);
+    await expect(api.agent.turn({ message: "x".repeat(8001) })).rejects.toMatchObject({
+      status: 0, message: "Invalid API request. Check the supplied fields.",
+    });
+    expect(apiFetch).not.toHaveBeenCalled();
+    await expect(api.agent.turn({ message: "x".repeat(8000) })).resolves.toEqual(agentTurnFixture);
+    expect(apiFetch).toHaveBeenCalledOnce();
+  });
   it("requires both stable message IDs and validates Boolean authority", () => {
     expect(validators.agentTurnResponse({ ...agentTurnFixture, authority_mutated: true })).toBe(true);
     expect(validators.agentTurnResponse({ ...agentTurnFixture, assistant_message_id: undefined })).toBe(false);
