@@ -46,6 +46,17 @@ changed-file ESLint, standard API generation/drift checks and diff checks passed
 Application and test content is committed before publication; the final handoff records
 its exact tested revision. No full frontend/backend suite or production build was run.
 
+The first consolidated development run
+[38049647846](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38049647846)
+at `e019a214d8c264780a1346cb088ab5de945b8487` exposed one existing DailyReview
+test rendering Dashboard without its now-required auth context: **992 passed, one
+failed across 135 selected files**. Its fixture now explicitly supplies an absent
+account context; all DailyReview assertions remain, and separate native Dashboard
+tests still exercise authenticated account changes. The affected four-file selection
+passes **49 cases**. This is a test-fixture correction, with no application source
+change. The final handoff records its revision and subsequent focused results; the
+earlier run is not green acceptance of the corrected revision.
+
 Standard generated full-schema SHA256:
 `250caeb28a2088d71e05269837f98f8ce864bc2811e577d793acaf4dac68fe4e`.
 The scoped PR239 contract hash matches
