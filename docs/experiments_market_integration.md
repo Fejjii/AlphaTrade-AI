@@ -158,7 +158,12 @@ TTL freshness, concurrent collection/copy independence and actual voice readines
 Strict mypy on the two authoring services and hardened resolver sources, changed-file
 Ruff/format, frontend typecheck/ESLint, generated API/pure-schema drift and one-head
 checks pass. Late authoring annotations/local variable renames preserve tested behavior.
-The final publication's automatic focused CI is recorded separately with its exact SHA.
+Automatic focused CI38088701542 at e81bcb28 reported354 frontend passes and one
+new recovery-test failure: the test clicked the pending Recover control before the
+first request finished and it became enabled. Both analogous tests now await actual
+readiness; all20 affected component cases pass. No product behavior changed. The
+backend result and corrective candidate's focused CI are recorded separately in the
+PR/checkpoint. No earlier run is acceptance of the corrected revision.
 
 Reproduction uses explicitly disposable loopback PostgreSQL `alphatrade_test`:
 

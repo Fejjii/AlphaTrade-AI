@@ -74,6 +74,7 @@ it("keeps an ambiguous original when its explicit retry is forbidden", async () 
   render(<ExperimentDraftPanel strategyId={version.configuration.strategy_id} name="TrendPulse" />); await fill();
   fireEvent.click(screen.getByRole("button", { name: "Create experiment draft" }));
   await screen.findByRole("button", { name: "Recover draft" }); const original = vi.mocked(experimentCreate).mock.calls[0][0];
+  await waitFor(() => expect(screen.getByRole("button", { name: "Recover draft" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Recover draft" }));
   await waitFor(() => expect(vi.mocked(experimentCreate).mock.calls).toHaveLength(2));
   await waitFor(() => expect(screen.getByRole("button", { name: "Recover draft" })).toBeEnabled());

@@ -94,6 +94,7 @@ describe("durable research screening", () => {
       .mockRejectedValueOnce(new ApiError("forbidden", 403, { error: { code: "forbidden" } }));
     render(<ScreeningsPanel version={version} />); await enter(); fireEvent.click(screen.getByRole("button", { name: "Screen trigger" }));
     await screen.findByRole("button", { name: "Recover screening" }); const original = vi.mocked(trendpulseScreen).mock.calls[0][2];
+    await waitFor(() => expect(screen.getByRole("button", { name: "Recover screening" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Recover screening" }));
     await waitFor(() => expect(vi.mocked(trendpulseScreen).mock.calls).toHaveLength(2));
     await waitFor(() => expect(screen.getByRole("button", { name: "Recover screening" })).toBeEnabled());
