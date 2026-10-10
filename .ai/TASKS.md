@@ -2544,7 +2544,9 @@ automatic focused CI305 backend/no skips and12 frontend. Screening:36 new and329
 combined focused passes/no skips, shared drift, Ruff/format/strict typing and
 frontend generated-contract/lint/typecheck pass. Untuned four-regime synthetic
 replay192 decisions/zero signals; genuine original-arrival market replay remains
-unverified. One reserved a12 aftera11, coordination posted; integration merge
+unverified. Migration compatibility follow-up33 passes/no skips, all legacy
+current-head guards updated with history/merge assertions preserved. One reserved
+a12 aftera11, coordination posted; integration merge
 sequencing acknowledgment remains a prerequisite. Exact continuation SHA/automatic
 focused CI in draft PR and docs/trendpulse_screening_verification.md.
 Continue PR243 bab0e9ce; publish the receipt eligibility

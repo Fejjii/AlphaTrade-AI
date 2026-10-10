@@ -38,6 +38,14 @@ no skipped PostgreSQL cases are counted as passing.
   lifecycle/promotion/immutability, precision/risk, concurrent identities, real
   migration round trips, existing native-activity worker isolation/shutdown,
   watcher ownership, and provider finality.
+- Migration compatibility follow-up: **33 passed in55.05s, zero skips** across
+  nine affected migration/learning/Journal files. This includes four cases already
+  present in the329 selection; these counts are not an additional33 unique cases.
+  The first screening push missed legacy current-head guards. A disposable local
+  run reproduced **5 failed /1 passed** solely on a11-versus-a12 expectations.
+  All current-head consumers now explicitly expect a12 while preserving a11→a10
+  ancestry, accepted merge topology and history-preservation assertions. No
+  historical migration or production screening code changed in this follow-up.
 - Repository Ruff check and format check: pass (1233 files already formatted).
   Scoped strict mypy: pass, seven new source files. This does not claim repository
   wide mypy cleanliness.
@@ -109,6 +117,8 @@ is the loopback container used for this task; never substitute a production URL.
 ```sh
 export EXPERIMENT_TEST_POSTGRES_URL=postgresql+psycopg://alphatrade:alphatrade@127.0.0.1:55439/alphatrade_test
 export PHASE1_POSTGRES_URL="$EXPERIMENT_TEST_POSTGRES_URL"
+export AT028_POSTGRES_URL="$EXPERIMENT_TEST_POSTGRES_URL"
+export BLOFIN_ACTIVITY_TEST_POSTGRES_URL="$EXPERIMENT_TEST_POSTGRES_URL"
 .venv/bin/pytest -o addopts='' -q \
   tests/test_trendpulse_1r_adapter.py tests/test_trendpulse_1r_experiment_contract.py \
   tests/test_trendpulse_1r_domain.py tests/test_trendpulse_screening_acquisition.py \
@@ -119,6 +129,13 @@ export PHASE1_POSTGRES_URL="$EXPERIMENT_TEST_POSTGRES_URL"
   tests/test_experiment_migration.py tests/test_manual_demo_migration.py \
   tests/test_watcher_paper_activation.py tests/test_blofin_activity_worker.py \
   tests/test_watcher_worker_ownership.py tests/test_binance_candle_finalization.py --tb=short
+.venv/bin/pytest -o addopts='' -q \
+  tests/test_blofin_activity_migration.py tests/test_knowledge_indexing_migration.py \
+  tests/test_knowledge_file_migration.py tests/test_release_wave002_migrations.py \
+  tests/test_phase2_4_alembic_postgres.py tests/test_phase8_learning_persistence.py \
+  tests/test_journal_trades_alembic_empty_tenant.py \
+  tests/test_trendpulse_screening_migration.py tests/test_experiment_migration.py \
+  --tb=short --show-capture=no
 .venv/bin/ruff check . ../scripts/run_backend_focused.py ../scripts/run_frontend_focused.py
 .venv/bin/ruff format --check . ../scripts/run_backend_focused.py ../scripts/run_frontend_focused.py
 .venv/bin/mypy --strict --follow-imports=silent \
