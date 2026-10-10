@@ -116,9 +116,7 @@ def main() -> int:
     parser.add_argument("--list-only", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    selection = select_tests(
-        changed_paths(root, args.base, args.head), root / "backend"
-    )
+    selection = select_tests(changed_paths(root, args.base, args.head), root / "backend")
     if not selection:
         raise ValueError("Focused selection must not be empty.")
     message = "Focused backend development checks; full backend release acceptance is pending."

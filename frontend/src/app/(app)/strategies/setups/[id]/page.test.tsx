@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { BrainSetup } from "@/lib/api/brain-types";
 import BrainSetupPage from "./page";
 
@@ -35,9 +35,14 @@ const setup: BrainSetup = {
   stop: null,
   targets: [],
 };
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-02T00:00:00Z"));
+});
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.useRealTimers();
 });
 it("shows the SFP condition, bound timeframe and research scope in stored details", async () => {
   mocks.setup.mockResolvedValue(setup);
