@@ -154,3 +154,64 @@ its expected CONFIRMED state now runs with a fixed October 2 Date. Runtime expir
 checks and the existing assertions remain intact. Focused setup test, frontend
 lint/types and complete Ruff/format checks pass. Runtime bytes remain unchanged.
 The next push consolidates both repairs; required CI must cover its exact new head.
+
+## Second PR CI and focused browser repair
+
+[Run 38007952825](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38007952825)
+covers `038983f8ce85e4b5ce826551504cb16e0bdb83fe`. Five jobs passed: backend
+519 tests/no skips (283.12s), Ruff/format; frontend 232 files/1,481 tests
+(143.97s), drift/lint/types and normal production build (61 pages); Docker;
+deployment safety; Agent 16/16, RAG 5/5 and guardrails 7/7. Browser failed:
+53 passed, one failed, one retry pass, 13 existing environment-gated skips.
+The failed import path persisted its document and conversation reference but
+omitted the original source from the capture-failure receipt. The intermittently
+missing exact-document notice was gated by unrelated library requests/polling.
+This run is not acceptance of a later revision.
+
+Repair `a63abe1d47e6827d7cd915d39f83b9064e0c1b9f` changes frontend presentation,
+source acknowledgment metadata and exact-source loading. Backend/runtime/schema
+and rollout flags are unchanged. The working tree tested below was committed
+without changing the tested implementation. Capture failures remain visible;
+the source link now remains visible after reload. Exact source loading does not
+await unrelated listings, with a regression that leaves both lists stalled.
+Existing browser assertions remain and the import test adds reload/link assertions.
+
+Focused commands (`frontend`), each exit 0:
+
+```sh
+npm test -- --maxWorkers=4 src/components/agent/AgentWorkspace.test.tsx \
+ src/components/agent/acknowledged-turn.test.ts 'src/app/(app)/knowledge/page.test.tsx'
+npm run lint
+npm run typecheck
+NEXT_FONT_GOOGLE_MOCKED_RESPONSES="$PWD/test-fixtures/offline-fonts.cjs" npm run build
+PLAYWRIGHT_PRODUCTION=true CI=true UV_CACHE_DIR=/tmp/agent2-uv-cache \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+SIMPLIFIED_UI_SHOTS=/tmp/integration-browser-evidence npx playwright test \
+ e2e/simplified-ui-smoke.spec.ts e2e/readiness-validation.spec.ts \
+ --project=chromium --retries=0 --reporter=line
+```
+
+Unit: 49 passed/three files, 5.92s. Build: 61 pages. Browser: five passed,
+zero skips/retries, 20.1s. Earlier local reproduction at 038983f failed the import
+receipt and passed four other cases (35.9s), so the receipt defect reproduced.
+The complete backend suite was not run during these frontend repairs.
+
+Local focused-selector diagnostic during the first CI repair, implementation
+`f2cbf3b`: `run_backend_focused.py --base b165b92276346f0e0fe3ccdbd2bec3443dc75d40
+--head a93d8c443743414ceae123bb44c90a85fdab8614` selected 38 files/nodes.
+Exit 1: 518 passed and one migration database-name guard failed (219.05s).
+The local URL pointed to disposable `postgres`, while that test requires
+`alphatrade_knowledge_test` or `alphatrade_test`; the guard was preserved.
+After creating the correctly named disposable database, at 038983f:
+
+```sh
+KNOWLEDGE_POSTGRES_URL=postgresql+psycopg://agent2@127.0.0.1:55432/alphatrade_knowledge_test \
+ .venv/bin/pytest -o addopts='' -q tests/test_knowledge_file_migration.py
+```
+
+Exit 0: two passed, 0.22s. Do not add these overlapping counts to another selection.
+The successful 519-test CI result above uses PostgreSQL's guarded database name.
+
+The final documentation follow-up does not change tested code. Required PR CI
+must cover its actual published head; record that final run in the PR description
+and canonical handoff, without another evidence-only product push.

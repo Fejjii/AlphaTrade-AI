@@ -99,3 +99,14 @@ contracts, tenant privacy, risk/approval controls and runtime settings are prese
 
 ## Integration contract update
 Source 69778070 remains preserved. Integration retains original UUID/body in authenticated tab storage until terminal acknowledgment or explicit terminal recovery, clears scope on logout, and exposes typed 409 reasons and explicit same-key recovery. Acknowledged history pairs preserve order and metadata across partial reads. Conversation strategy binding is loaded from SQL-backed conversation GET; it takes precedence over the entry URL. Browser requests are direct to the API, with a 360-second abort budget. Draft authoring/import uses explicit strategy actions, then the canonical preview/confirm/version/compile/approve endpoints. Imports remain separate from tool-action envelopes. Setup type is saved and reloaded; confirmation does not grant execution. Generated contracts include turns, chat/recovery and knowledge indexing states with strict date-time validation. CI checks drift and registers reviewer tests against the verified production build.
+### Consolidation browser follow-up
+
+Integration repair a63abe1 retains an uploaded document's original reference in
+acknowledged user-message metadata and its receipt even when capture fails. The
+same reference is read from persisted history after reload; the capture error
+remains visible. Exact saved-record/document navigation reads its target without
+unrelated library listings or readiness polling. The original import browser
+assertions remain, with additional reload/link assertions. Focused verification:
+49 unit tests, lint/types, 61-page production build and five production browser
+cases passed without retries. Final exact-head PR CI belongs to the integration
+ledger, PR237 description and canonical handoff.
