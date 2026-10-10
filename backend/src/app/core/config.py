@@ -316,6 +316,8 @@ class Settings(BaseSettings):
     # Phase 5 perpetual evidence: replay fixtures by default; live USD-M is opt-in.
     # Never falls back to spot. Values: replay | binance_usdm | bybit_usdt_perpetual
     perpetual_evidence_source: str = "replay"
+    # Separate on-demand research API; no scheduler, execution or automatic activation.
+    trendpulse_screening_enabled: bool = False
     # Optional whole-source failover. none | bybit_usdt_perpetual. Not a price substitute.
     perpetual_evidence_secondary_source: str = "none"
     bybit_perpetual_base_url: str = "https://api.bybit.com"

@@ -3149,3 +3149,19 @@ Later receipts cannot alter an earlier evaluation; new decisions expire at 60s.
 Decision time is recorded/hashed; the natural UUID includes the adapter version.
 Authored parameter v1, all thresholds, structural stops and rounded gross 1R remain
 unchanged. Publish this correction separately before any screening persistence.
+
+## AT-ADR-102 — One-trigger screening persists evidence without execution authority
+
+AT-121 continues from the separately published receipt correction 8b9d1b8 on a
+future feature branch. One on-demand authenticated producer acquires at most five
+GET-only public requests, evaluates at the actual post-close server decision,
+and appends original receipts plus qualified/no-setup/refused/unavailable outcomes.
+Nonblocking PG single-flight and process capacity protect the existing worker;
+database uniqueness and immutable guards preserve dedupe across restarts. Explicit
+public/recorded/synthetic provenance cannot grant native execution/sample authority.
+Authenticated bounded GET summaries/detail consume durable records. One reserved
+a12 follows a11; integration coordination and schema adoption remain outside RC.
+Synthetic untuned four-regime replay yields192 no-setups/zero signals; genuine
+original-arrival market replay remains unverified. Disabled defaults, gross1R,
+structural stops, no runner, no quantity/sample/performance or operator changes.
+See docs/trendpulse_screening_contract.md and verification handoff.

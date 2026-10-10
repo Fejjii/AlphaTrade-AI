@@ -219,6 +219,7 @@ from app.schemas.trade_plan import (
 from app.schemas.trade_plan import (
     ExecutionMode as PlanExecutionMode,
 )
+from app.strategy_brain.trendpulse_screening.models import TrendPulseScreeningRow  # noqa: F401
 
 _MONEY = Numeric(20, 8)
 _ENUM_LEN = 40
