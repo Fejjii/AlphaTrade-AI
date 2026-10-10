@@ -28,7 +28,8 @@ def test_indexing_migration_from_reviewed_head_and_roundtrip(monkeypatch):
     config.set_main_option("script_location", str(root / "src/app/db/migrations"))
     monkeypatch.setenv("ALEMBIC_DATABASE_URL", url)
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["a9knowledgeoutbox001"]
+    assert scripts.get_heads() == ["a10blofinactivity001"]
+    assert scripts.get_revision("a10blofinactivity001").down_revision == "a9knowledgeoutbox001"
     assert scripts.get_revision("a9knowledgeoutbox001").down_revision == "a8agentcapture001"
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE"))
@@ -47,7 +48,7 @@ def test_indexing_migration_from_reviewed_head_and_roundtrip(monkeypatch):
     with engine.connect() as connection:
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "a9knowledgeoutbox001"
+            == "a10blofinactivity001"
         )
         assert (
             connection.scalar(text("SELECT title FROM documents WHERE id=:id"), {"id": identifier})
