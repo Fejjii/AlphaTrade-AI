@@ -29,7 +29,52 @@ ancestor. Head branch `codex/generic-experiment-domain` targets the separate fro
 - Changed source/tests Ruff and format checks pass. Scoped strict mypy with
   `--follow-imports=silent` passes for all ten new source files; this does not claim
   repository-wide type cleanliness. Scoped OpenAPI equality and `git diff --check`
-  pass. Frontend and CI have no feature changes.
+  pass. The integration correction below also regenerates shared API artifacts
+  and supplies the existing disposable CI PostgreSQL service to these fixtures.
+
+## PR241 integration correction from bed8994
+
+The original automatic focused CI at `bed8994634eee1fffab578c57edb7126db5fab2f`
+([run 38063897311](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38063897311))
+reported one failure, 179 passes and 68 skips. The manual-demo roundtrip upgraded
+to a11 but still asserted a10. Shared API drift failed for `openapi.json` and
+`hashes.json`; experiment PostgreSQL fixtures had no CI URL.
+
+One correction batch advances the roundtrip expectation, explicitly preserves
+a11 → a10 → a9 ancestry and every historical data assertion, regenerates the
+shared artifacts, and sets `EXPERIMENT_TEST_POSTGRES_URL` to the existing
+PostgreSQL 16 CI service. The focused selector, skip reporting, full-suite gate
+and disposable service are unchanged. No new service or migration is added.
+
+Local reproduction of the old roundtrip: one failure in 6.74s. Corrected affected
+selection: **75 passed in 27.37s, zero skips**, using a unique loopback PostgreSQL
+16 fixture. Ruff and formatting pass; scoped mypy passes all ten domain source
+files. Shared `npm run api:check` passes with schema SHA256
+`6f7f9ece7248442b53f9e3ebd84277053db284d1e52cf97a18a25ac5c4dcf0e3`.
+Frontend lint, typing, generated contract tests and focused CI policy evidence
+are recorded with the exact correction SHA in the PR description.
+
+Reproduction from `backend/`, after installing the locked development environment:
+
+```sh
+export EXPERIMENT_TEST_POSTGRES_URL=postgresql+psycopg://alphatrade:alphatrade@127.0.0.1:55439/alphatrade_test
+export PHASE1_POSTGRES_URL="$EXPERIMENT_TEST_POSTGRES_URL"
+.venv/bin/pytest -o addopts='' -q tests/test_manual_demo_migration.py \
+  tests/test_experiment_domain.py tests/test_experiment_risk.py \
+  tests/test_experiment_api.py tests/test_experiment_native_identity.py \
+  tests/test_experiment_concurrency.py tests/test_experiment_migration.py --tb=short
+.venv/bin/pytest -o addopts='' -q tests/test_backend_ci_scope.py
+.venv/bin/ruff check src/app/experiments src/app/schemas/experiments.py \
+  src/app/api/routes/experiments.py tests/test_manual_demo_migration.py
+.venv/bin/ruff format --check src/app/experiments src/app/schemas/experiments.py \
+  src/app/api/routes/experiments.py tests/test_manual_demo_migration.py
+.venv/bin/mypy --follow-imports=silent src/app/experiments \
+  src/app/schemas/experiments.py src/app/api/routes/experiments.py
+```
+
+From `frontend/`: `npm run api:generate`, `npm run api:check`, `npm run lint`,
+`npm run typecheck`, and
+`npx vitest run src/lib/api/generated-contracts.test.ts`.
 
 ## Exact focused reproduction
 
@@ -71,7 +116,7 @@ native venue performance or completed-trade reconciliation.
 Keep this draft outside PR237's current release candidate. Integration must reserve
 a11 after a10, or regenerate/resequence this one revision against any intervening
 approved migration, preserving one head and historical data. Review the published
-OpenAPI before generating shared clients or adding Dashboard/Journal presentation.
+OpenAPI and regenerated shared artifacts before adding Dashboard/Journal presentation.
 Provide `EXPERIMENT_TEST_POSTGRES_URL` for the experiment fixture selection; skips
 without a disposable database do not establish PostgreSQL acceptance.
 

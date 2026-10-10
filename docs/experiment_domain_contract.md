@@ -113,6 +113,7 @@ strategy adapters, fresh native execution UID verification, atomic account-wide
 reservations/loss counters and existing final dispatch authorities.
 
 No full backend CI, deployment, external orders, credential changes or activation.
-Shared client/presentation owners can use the published schema and API; generated
-clients, Dashboard and Journal are outside this PR. Integration should adopt the
+Shared API artifacts are regenerated in the integration correction; presentation
+owners can use the published schema and API. Dashboard and Journal remain outside
+this PR. Integration should adopt the
 migration and feature only in a later batch, preserving one Alembic head.

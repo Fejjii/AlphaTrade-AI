@@ -2506,7 +2506,12 @@ See docs/blofin_native_activity.md for contract, milestones and integration.
 
 ## AT-119 — Generic Exploration and Validation experiment domain
 
-Status: READY (draft PR241; domain and focused fixture verification complete).
+Status: READY (draft PR241; domain and integration correction locally verified).
+Integration correction from bed8994: a11 roundtrip expectation and preserved ancestry,
+shared OpenAPI/hash regeneration, existing disposable CI PostgreSQL URL. Local
+affected selection 75 passed/no skips; CI policy 28 passed; frontend generated
+contracts 7 passed; drift/lint/typing pass. Exact final SHA and automatic focused
+CI evidence in PR241 and docs/experiment_domain_verification.md.
 Future feature branch based on PR237 619c15f; excluded from
 the current release candidate. Own backend, one additive a11 migration and API
 contract; publish the interface early. Preserve Nested/SFP and document the future
