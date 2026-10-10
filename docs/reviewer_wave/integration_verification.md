@@ -137,3 +137,20 @@ Local checks and focused PR CI do not constitute complete release acceptance.
 
 Readiness: local integration verification complete; inspect exact-head PR CI before
 supervising review. Full release acceptance and approved rollout remain pending.
+
+## First PR CI and focused repair
+
+PR237 first run [38007546047](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38007546047)
+covers `a93d8c443743414ceae123bb44c90a85fdab8614`: Docker and deployment-safety
+passed. Backend failed formatting of the shared selector; frontend passed schema
+export/drift/lint/types but its unit selection had 1,480 passes and one failure.
+Evaluation and browser jobs were skipped by failed dependencies. This run is not
+acceptance of this or a later revision.
+
+Repair `f2cbf3b756ca08a5c5452fccff7a1b7b60dcdd5d` changes only shared selector
+formatting and a frontend test clock. Ruff must run from `backend` with that
+configuration. The setup detail fixture expired at UTC midnight on October 10;
+its expected CONFIRMED state now runs with a fixed October 2 Date. Runtime expiry
+checks and the existing assertions remain intact. Focused setup test, frontend
+lint/types and complete Ruff/format checks pass. Runtime bytes remain unchanged.
+The next push consolidates both repairs; required CI must cover its exact new head.
