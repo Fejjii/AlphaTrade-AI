@@ -2503,3 +2503,14 @@ linkage, snapshot selection, long-lived order reconciliation, existing worker wi
 with disabled defaults and current migration-guard assertions.
 No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
 See docs/blofin_native_activity.md for contract, milestones and integration.
+
+## AT-119 — Generic Exploration and Validation experiment domain
+
+Status: IN_PROGRESS. Future feature branch based on PR237 619c15f; excluded from
+the current release candidate. Own backend, one additive a11 migration and API
+contract; publish the interface early. Preserve Nested/SFP and document the future
+deterministic TrendPulse1R adapter. Finite approved envelopes, immutable running
+configuration, tenant/verified account/source fences and independent promotion
+samples. Focused disposable-fixture verification only. No runtime activation,
+replacement engine, external orders, credential changes, deployment or full CI.
+Contract: docs/experiment_domain_contract.md.
