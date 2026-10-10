@@ -1,5 +1,10 @@
 # PR239 review-correction verification — AT-118
 
+The subsequent activity-worker timing correction and PR237 integration handoff are
+recorded in [the worker verification handoff](blofin_activity_worker_integration_handoff.md).
+The results below are historical evidence for `18e66da`; they do not supersede the
+integration failure reported against its original worker isolation test.
+
 Continuation baseline: `85adbde2b242340cac29b45b8673eb8296385903`.
 PR base remains `bda597c2fffbf1a49beadc64d757100808094ca2` on
 `codex/reviewer-wave-integration`. Tests ran October 10, 2026 from the isolated
