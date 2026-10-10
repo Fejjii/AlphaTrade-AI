@@ -98,7 +98,11 @@ class CanonicalEvidenceService:
 
             store = SetupLifetimeStore()
         self._assembler = FirstSliceEvidenceAssembler(
-            self._source, replay=self._replay, catalog=self._catalog, lifetime=store
+            self._source,
+            replay=self._replay,
+            catalog=self._catalog,
+            lifetime=store,
+            clock=self._clock,
         )
 
     def read(
@@ -331,6 +335,8 @@ def _unavailable_price(
 
 
 def _setup_from_assembly(assembled: AssembledCanonicalEvidence) -> CanonicalSetupEvidenceRead:
+    if assembled.cvd is None or assembled.signed_flow is None:
+        raise MarketContractError("Canonical first-slice read requires CVD and signed flow.")
     completeness = assembled.completeness
     return CanonicalSetupEvidenceRead(
         available=True,

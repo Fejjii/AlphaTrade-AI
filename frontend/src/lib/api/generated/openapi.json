@@ -23824,12 +23824,17 @@
       },
       "MarketEvidenceContext": {
         "additionalProperties": false,
+        "description": "Stable v1 optional context; required qualification uses canonical evidence.\n\nEvent selection can retain an earlier cutoff than evaluation/receipt. Every\navailable observation still needs a consumer freshness/hash/identity check.\nUnsupported capabilities below carry no inferred observations or values.",
         "properties": {
           "anchor_symbol": {
+            "maxLength": 32,
+            "minLength": 2,
             "title": "Anchor Symbol",
             "type": "string"
           },
           "anchor_venue": {
+            "maxLength": 32,
+            "minLength": 2,
             "title": "Anchor Venue",
             "type": "string"
           },
@@ -23859,6 +23864,27 @@
             "format": "date-time",
             "title": "Evaluated At",
             "type": "string"
+          },
+          "evidence_cutoff_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Cutoff At"
+          },
+          "historical_order_book": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
+          },
+          "open_interest_change": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
+          },
+          "open_interest_notional": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
           },
           "order_book": {
             "anyOf": [
@@ -48474,6 +48500,33 @@
         ],
         "title": "TurnOperation",
         "type": "string"
+      },
+      "UnavailableContextMetric": {
+        "additionalProperties": false,
+        "description": "Capability limitation, not an observation or a zero-valued market fact.",
+        "properties": {
+          "availability": {
+            "const": "UNSUPPORTED",
+            "default": "UNSUPPORTED",
+            "title": "Availability",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "null"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "UnavailableContextMetric",
+        "type": "object"
       },
       "UsageEvent": {
         "additionalProperties": false,

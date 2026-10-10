@@ -28,10 +28,13 @@ engine/transaction time. Null values remain null. Test transports/fixtures are
 explicitly deterministic tests; they are never installed as live production data.
 
 Live factory sources capture snapshots at receipt time. Optional Agent context
-uses a separate final `market_context_evaluated_at`, after collection; historical
-strategy evaluation keeps its original clock. An as-of reader rejects a later
-observation; a required consumer rejects any future observation/event. This avoids
-both silently backdating an HTTP response and accepting post-evaluation facts.
+uses a separate final `market_context_evaluated_at`, after collection. Required
+current scans keep a fixed event/candle cutoff and independently sample final
+acquisition/evaluation time; actual receipt may follow scan start, while events
+must satisfy the cutoff and receipts must not exceed completion. Frozen historical
+reads still reject later acquisition. See the [stable contract and experiment
+example](market_evidence_context_contract.md) for the PR242 timing correction,
+regressions and exact clock semantics.
 
 | Evidence | Binance USD-M USDT linear perpetual | Bybit USDT linear perpetual | Claimed coverage |
 | --- | --- | --- | --- |
@@ -168,7 +171,8 @@ samples with declared quantity conventions; do not qualify from current snapshot
 Native public endpoint and sequence/reconnect acceptance remains a separate read-only
 check in an exchange-permitted environment, without paid activation or orders.
 
-Focused verification (development scope, no complete backend acceptance):
+Foundation verification at `d4b98087` (before the required-timing correction;
+development scope, no complete backend acceptance):
 
 - `backend/.venv/bin/pytest` with `test_public_market_evidence_foundation.py`,
   `test_market_intelligence_oi_funding.py`, `test_market_intelligence_cvd_orderflow.py`,
@@ -182,3 +186,12 @@ Focused verification (development scope, no complete backend acceptance):
 - No full backend CI, manual workflow dispatch, deployment or native exchange orders.
 
 Exact published feature SHA and final check results are recorded in the draft PR.
+
+PR242 correction checks: **433 passed, 11 skipped** across the affected provider,
+assembler, canonical HTTP, Agent, diagnostic, evaluator and lifetime selection.
+The skipped durable-pin cases require disposable PostgreSQL; they are not counted
+as passing. New timing regressions: **30 passed**; stable-contract/experiment-example
+cases: **6 passed**. Scoped strict mypy: **13 source files**; focused frontend API
+tests: **15 passed**; Ruff and generated API/schema drift/typecheck passed.
+See [market_evidence_context_contract.md](market_evidence_context_contract.md) for
+baseline reproduction, clock admission, fixture coverage limits and the example.

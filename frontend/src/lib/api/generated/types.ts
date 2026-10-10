@@ -1564,7 +1564,14 @@ export interface components {
          * @enum {string}
          */
         MarginMode: "CROSS" | "ISOLATED";
-        /** MarketEvidenceContext */
+        /**
+         * MarketEvidenceContext
+         * @description Stable v1 optional context; required qualification uses canonical evidence.
+         *
+         *     Event selection can retain an earlier cutoff than evaluation/receipt. Every
+         *     available observation still needs a consumer freshness/hash/identity check.
+         *     Unsupported capabilities below carry no inferred observations or values.
+         */
         MarketEvidenceContext: {
             /** Anchor Symbol */
             anchor_symbol: string;
@@ -1591,6 +1598,11 @@ export interface components {
              * Format: date-time
              */
             evaluated_at: string;
+            /** Evidence Cutoff At */
+            evidence_cutoff_at?: string | null;
+            historical_order_book?: components["schemas"]["UnavailableContextMetric"];
+            open_interest_change?: components["schemas"]["UnavailableContextMetric"];
+            open_interest_notional?: components["schemas"]["UnavailableContextMetric"];
             order_book?: components["schemas"]["OrderBookObservation"] | null;
             order_flow?: components["schemas"]["OrderFlowObservation-Output"] | null;
             /**
@@ -3289,6 +3301,22 @@ export interface components {
          * @enum {string}
          */
         TurnOperation: "read" | "propose" | "refuse";
+        /**
+         * UnavailableContextMetric
+         * @description Capability limitation, not an observation or a zero-valued market fact.
+         */
+        UnavailableContextMetric: {
+            /**
+             * Availability
+             * @default UNSUPPORTED
+             * @constant
+             */
+            availability?: "UNSUPPORTED";
+            /** Reason */
+            reason: string;
+            /** Value */
+            value?: null;
+        };
         /**
          * UsageEvent
          * @description A single metered LLM/tool interaction.

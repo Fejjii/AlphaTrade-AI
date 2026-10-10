@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AwareDatetime, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 
 from app.market_contracts.derivatives import DerivativeObservation
 from app.market_contracts.models import CanonicalModel
@@ -14,19 +14,52 @@ from app.market_contracts.order_flow import OrderFlowObservation
 MarketContextObservation = DerivativeObservation | OrderFlowObservation | OrderBookObservation
 
 
+class UnavailableContextMetric(CanonicalModel):
+    """Capability limitation, not an observation or a zero-valued market fact."""
+
+    availability: Literal["UNSUPPORTED"] = "UNSUPPORTED"
+    value: None = None
+    reason: str = Field(min_length=3, max_length=120)
+
+
 class MarketEvidenceContext(CanonicalModel):
+    """Stable v1 optional context; required qualification uses canonical evidence.
+
+    Event selection can retain an earlier cutoff than evaluation/receipt. Every
+    available observation still needs a consumer freshness/hash/identity check.
+    Unsupported capabilities below carry no inferred observations or values.
+    """
+
     contract_version: Literal["public-market-context/v1"] = "public-market-context/v1"
     evaluated_at: AwareDatetime
-    anchor_venue: str
-    anchor_symbol: str
+    evidence_cutoff_at: AwareDatetime | None = None
+    anchor_venue: str = Field(min_length=2, max_length=32)
+    anchor_symbol: str = Field(min_length=2, max_length=32)
     derivatives: tuple[DerivativeObservation, ...] = ()
     order_flow: OrderFlowObservation | None = None
     order_book: OrderBookObservation | None = None
     cross_venue_components: tuple[str, ...] = ()
     qualification_authority: Literal[False] = False
+    open_interest_change: UnavailableContextMetric = Field(
+        default_factory=lambda: UnavailableContextMetric(
+            reason="no_verified_paired_causal_oi_samples"
+        )
+    )
+    open_interest_notional: UnavailableContextMetric = Field(
+        default_factory=lambda: UnavailableContextMetric(reason="native_oi_notional_not_collected")
+    )
+    historical_order_book: UnavailableContextMetric = Field(
+        default_factory=lambda: UnavailableContextMetric(
+            reason="historical_snapshot_coverage_unavailable"
+        )
+    )
 
     @model_validator(mode="after")
     def _labels(self) -> MarketEvidenceContext:
+        if self.evidence_cutoff_at is not None and self.evidence_cutoff_at > self.evaluated_at:
+            raise ValueError("Evidence cutoff cannot occur after evaluation.")
+        if len({x.metric for x in self.derivatives}) != len(self.derivatives):
+            raise ValueError("Each derivative metric must have one explicit source.")
         components: list[tuple[str, MarketContextObservation]] = [
             (x.metric.value, x) for x in self.derivatives
         ]

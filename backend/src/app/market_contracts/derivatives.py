@@ -223,6 +223,7 @@ def require_derivative_observations(
     required_metrics: Sequence[DerivativeMetric],
     identity: EvidenceMarketIdentity,
     evaluated_at: datetime,
+    event_cutoff_at: datetime | None = None,
 ) -> None:
     """Re-evaluate age at every strategy consumer boundary; no stale replay of a pass."""
     for metric in required_metrics:
@@ -251,6 +252,8 @@ def require_derivative_observations(
             raise WrongSourceError(f"required_{metric.value}:wrong_units_or_method")
         if item.observed_at > evaluated_at:
             raise StaleEvidenceError(f"required_{metric.value}:future_observation")
+        if event_cutoff_at is not None and item.event_time > event_cutoff_at:
+            raise WrongSourceError(f"required_{metric.value}:event_after_cutoff")
         evaluate_freshness(
             source_time=item.event_time,
             evaluated_at=evaluated_at,

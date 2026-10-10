@@ -1,6 +1,6 @@
 {
-  "openapi_sha256": "9d45b9d58d3effdb1ef547d16cfc8f62105e2456c28bda71aa10a383faf72571",
-  "pilot_sha256": "52579e49eda8486acf350e7259824ae28825195b2ea7a22cd7675f37a0f396e9",
+  "openapi_sha256": "dfb53b36c2e7c2e162231da7f4acb7fa010d55575d614c2e81b24514fa5f52a9",
+  "pilot_sha256": "a85eeb6eb632021448ff7b63ce1587c2f73b46bd1f6b1fbb61477cdde400620b",
   "schemas": {
     "ActionRequest": "3f1f59fc3e48b3482b6d6ab4166719d64a93ec682a89555b139463942fba145a",
     "ActivityCoverage": "593db271bff1b8543b9910846b4237056b30bd7c7b4dc69adb233ca74c50e36b",
@@ -61,7 +61,7 @@
     "KnowledgeHit": "b79f4aadefa0c3a51a44df44dcb88de8456e29dec8a797320f2e432b414985b6",
     "LearningEvidenceRef": "661834c6d60915a511af0a1f5795445d085d5f611ab2c32ebdc0ce20b8c9db09",
     "MarginMode": "0a3e42906ef2afcbef6d3c3c8e26bf229ccab1a892b435eb66531122ac1c0399",
-    "MarketEvidenceContext": "d961d08e5c65d3054d59eaf3248b994828dbca4aa38072d94b07bd09ea545afb",
+    "MarketEvidenceContext": "0277e3c7a445d0b8858c20a48e44311574f831ccf58a6ad55cd74af52a227353",
     "MarketQuoteView": "155909305d80346f39bbf159dac997cb00d98de2b8238c4181c85bb440d328fa",
     "MarketRegime": "c6a83a845c7a9c0a3a45e91771362de063941c7cb6491a18659f1e20aced1305",
     "NarrativeMetadata": "205c2b6d262bae04fa0871cf3cf523969dba9005ab23aae91e9d4869d2adb8ad",
@@ -138,6 +138,7 @@
     "TurnConflictError": "a0e45520d84adc8776136a28725d1063e4b54955aac24b10574346db721ffd25",
     "TurnConflictResponse": "e33d23c62aebc94b83c677742d69bbe60405ef46579cd444c09d473d1de0a0c3",
     "TurnOperation": "c0f6d37a69112ff780fc1ca4abc746d814411f5ee5f389b6184768cb177cbf85",
+    "UnavailableContextMetric": "c272b0ce935ee613a0db70abc155b4034fd5f272df135e88b9663cf5d63c3f70",
     "UsageEvent": "bdbfc7188aa400383c474ec5b4ee67b5bcb4b9bb175feb4b8191b946c1e999e5",
     "UsageStatus": "dc0b3469c0b63671af5aa19b6c2c758ed5d4810ea37de1dfca5ba5579978e2da",
     "UserStrategy": "802128253522becd8246961cd3369ec1b02b1ba0b2a6af0752ce38127c4c49d3",

@@ -34,6 +34,7 @@ def market_context_text(context: MarketEvidenceContext) -> str:
                 required_metrics=(item.metric,),
                 identity=item.identity,
                 evaluated_at=context.evaluated_at,
+                event_cutoff_at=context.evidence_cutoff_at,
             )
             parts.append(
                 f"{label}: {item.value} {item.units}; single provider record, "

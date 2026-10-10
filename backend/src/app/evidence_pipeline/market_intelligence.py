@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
@@ -95,7 +95,14 @@ def read_market_intelligence(
     observed_at: datetime,
     metrics: Sequence[DerivativeMetric] = tuple(DerivativeMetric),
     allow_later_observation: bool = False,
+    acquisition_clock: Callable[[], datetime] | None = None,
 ) -> tuple[DerivativeObservation, ...]:
+    """Read exact provider facts, with bounded receipt time for current scans.
+
+    An acquisition clock permits later receipts, never events beyond the fixed
+    requested cutoff. Without it, the strict as-of observation contract remains.
+    The optional presentation reader separately validates its final context clock.
+    """
     observations = []
     for metric in metrics:
         try:
@@ -120,10 +127,25 @@ def read_market_intelligence(
             if not isinstance(result, DerivativeObservation):
                 raise WrongSourceError("OI/funding provider returned an invalid observation.")
             result = DerivativeObservation.model_validate(result.model_dump())
+            completed_at = acquisition_clock() if acquisition_clock is not None else observed_at
+            if acquisition_clock is not None and (
+                completed_at.tzinfo is None
+                or completed_at.utcoffset() is None
+                or completed_at < observed_at
+                or result.observed_at > completed_at
+                or result.collected_at is None
+                or result.collected_at > completed_at
+                or (result.event_time is not None and result.event_time > observed_at)
+            ):
+                raise WrongSourceError("OI/funding violates the acquisition clock or event cutoff.")
             if (
                 result.metric is not metric
                 or result.identity != derivative_identity(identity, metric)
-                or (result.observed_at != observed_at and not allow_later_observation)
+                or (
+                    result.observed_at != observed_at
+                    and not allow_later_observation
+                    and acquisition_clock is None
+                )
                 or hash_derivative_observation(result).content_hash != result.content_hash
             ):
                 raise WrongSourceError("OI/funding result does not match the requested source.")

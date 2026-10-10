@@ -94,6 +94,7 @@ def _view(read: CanonicalEvidenceRead, *, is_stale: bool, is_live: bool) -> Mark
     )
     context = MarketEvidenceContext(
         evaluated_at=evaluated_at,
+        evidence_cutoff_at=read.timestamps.get("evaluated_at"),
         anchor_venue=read.source.venue,
         anchor_symbol=read.symbol,
         derivatives=read.market_intelligence,
