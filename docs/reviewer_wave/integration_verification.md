@@ -1,5 +1,9 @@
 # Consolidation verification ledger
 
+The a9 head recorded below is historical evidence at the named revisions. Current
+PR237 requires a8 → a9 → a10, with one final `a10blofinactivity001` head. Current
+rollout/rollback qualification is recorded in [release qualification](release_qualification.md).
+
 The latest narrow PR237 correction is recorded in **Local validation completion**
 below. The earlier integration results retain their original revision coverage.
 

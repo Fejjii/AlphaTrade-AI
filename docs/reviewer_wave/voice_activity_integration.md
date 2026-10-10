@@ -200,9 +200,10 @@ Rollback sequence:
    export; it drops those three tables. Rolling back further must also preserve the a9
    outbox/history. No hosted upgrade or rollback has been executed.
 
-The existing [staging smoke sequence](staging_smoke_sequence.md) is unchanged.
-Use this migration addendum with it; do not interpret its earlier a9-only baseline as
-permission to omit the new a10 head.
+The [staging smoke sequence](staging_smoke_sequence.md) deployment prerequisite
+now explicitly requires the a10 head; existing behavioral
+smoke assertions remain unchanged. See [release qualification](release_qualification.md)
+for the concrete migration-aware rollback and staging sequence.
 
 ## Hosted blockers and readiness
 

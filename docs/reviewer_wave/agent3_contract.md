@@ -31,8 +31,9 @@ PostgreSQL and repository autogeneration. Do not edit historical migrations.
 Upgrade schema before starting the bounded indexing runner; do not turn on trading.
 
 Agent 2's published manifest uses existing conversation messages and requests no
-new schema. The additive chain is `a8agentcapture001 -> a9knowledgeoutbox001`.
-Review the consolidated branch and its single head before deployment.
+new schema. Agent 3's owned addition is `a8agentcapture001 -> a9knowledgeoutbox001`.
+Current PR237 additionally includes `a10blofinactivity001` after a9; that is its
+single final head. Review the consolidated branch before deployment.
 
 ## Compatibility and visibility
 
@@ -64,7 +65,9 @@ Agent 3 owns dedicated widgets only if a defect is reproduced.
 Update: sibling manifests are now published and were read at Agent 2 `daa4f384`
 and Agent 1 `d24b45e0`. Agent 2 requests no new schema or accounting table: durable
 turn storage uses existing conversation messages. This leaves a coherent linear
-migration chain `a8agentcapture001 -> a9knowledgeoutbox001`, with one final head.
+migration continuation `a8agentcapture001 -> a9knowledgeoutbox001`. Subsequent
+PR239 integration appends a10, the current PR237 final head; a9 remains the historical
+Agent 3 feature head.
 The private/shared RAG filter and parent/chunk SQL checks implement Agent 2's
 requested interface; `STRATEGY_TEMPLATE` remains in Agent retrieval. Agent 1 owns
 the generated contracts and readiness UI after these schemas are published.

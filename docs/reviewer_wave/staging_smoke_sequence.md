@@ -13,12 +13,17 @@ an older revision does not accept the corrected candidate.
    staging tenant and non-sensitive synthetic documents; record the initial strategy
    versions and existing BloFin command/trade IDs. Keep credentials in the existing
    secret mechanism, outside screenshots and saved network traces.
-2. In the approved coordinated window, apply `a9knowledgeoutbox001` after
-   `a8agentcapture001`, retire old synchronous ingestion writers, and deploy API,
+2. In the approved coordinated window, apply
+   `a8agentcapture001 -> a9knowledgeoutbox001 -> a10blofinactivity001`;
+   require the single final head **a10**. Retire old synchronous ingestion writers,
+   and deploy API,
    frontend and worker from the same reviewed revision. Verify the API URL, CORS,
    cookie/auth behavior and ingress timeout against the 360-second turn budget.
    Indexing activation requires its separate rollout approval; leaving the flag
    false means pending uploads, not a failed smoke assertion of readiness.
+   Follow the exact target/order and retained-schema rollback in
+   [release qualification](release_qualification.md). The smoke assertions below
+   remain unchanged.
 3. Preserve the existing Watcher, Telegram, kill switch, credentials and exchange
    settings. Verify paper posture and `real_trading_enabled=false`. This sequence
    never previews/confirms an exchange order or invokes canonical execution.

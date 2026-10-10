@@ -65,8 +65,10 @@ search can opt into shared visibility. Rejected vector hits mark search degraded
 
 1. Integrate the three branches, regenerate Agent 1's OpenAPI/client contracts,
    and ensure a pending receipt shows stored content without claiming searchable.
-2. Upgrade the reviewed schema from `a8agentcapture001` to `a9knowledgeoutbox001`.
-   The revision was generated with Alembic against disposable PostgreSQL, filtering
+2. Upgrade the reviewed schema in order:
+   `a8agentcapture001 -> a9knowledgeoutbox001 -> a10blofinactivity001`.
+   PR237's single final head is **a10**, including native BloFin activity. The a9
+   indexing revision was generated with Alembic against disposable PostgreSQL, filtering
    only the owned additions; historical migrations were not edited. It adds nullable
    document generation and the outbox table/indexes/checks. Local upgrade,
    downgrade/reupgrade and legacy-content preservation are verified.
@@ -98,8 +100,9 @@ search can opt into shared visibility. Rejected vector hits mark search degraded
 
 ## Consolidated compatibility and rollback review
 
-The integration has exactly one Alembic head, `a9knowledgeoutbox001`, after
-`a8agentcapture001`. Apply the additive migration before any new API or worker code.
+PR237 has exactly one Alembic head, `a10blofinactivity001`, after
+`a8agentcapture001 -> a9knowledgeoutbox001`. Apply both additive revisions before
+any new API or worker code; stopping at a9 does not qualify this candidate.
 New writers require the outbox table and generation column. Old API writers remain
 schema-compatible but bypass generation fencing; stop or replace them before enabling
 new indexing. A mixed writer window does not establish knowledge consistency.
@@ -130,7 +133,11 @@ versions. Preserve SQL documents/chunks and export/drain durable jobs before con
 schema downgrade: downgrade removes jobs/generation tracking. Prefer keeping the additive
 schema while rolling code back, and do not restart old synchronous vector writers while
 new generations remain outstanding. Reconcile and verify scoped inventories after any
-subsequent reviewed restart. This document is a rollout plan; nothing was deployed.
+subsequent reviewed restart. A plain b165 image cannot resolve a9/a10 at startup.
+Use the migration-aware rollback package and coordinated sequence in
+[PR237 release qualification](release_qualification.md); keep the a10 native facts,
+accounts and cursors as well as a9 jobs and document generations. This document is
+a rollout plan; nothing was deployed.
 
 Browser requests go directly to `NEXT_PUBLIC_API_URL`; there is no Next API proxy in
 this repository. The browser abort budget and durable lease are 360 seconds. Provider

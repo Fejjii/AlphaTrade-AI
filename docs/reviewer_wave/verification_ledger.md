@@ -1,5 +1,10 @@
 # Agent 3 verification and delivery ledger
 
+Historical Agent 3 results below cover its a9 feature head. Current PR237 requires
+the single `a10blofinactivity001` head, following a8 → a9 → a10. Use
+[current release qualification](release_qualification.md) for rollout and rollback;
+these earlier results are not acceptance of a newer candidate.
+
 Baseline: PR233/main `b165b92276346f0e0fe3ccdbd2bec3443dc75d40`, verified
 as the isolated branch ancestor. Original checkout preserved. Product branch is
 `codex/reviewer-wave-data`; generated HANDOFF/CHANGELOG are published separately
