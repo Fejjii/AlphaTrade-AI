@@ -54,8 +54,9 @@ revision, exit codes/counts/skips and CI separately. Supervising review and appr
 staging validation precede the single full release dispatch in `.ai/RELEASE.md`.
 This task does not deploy or dispatch that gate prematurely.
 
-Status: integration repairs in progress. Detailed finding/fix/evidence and rollout
-ledgers will be published with the consolidation draft.
+Status: integration repairs and local verification complete; draft PR237 published.
+Required PR CI and the review-readiness decision are bound to their exact revision
+in the PR description and canonical handoff. Full release prerequisites remain pending.
 
 ## Findings, fixes and verification
 
@@ -70,6 +71,7 @@ ledgers will be published with the consolidation draft.
 | Authoring routes lacked a complete replacement journey | Explicit draft action, imported evidence reference, canonical confirmation/save, reload, compile and approve; preserve setup type and bind newly created strategy conversation | PostgreSQL/API exactly-once confirmation; real browser file-import journey; old panel unit assertions retained |
 | Handwritten indexing contracts rejected or mislabeled new states | Generated DTOs/validators/client, strict offset dates with SQLite UTC serialization, status/retry/poll UI and CI drift check | Generated indexing/decimal/date validation, frontend checks and independent HTTP setup-type reload |
 | Browser/evaluation fixtures assumed old responses and synchronous vectors | Contract-valid fixtures, real isolated outbox consumer, exact-document readiness wait; reviewer tests registered against production build | RAG 5/5; Agent 16/16; guardrails 7/7; final browser evidence in ledger |
+| Persisted uploads disappeared from receipts after capture failure; exact-document navigation waited on unrelated listings | Retain the acknowledged and historical source reference independently of capture, show its original-document link after reload, and load exact sources without library queries or readiness polling | Capture error and original-source link both visible; original import assertion preserved and strengthened after reload; stalled unrelated-list regression |
 | New asynchronous writes require coordinated rollout | One migration head; API/worker version compatibility, backlog/index inventory, activation defaults, older writer retirement and rollback plan | Disposable PostgreSQL migration upgrade/downgrade/reupgrade with legacy content retained |
 
 The BloFin browser fixtures validate recorded-evidence rendering and scoped local

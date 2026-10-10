@@ -199,6 +199,19 @@ it("retrieves an exact linked document without substituting another source", asy
     { scroll: false },
   );
 });
+it("resolves an unavailable exact document independently of stalled library lists", async () => {
+  state.params.set("document", "missing-for-readiness");
+  vi.mocked(savedEntries.list).mockImplementation(() => new Promise(() => {}));
+  vi.mocked(api.knowledge.listDocuments).mockImplementation(() => new Promise(() => {}));
+  vi.mocked(api.knowledge.listChunks).mockRejectedValue(new Error("Document unavailable"));
+  render(<Page />);
+  expect(await screen.findByTestId("knowledge-document-stale")).toBeVisible();
+  expect(savedEntries.list).not.toHaveBeenCalled();
+  expect(api.knowledge.listDocuments).not.toHaveBeenCalled();
+  expect(api.knowledge.listChunks).toHaveBeenCalledWith({
+    document_id: "missing-for-readiness", limit: 50, offset: 0,
+  });
+});
 it("paginates preserved notes and sources without silently truncating history", async () => {
   vi.mocked(savedEntries.list).mockResolvedValue({ items: [entry], total: 80 });
   render(<Page />);

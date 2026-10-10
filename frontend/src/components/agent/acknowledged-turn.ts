@@ -92,14 +92,15 @@ export function reconcileMessages(
 }
 
 export function acknowledgedMessages(
-  text: string, result: AgentTurnResult,
+  text: string, result: AgentTurnResult, sourceDocumentId?: string,
 ): ConversationMessageRecord[] {
   const common = {
     conversation_id: result.conversation_id,
     organization_id: "", user_id: "", created_at: new Date().toISOString(),
   };
   return [
-    { ...common, id: result.user_message_id, role: "user", content: text },
+    { ...common, id: result.user_message_id, role: "user", content: text,
+      ...(sourceDocumentId ? { payload: { interactive_agent: { source_document_id: sourceDocumentId } } } : {}) },
     { ...common, id: result.assistant_message_id, role: "assistant", content: result.reply,
       payload: { interactive_agent: {
         recorded_evidence: result.recorded_evidence ?? result.reply.split("\n\nRecorded facts (not a confirmation):\n")[1],

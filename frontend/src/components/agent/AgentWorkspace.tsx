@@ -49,6 +49,12 @@ function visibleReply(reply: string | null): string | null {
   );
 }
 
+function sourceDocumentFor(messages: ConversationMessageRecord[], messageId?: string | null): string | undefined {
+  const message = messages.find(item => item.id === messageId && item.role === "user");
+  const payload = message?.payload?.interactive_agent as Record<string, unknown> | undefined;
+  return typeof payload?.source_document_id === "string" ? payload.source_document_id : undefined;
+}
+
 export function AgentWorkspace() {
   const { user, organization } = useAuth();
   const recoveryScope = user && organization ? `${organization.id}:${user.id}` : null;
@@ -329,7 +335,7 @@ export function AgentWorkspace() {
       window.history.replaceState(null, "", address.pathname + address.search);
       setConversationId(result.conversation_id);
       const retained = reconcileMessages(retainedMessages.current.get(result.conversation_id) ?? [],
-        acknowledgedMessages(text, result));
+        acknowledgedMessages(text, result, request.body.source_document_id ?? undefined));
       retainedMessages.current.set(result.conversation_id, retained);
       setMessages(retained);
       setMessagesError(null);
@@ -689,6 +695,7 @@ export function AgentWorkspace() {
                       key={`receipt:${message.id}`}
                       capture={capture}
                       conversationId={conversationId!}
+                      sourceDocumentId={sourceDocumentFor(messages, capture.source_message_id)}
                     />
                   ) : null;
                 })}
@@ -703,6 +710,7 @@ export function AgentWorkspace() {
                 ) && (
                   <SavedReceipt
                     conversationId={latest.conversation_id}
+                    sourceDocumentId={sourceDocumentFor(messages, latest.capture_source_message_id)}
                     capture={{
                       saved_entries: latest.saved_entries ?? [],
                       status: latest.capture_status ?? "not_needed",

@@ -12,6 +12,13 @@ const proposal: AgentStructuredProposal = {
 };
 
 describe("acknowledged turn reconciliation", () => {
+  it("retains the original upload reference through history with missing source metadata", () => {
+    const local = acknowledgedMessages("Organize this source", agentTurnFixture, FIXTURE_UUID);
+    const stale = local.map(message => ({ ...message, payload: undefined }));
+    expect(reconcileMessages(stale, local)[0].payload?.interactive_agent).toMatchObject({
+      source_document_id: FIXTURE_UUID,
+    });
+  });
   it("deduplicates only exact IDs while retaining repeated text from separate turns", () => {
     const first = acknowledgedMessages("Repeated text", agentTurnFixture);
     const second = acknowledgedMessages("Repeated text", { ...agentTurnFixture,

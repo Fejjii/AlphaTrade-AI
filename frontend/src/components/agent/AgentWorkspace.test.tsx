@@ -14,6 +14,7 @@ import {
 } from "@/components/agent/AgentWorkspace";
 import * as browserVoice from "@/lib/voice/browser-voice-provider";
 import type { VoiceProvider } from "@/lib/voice/types";
+import { agentTurnFixture } from "@/test/pilot-fixtures";
 
 let testParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
@@ -447,6 +448,11 @@ describe("Agent workspace", () => {
   });
 
   it("previews an attachment before sending and passes only its persisted document reference", async () => {
+    apiMocks.agentTurn.mockResolvedValue({
+      ...agentTurnFixture, user_message_id: "m1", assistant_message_id: "m2",
+      conversation_id: "c1", capture_status: "failed", saved_entries: [],
+      capture_source_message_id: "m1", capture_error: "Capture failed; reply saved.",
+    });
     apiMocks.previewFile.mockResolvedValue({
       title: "rules",
       extracted_text: "Risk remains governed.",
@@ -489,6 +495,11 @@ describe("Agent workspace", () => {
       "preview-receipt",
     );
     expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Source document retained in this conversation/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open original document" })).toHaveAttribute(
+      "href", "/journal?tab=knowledge&document_id=stored-doc",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Capture failed");
   });
 
   it("keeps the complete explanation and technical source references inside Stored evidence", async () => {

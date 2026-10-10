@@ -176,6 +176,10 @@ test("desktop/mobile five destinations and preview→Send retains a source witho
   );
   await page.reload();
   await expect(page.getByTestId("agent-workspace")).toBeVisible();
+  await expect(page.getByTestId("saved-receipt")).toContainText("retained in this conversation");
+  await expect(page.getByRole("link", { name: "Open original document" })).toHaveAttribute(
+    "href", `/journal?tab=knowledge&document_id=${stored.document_id}`,
+  );
   for (const route of RETAINED) {
     await page.goto(route);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

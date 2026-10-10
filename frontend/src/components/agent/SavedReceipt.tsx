@@ -13,6 +13,7 @@ import {
 export function SavedReceipt({
   capture,
   conversationId,
+  sourceDocumentId,
 }: {
   capture: {
     saved_entries: SavedEntry[];
@@ -22,6 +23,7 @@ export function SavedReceipt({
     source_message_id?: string | null;
   };
   conversationId: string;
+  sourceDocumentId?: string;
 }) {
   const [entries, setEntries] = useState(capture.saved_entries);
   const [error, setError] = useState(capture.error);
@@ -63,6 +65,17 @@ export function SavedReceipt({
   }
   return (
     <div className="space-y-2 text-sm" data-testid="saved-receipt">
+      {sourceDocumentId && (
+        <p role="status">
+          Source document retained in this conversation.{" "}
+          <Link
+            href={`/journal?tab=knowledge&document_id=${encodeURIComponent(sourceDocumentId)}`}
+            className="text-accent"
+          >
+            Open original document
+          </Link>
+        </p>
+      )}
       {entries.map((e) => (
         <div
           key={e.id}

@@ -164,6 +164,20 @@ export function JournalKnowledgeWorkspace() {
   const sourcePage = Math.max(0, Number(params.get("source_page")) || 0);
   const chunkPage = Math.max(0, Number(params.get("chunk_page")) || 0);
   const loader = useCallback(async () => {
+    if (savedId || documentId) {
+      // Exact source navigation must not wait for unrelated library listings.
+      const [linked, chunks] = await Promise.allSettled([
+        savedId ? savedEntries.get(savedId) : Promise.resolve(null),
+        documentId ? api.knowledge.listChunks({
+          document_id: documentId, limit: 50, offset: chunkPage * 50,
+        }) : Promise.resolve(null),
+      ]);
+      return {
+        entries: [], entryTotal: 0, sourceTotal: 0, trades: [], documents: [],
+        linked: linked.status === "fulfilled" ? linked.value : null,
+        chunks: chunks.status === "fulfilled" ? chunks.value : null,
+      };
+    }
     const [entries, trades, documents, linked, chunks] =
       await Promise.allSettled([
         savedEntries.list({
@@ -233,12 +247,12 @@ export function JournalKnowledgeWorkspace() {
   const hasPending = Boolean(data?.documents?.some(document =>
     document.ingestion_metadata?.indexing?.vector_index_status === "pending"));
   useEffect(() => {
-    if (!knowledge || !hasPending) { readinessDeadline.current = 0; return; }
+    if (!knowledge || savedId || documentId || !hasPending) { readinessDeadline.current = 0; return; }
     if (!readinessDeadline.current) readinessDeadline.current = Date.now() + 60_000;
     if (Date.now() >= readinessDeadline.current) return;
     const timer = setTimeout(() => { void reload(); }, 2_000);
     return () => clearTimeout(timer);
-  }, [knowledge, hasPending, data, reload]);
+  }, [knowledge, savedId, documentId, hasPending, data, reload]);
   const returnKey = journalReturnKey(user?.id, organization?.id);
   useEffect(() => {
     if (loading || savedId || documentId) return;
