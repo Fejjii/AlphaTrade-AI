@@ -51,6 +51,7 @@ REVIEWER_BOUNDARY_TESTS = (
     "tests/test_turn_coordinator_postgres.py",
     "tests/test_shared_turn_policy.py",
     "tests/test_usage_quota.py",
+    "tests/test_strategy_conversation_postgres.py",
 )
 
 
@@ -85,9 +86,26 @@ def changed_paths(root: Path, base: str, head: str) -> list[str]:
     ):
         raise ValueError("CI base/head must be commit SHAs.")
     if base and base != "0" * 40:
-        command = ["git", "diff", "--name-only", "--diff-filter=ACDMR", base, head, "--"]
+        command = [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACDMR",
+            base,
+            head,
+            "--",
+        ]
     else:
-        command = ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-m", head]
+        command = [
+            "git",
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "-m",
+            head,
+        ]
     return subprocess.check_output(command, cwd=root, text=True).splitlines()
 
 
@@ -98,7 +116,9 @@ def main() -> int:
     parser.add_argument("--list-only", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    selection = select_tests(changed_paths(root, args.base, args.head), root / "backend")
+    selection = select_tests(
+        changed_paths(root, args.base, args.head), root / "backend"
+    )
     if not selection:
         raise ValueError("Focused selection must not be empty.")
     message = "Focused backend development checks; full backend release acceptance is pending."

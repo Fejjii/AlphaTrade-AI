@@ -931,6 +931,10 @@ def test_chat_structure_request_supersedes_open_draft_identity(
 def test_agent_authoring_setup_type_confirmation_reload_and_replay(conv_env):
     client, factory = conv_env
     _auth(client, "conv-a@test.example")
+    _assert_agent_authoring_confirmation_journey(client, factory)
+
+
+def _assert_agent_authoring_confirmation_journey(client, factory):
     response = client.post(
         "/agent/turns",
         headers={"Idempotency-Key": str(uuid.uuid4())},
