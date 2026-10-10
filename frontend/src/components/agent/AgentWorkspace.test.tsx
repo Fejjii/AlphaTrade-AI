@@ -528,13 +528,17 @@ describe("Agent workspace", () => {
     "uses one composer for voice about %s",
     async (topic) => {
       const text = `Review my ${topic}`;
-      enableVoice(text);
+      const provider = enableVoice(text);
       render(<AgentWorkspace />);
       fireEvent.click(screen.getByRole("button", { name: "History" }));
       fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
       await screen.findAllByTestId("agent-message");
-      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
-      fireEvent.change(screen.getByLabelText("Voice transcript"), {
+      const record = screen.getByRole("button", { name: "Record" });
+      await waitFor(() => expect(record).toBeEnabled());
+      await act(async () => fireEvent.click(record));
+      const transcript = await screen.findByLabelText("Voice transcript");
+      expect(provider.listen).toHaveBeenCalledOnce();
+      fireEvent.change(transcript, {
         target: { value: text + " carefully" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
