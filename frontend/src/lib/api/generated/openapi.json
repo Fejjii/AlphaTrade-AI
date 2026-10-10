@@ -13384,6 +13384,1183 @@
         "title": "ExitTarget",
         "type": "object"
       },
+      "ExperimentAccount": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_account_id": {
+            "format": "uuid",
+            "title": "Execution Account Id",
+            "type": "string"
+          },
+          "execution_identity_audit_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Identity Audit Id"
+          },
+          "native_uid": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Uid"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ExperimentSource"
+          }
+        },
+        "required": [
+          "execution_account_id",
+          "source"
+        ],
+        "title": "ExperimentAccount",
+        "type": "object"
+      },
+      "ExperimentApproval": {
+        "additionalProperties": false,
+        "properties": {
+          "authorized_until": {
+            "format": "date-time",
+            "title": "Authorized Until",
+            "type": "string"
+          },
+          "configuration_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Configuration Hash",
+            "type": "string"
+          },
+          "confirm": {
+            "const": "APPROVE_BOUNDED_EXPERIMENT",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "configuration_hash",
+          "authorized_until",
+          "confirm"
+        ],
+        "title": "ExperimentApproval",
+        "type": "object"
+      },
+      "ExperimentConfiguration-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/ExperimentAccount"
+          },
+          "contract_version": {
+            "const": "experiment-config/v1",
+            "default": "experiment-config/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/ExperimentFamily"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ExperimentMode"
+          },
+          "model_policy": {
+            "$ref": "#/components/schemas/ExperimentModelPolicy-Input"
+          },
+          "risk_limits": {
+            "$ref": "#/components/schemas/ExperimentRiskLimits-Input"
+          },
+          "sample_target": {
+            "$ref": "#/components/schemas/ExperimentSampleTarget"
+          },
+          "strategy_id": {
+            "format": "uuid",
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          },
+          "timeframes": {
+            "items": {
+              "$ref": "#/components/schemas/Timeframe"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Timeframes",
+            "type": "array"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentVariant"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "account",
+          "family",
+          "strategy_id",
+          "strategy_version_id",
+          "variants",
+          "model_policy",
+          "symbols",
+          "timeframes",
+          "risk_limits",
+          "sample_target"
+        ],
+        "title": "ExperimentConfiguration",
+        "type": "object"
+      },
+      "ExperimentConfiguration-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/ExperimentAccount"
+          },
+          "contract_version": {
+            "const": "experiment-config/v1",
+            "default": "experiment-config/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/ExperimentFamily"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ExperimentMode"
+          },
+          "model_policy": {
+            "$ref": "#/components/schemas/ExperimentModelPolicy-Output"
+          },
+          "risk_limits": {
+            "$ref": "#/components/schemas/ExperimentRiskLimits-Output"
+          },
+          "sample_target": {
+            "$ref": "#/components/schemas/ExperimentSampleTarget"
+          },
+          "strategy_id": {
+            "format": "uuid",
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          },
+          "timeframes": {
+            "items": {
+              "$ref": "#/components/schemas/Timeframe"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Timeframes",
+            "type": "array"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentVariant"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "account",
+          "family",
+          "strategy_id",
+          "strategy_version_id",
+          "variants",
+          "model_policy",
+          "symbols",
+          "timeframes",
+          "risk_limits",
+          "sample_target"
+        ],
+        "title": "ExperimentConfiguration",
+        "type": "object"
+      },
+      "ExperimentCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ExperimentConfiguration-Input"
+          },
+          "idempotency_key": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "idempotency_key",
+          "configuration"
+        ],
+        "title": "ExperimentCreate",
+        "type": "object"
+      },
+      "ExperimentDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentVersion"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "versions"
+        ],
+        "title": "ExperimentDetail",
+        "type": "object"
+      },
+      "ExperimentFamily": {
+        "enum": [
+          "operational_nested_continuation/v1",
+          "swing_failure_pattern/v1",
+          "trendpulse_1r/v1"
+        ],
+        "title": "ExperimentFamily",
+        "type": "string"
+      },
+      "ExperimentMode": {
+        "enum": [
+          "exploration",
+          "validation"
+        ],
+        "title": "ExperimentMode",
+        "type": "string"
+      },
+      "ExperimentModelPolicy-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "max_calls": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Max Calls",
+            "type": "integer"
+          },
+          "max_cost_usd": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "ge": 0,
+            "title": "Max Cost Usd"
+          },
+          "max_tokens": {
+            "default": 0,
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "disabled",
+            "enum": [
+              "disabled",
+              "advisory"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "ExperimentModelPolicy",
+        "type": "object"
+      },
+      "ExperimentModelPolicy-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "max_calls": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Max Calls",
+            "type": "integer"
+          },
+          "max_cost_usd": {
+            "default": "0",
+            "ge": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Max Cost Usd",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 0,
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "disabled",
+            "enum": [
+              "disabled",
+              "advisory"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "ExperimentModelPolicy",
+        "type": "object"
+      },
+      "ExperimentPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentDetail"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ExperimentPage",
+        "type": "object"
+      },
+      "ExperimentPromotion": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "variant_key": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "variant_key"
+        ],
+        "title": "ExperimentPromotion",
+        "type": "object"
+      },
+      "ExperimentRiskLimits-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "cost_allowance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "ge": 0,
+            "title": "Cost Allowance"
+          },
+          "max_daily_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Daily Loss"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Drawdown"
+          },
+          "max_leverage": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Leverage"
+          },
+          "max_open_positions": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Open Positions",
+            "type": "integer"
+          },
+          "max_position_notional": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Position Notional"
+          },
+          "max_risk_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Risk Per Trade"
+          },
+          "max_total_exposure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Total Exposure"
+          },
+          "max_trades_per_day": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Trades Per Day",
+            "type": "integer"
+          },
+          "max_trades_total": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Trades Total",
+            "type": "integer"
+          },
+          "max_weekly_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+                "type": "string"
+              }
+            ],
+            "gt": 0,
+            "title": "Max Weekly Loss"
+          },
+          "quote_currency": {
+            "const": "USDT",
+            "default": "USDT",
+            "title": "Quote Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_risk_per_trade",
+          "max_position_notional",
+          "max_total_exposure",
+          "max_daily_loss",
+          "max_weekly_loss",
+          "max_drawdown",
+          "max_leverage",
+          "max_open_positions",
+          "max_trades_per_day",
+          "max_trades_total",
+          "cost_allowance"
+        ],
+        "title": "ExperimentRiskLimits",
+        "type": "object"
+      },
+      "ExperimentRiskLimits-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "cost_allowance": {
+            "ge": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Cost Allowance",
+            "type": "string"
+          },
+          "max_daily_loss": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Daily Loss",
+            "type": "string"
+          },
+          "max_drawdown": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "max_leverage": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Max Leverage",
+            "type": "string"
+          },
+          "max_open_positions": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Open Positions",
+            "type": "integer"
+          },
+          "max_position_notional": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Position Notional",
+            "type": "string"
+          },
+          "max_risk_per_trade": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Risk Per Trade",
+            "type": "string"
+          },
+          "max_total_exposure": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Total Exposure",
+            "type": "string"
+          },
+          "max_trades_per_day": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Trades Per Day",
+            "type": "integer"
+          },
+          "max_trades_total": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Trades Total",
+            "type": "integer"
+          },
+          "max_weekly_loss": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,25}0*$)\\d{0,12}\\.\\d{0,12}0*$)",
+            "title": "Max Weekly Loss",
+            "type": "string"
+          },
+          "quote_currency": {
+            "const": "USDT",
+            "default": "USDT",
+            "title": "Quote Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_risk_per_trade",
+          "max_position_notional",
+          "max_total_exposure",
+          "max_daily_loss",
+          "max_weekly_loss",
+          "max_drawdown",
+          "max_leverage",
+          "max_open_positions",
+          "max_trades_per_day",
+          "max_trades_total",
+          "cost_allowance"
+        ],
+        "title": "ExperimentRiskLimits",
+        "type": "object"
+      },
+      "ExperimentSample": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "evidence_hash": {
+            "title": "Evidence Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "closed_trade",
+              "setup_observation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "sample_group_id": {
+            "format": "uuid",
+            "title": "Sample Group Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ExperimentSource"
+          },
+          "source_record_id": {
+            "title": "Source Record Id",
+            "type": "string"
+          },
+          "variant_key": {
+            "title": "Variant Key",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version_id",
+          "sample_group_id",
+          "variant_key",
+          "source",
+          "kind",
+          "source_record_id",
+          "evidence_hash",
+          "opened_at",
+          "completed_at"
+        ],
+        "title": "ExperimentSample",
+        "type": "object"
+      },
+      "ExperimentSampleCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "source_record_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Source Record Id",
+            "type": "string"
+          },
+          "variant_key": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant_key",
+          "source_record_id"
+        ],
+        "title": "ExperimentSampleCreate",
+        "type": "object"
+      },
+      "ExperimentSampleTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "closed_trade",
+              "setup_observation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "maximum": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Maximum",
+            "type": "integer"
+          },
+          "minimum": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Minimum",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "minimum",
+          "maximum"
+        ],
+        "title": "ExperimentSampleTarget",
+        "type": "object"
+      },
+      "ExperimentSource": {
+        "enum": [
+          "blofin_demo",
+          "internal_simulation"
+        ],
+        "title": "ExperimentSource",
+        "type": "string"
+      },
+      "ExperimentState": {
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "running",
+          "paused",
+          "completed",
+          "promoted"
+        ],
+        "title": "ExperimentState",
+        "type": "string"
+      },
+      "ExperimentTransition": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "submit",
+              "start",
+              "pause",
+              "complete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "expected_revision"
+        ],
+        "title": "ExperimentTransition",
+        "type": "object"
+      },
+      "ExperimentVariant": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "strategy_version_id",
+          "parameters"
+        ],
+        "title": "ExperimentVariant",
+        "type": "object"
+      },
+      "ExperimentVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "authorized_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorized Until"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ExperimentConfiguration-Output"
+          },
+          "configuration_hash": {
+            "title": "Configuration Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "null"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promotion_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Version Id"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "runtime_activated": {
+            "const": false,
+            "default": false,
+            "title": "Runtime Activated",
+            "type": "boolean"
+          },
+          "sample_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Sample Counts",
+            "type": "object"
+          },
+          "sample_group_id": {
+            "format": "uuid",
+            "title": "Sample Group Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExperimentState"
+          },
+          "strategy_content_hashes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Strategy Content Hashes",
+            "type": "object"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "experiment_id",
+          "organization_id",
+          "user_id",
+          "version",
+          "parent_version_id",
+          "state",
+          "revision",
+          "configuration",
+          "configuration_hash",
+          "strategy_content_hashes",
+          "sample_group_id",
+          "sample_counts",
+          "created_at",
+          "submitted_at",
+          "approved_at",
+          "approved_by",
+          "authorized_until",
+          "started_at",
+          "paused_at",
+          "completed_at",
+          "promoted_at",
+          "promotion_version_id"
+        ],
+        "title": "ExperimentVersion",
+        "type": "object"
+      },
+      "ExperimentVersionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ExperimentConfiguration-Input"
+          },
+          "parent_version_id": {
+            "format": "uuid",
+            "title": "Parent Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_version_id",
+          "configuration"
+        ],
+        "title": "ExperimentVersionCreate",
+        "type": "object"
+      },
       "FactorDirection": {
         "description": "Whether a scoring factor pushed priority up, down, or was neutral.",
         "enum": [
@@ -58551,6 +59728,489 @@
         "summary": "Close a filled canonical paper plan and record the outcome",
         "tags": [
           "execution"
+        ]
+      }
+    },
+    "/experiments": {
+      "get": {
+        "operationId": "listing_experiments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Listing",
+        "tags": [
+          "experiments"
+        ]
+      },
+      "post": {
+        "operationId": "create_experiments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}": {
+      "get": {
+        "operationId": "detail_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detail",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions": {
+      "post": {
+        "operationId": "fork_experiments__experiment_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentVersionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Fork",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions/{version_id}/approve": {
+      "post": {
+        "operationId": "approve_experiments__experiment_id__versions__version_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentApproval"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions/{version_id}/promote": {
+      "post": {
+        "operationId": "promote_experiments__experiment_id__versions__version_id__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentPromotion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Promote",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions/{version_id}/samples": {
+      "post": {
+        "operationId": "sample_experiments__experiment_id__versions__version_id__samples_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentSampleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentSample"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sample",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions/{version_id}/transition": {
+      "post": {
+        "operationId": "transition_experiments__experiment_id__versions__version_id__transition_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentTransition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transition",
+        "tags": [
+          "experiments"
         ]
       }
     },
