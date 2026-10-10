@@ -59,6 +59,7 @@ from app.market_contracts.errors import (
     FallbackForbiddenError,
     FormingCandleError,
     IncompleteWarmUpError,
+    MarketContractError,
     SpotFallbackRejectedError,
     StaleEvidenceError,
     WrongSourceError,
@@ -216,6 +217,10 @@ class FirstSliceEvidenceAssembler:
             instrument = instrument_for_source(self._source, self._catalog, symbol)
             clock = evaluated_at or self._default_clock()
             bound_policy = policy or first_slice_read_policy(organization_id)
+            if EvidenceRole.ORDER_BOOK in bound_policy.required_roles:
+                raise MarketContractError(
+                    "required_order_book:historical_snapshot_coverage_unavailable"
+                )
             if bound_policy.organization_id != organization_id:
                 raise WrongSourceError(
                     "Fusion policy organization_id does not match the caller tenant."

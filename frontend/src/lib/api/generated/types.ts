@@ -757,6 +757,13 @@ export interface components {
             /** Tolerance Bps */
             tolerance_bps: string;
         };
+        /** BookLevel */
+        BookLevel: {
+            /** Base Quantity */
+            base_quantity: string;
+            /** Price */
+            price: string;
+        };
         /** CalculationInput */
         CalculationInput: {
             /** Conservative Remainder */
@@ -870,6 +877,11 @@ export interface components {
             title: string;
         };
         /**
+         * ContractStyle
+         * @enum {string}
+         */
+        ContractStyle: "linear" | "inverse";
+        /**
          * ContractType
          * @enum {string}
          */
@@ -969,6 +981,69 @@ export interface components {
             user_observations: components["schemas"]["ReviewItem"][];
             window: components["schemas"]["ReviewWindow"];
         };
+        /**
+         * DataCompleteness
+         * @enum {string}
+         */
+        DataCompleteness: "complete" | "partial" | "unknown";
+        /**
+         * DerivativeMetric
+         * @enum {string}
+         */
+        DerivativeMetric: "open_interest" | "funding";
+        /**
+         * DerivativeObservation
+         * @description Identity includes instrument, venue, market, provider and native timeframe.
+         *
+         *     Missing event times stay null; observation time never substitutes for them.
+         *     Funding is a dimensionless settled rate, without annualization or an assumed
+         *     8h interval. OI is never combined across venues or quantity conventions.
+         */
+        "DerivativeObservation-Output": {
+            availability: components["schemas"]["EvidenceAvailability"];
+            /** Calculation Method */
+            calculation_method: string;
+            /** Collected At */
+            collected_at?: string | null;
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Coverage Kind
+             * @default single_provider_record
+             * @constant
+             */
+            coverage_kind?: "single_provider_record";
+            /** Event Time */
+            event_time: string | null;
+            freshness: components["schemas"]["FreshnessEvaluation-Output"] | null;
+            /** Freshness Policy Version */
+            freshness_policy_version: string;
+            /**
+             * Historical Coverage
+             * @default false
+             * @constant
+             */
+            historical_coverage?: false;
+            identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /**
+             * Methodology Version
+             * @default provider-reported-derivatives/v2
+             * @constant
+             */
+            methodology_version?: "provider-reported-derivatives/v2";
+            metric: components["schemas"]["DerivativeMetric"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Reason */
+            reason?: string | null;
+            /** Units */
+            units: string;
+            /** Value */
+            value: string | null;
+        };
         /** DocumentIngestionMetadata */
         DocumentIngestionMetadata: {
             file?: components["schemas"]["FileProvenance"] | null;
@@ -1009,6 +1084,23 @@ export interface components {
          * @enum {string}
          */
         EntryTriggerType: "ema_pullback" | "breakout" | "liquidity_sweep" | "reclaim" | "failed_breakout" | "rsi_threshold" | "volume_confirmation" | "trend_alignment";
+        /**
+         * EvidenceAvailability
+         * @enum {string}
+         */
+        EvidenceAvailability: "AVAILABLE" | "MISSING" | "STALE" | "UNSUPPORTED" | "INCOMPLETE";
+        /**
+         * EvidenceMarketIdentity
+         * @description Full identity required on every first-slice evidence object.
+         */
+        "EvidenceMarketIdentity-Output": {
+            instrument: components["schemas"]["InstrumentIdentity-Output"];
+            market_type: components["schemas"]["app__market_contracts__enums__MarketType"];
+            provenance: components["schemas"]["ProviderProvenance"];
+            source: components["schemas"]["SourceIdentity"];
+            timeframe?: components["schemas"]["Timeframe"] | null;
+            venue: components["schemas"]["VenueId"];
+        };
         /**
          * ExitRuleBlock
          * @description Structured exit rule.
@@ -1063,6 +1155,75 @@ export interface components {
             /** Raw Content Hash */
             raw_content_hash: string;
         };
+        /** FiveMinuteFlow */
+        "FiveMinuteFlow-Output": {
+            /** Aggressive Buy Base Volume */
+            aggressive_buy_base_volume: string;
+            /** Aggressive Buy Quote Volume */
+            aggressive_buy_quote_volume: string;
+            /** Aggressive Sell Base Volume */
+            aggressive_sell_base_volume: string;
+            /** Aggressive Sell Quote Volume */
+            aggressive_sell_quote_volume: string;
+            /** Buy Sell Imbalance Ratio */
+            buy_sell_imbalance_ratio: string | null;
+            /** Event Time */
+            event_time: string | null;
+            /** Quote Volume Delta */
+            quote_volume_delta: string;
+            /** Rolling Cvd */
+            rolling_cvd: string;
+            /** Rolling Quote Cvd */
+            rolling_quote_cvd: string;
+            /** Signed Volume Delta */
+            signed_volume_delta: string;
+            /** Terminal Price */
+            terminal_price: string | null;
+            /** Trade Count */
+            trade_count: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /** FreshnessEvaluation */
+        "FreshnessEvaluation-Output": {
+            /** Age Seconds */
+            age_seconds: string;
+            /** Clock Skew Seconds */
+            clock_skew_seconds: string;
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+            /** Policy Version */
+            policy_version: string;
+            /**
+             * Source Time
+             * Format: date-time
+             */
+            source_time: string;
+            state: components["schemas"]["FreshnessState"];
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+        };
+        /**
+         * FreshnessState
+         * @enum {string}
+         */
+        FreshnessState: "fresh" | "aging" | "stale" | "gap" | "unknown";
         /** GovernedLearningStatus */
         GovernedLearningStatus: {
             /**
@@ -1280,6 +1441,34 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * InstrumentIdentity
+         * @description Canonical perpetual instrument identity; independent of provider symbol formatting.
+         */
+        "InstrumentIdentity-Output": {
+            /** Base Asset */
+            base_asset: string;
+            /** Base Quantity Unit */
+            base_quantity_unit: string;
+            /** Contract Multiplier */
+            contract_multiplier: string;
+            contract_style: components["schemas"]["ContractStyle"];
+            /** Instrument Id */
+            instrument_id: string;
+            market_type: components["schemas"]["app__market_contracts__enums__MarketType"];
+            /** Price Unit */
+            price_unit: string;
+            product_family: components["schemas"]["ProductFamily"];
+            /** Provider Symbol */
+            provider_symbol: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Quote Quantity Unit */
+            quote_quantity_unit: string;
+            /** Settlement Asset */
+            settlement_asset: string;
+            venue: components["schemas"]["VenueId"];
+        };
         /** InstrumentRules */
         InstrumentRules: {
             /** Base Currency */
@@ -1375,8 +1564,45 @@ export interface components {
          * @enum {string}
          */
         MarginMode: "CROSS" | "ISOLATED";
+        /** MarketEvidenceContext */
+        MarketEvidenceContext: {
+            /** Anchor Symbol */
+            anchor_symbol: string;
+            /** Anchor Venue */
+            anchor_venue: string;
+            /**
+             * Contract Version
+             * @default public-market-context/v1
+             * @constant
+             */
+            contract_version?: "public-market-context/v1";
+            /**
+             * Cross Venue Components
+             * @default []
+             */
+            cross_venue_components?: string[];
+            /**
+             * Derivatives
+             * @default []
+             */
+            derivatives?: components["schemas"]["DerivativeObservation-Output"][];
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+            order_book?: components["schemas"]["OrderBookObservation"] | null;
+            order_flow?: components["schemas"]["OrderFlowObservation-Output"] | null;
+            /**
+             * Qualification Authority
+             * @default false
+             * @constant
+             */
+            qualification_authority?: false;
+        };
         /** MarketQuoteView */
         MarketQuoteView: {
+            evidence_context?: components["schemas"]["MarketEvidenceContext"] | null;
             /** Fallback Used */
             fallback_used: boolean;
             /** Is Live */
@@ -1455,6 +1681,191 @@ export interface components {
             unit: string;
             /** Value */
             value: string;
+        };
+        /** OrderBookObservation */
+        OrderBookObservation: {
+            /** Ask Base Quantity */
+            ask_base_quantity?: string | null;
+            /** Ask Quote Notional */
+            ask_quote_notional?: string | null;
+            /**
+             * Asks
+             * @default []
+             */
+            asks?: components["schemas"]["BookLevel"][];
+            availability: components["schemas"]["EvidenceAvailability"];
+            /** Base Units */
+            base_units: string;
+            /** Bid Base Quantity */
+            bid_base_quantity?: string | null;
+            /** Bid Quote Notional */
+            bid_quote_notional?: string | null;
+            /**
+             * Bids
+             * @default []
+             */
+            bids?: components["schemas"]["BookLevel"][];
+            /**
+             * Calculation Method
+             * @default visible-resting-depth/base-and-unrounded-quote/v1
+             */
+            calculation_method?: string;
+            /**
+             * Collected At
+             * Format: date-time
+             */
+            collected_at: string;
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Coverage Kind
+             * @default depth_limited_snapshot
+             * @constant
+             */
+            coverage_kind?: "depth_limited_snapshot";
+            /** Cross Sequence */
+            cross_sequence?: number | null;
+            /** Event Time */
+            event_time?: string | null;
+            /**
+             * Excluded Liquidity
+             * @default RPI
+             * @constant
+             */
+            excluded_liquidity?: "RPI";
+            freshness?: components["schemas"]["FreshnessEvaluation-Output"] | null;
+            /**
+             * Freshness Policy Version
+             * @default resting-book/event-age-10s/no-future/v1
+             */
+            freshness_policy_version?: string;
+            /**
+             * Historical Coverage
+             * @default false
+             * @constant
+             */
+            historical_coverage?: false;
+            identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Price Units */
+            price_units: string;
+            /** Provider Generated At */
+            provider_generated_at?: string | null;
+            /** Quote Units */
+            quote_units: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Requested Depth
+             * @default 20
+             * @constant
+             */
+            requested_depth?: 20;
+            /** Resting Base Imbalance Ratio */
+            resting_base_imbalance_ratio?: string | null;
+            /**
+             * Sequence Status
+             * @default independent_snapshot
+             * @enum {string}
+             */
+            sequence_status?: "independent_snapshot" | "resync_required";
+            /** Spread */
+            spread?: string | null;
+            /** Update Id */
+            update_id?: number | null;
+        };
+        /** OrderFlowObservation */
+        "OrderFlowObservation-Output": {
+            availability: components["schemas"]["EvidenceAvailability"];
+            /** Base Units */
+            base_units: string;
+            /**
+             * Baseline
+             * @default 0
+             */
+            baseline?: string;
+            /**
+             * Calculation Method
+             * @default real-aggressor-prints/base-and-unrounded-quote/5m/v1
+             */
+            calculation_method?: string;
+            completeness: components["schemas"]["DataCompleteness"];
+            /** Content Hash */
+            content_hash: string;
+            /** Coverage Content Hash */
+            coverage_content_hash?: string | null;
+            /**
+             * Coverage Kind
+             * @default unproven
+             * @enum {string}
+             */
+            coverage_kind?: "proven_executed_trade_window" | "unproven";
+            /** Cvd Change */
+            cvd_change?: string | null;
+            /** Cvd Divergence */
+            cvd_divergence?: string | null;
+            /** Cvd Slope Base Per Second */
+            cvd_slope_base_per_second?: string | null;
+            /** Cvd Supportive Side */
+            cvd_supportive_side?: string | null;
+            /** Cvd Units */
+            cvd_units: string;
+            /** Cvd Weakening */
+            cvd_weakening?: boolean | null;
+            /** Event Time */
+            event_time: string | null;
+            freshness: components["schemas"]["FreshnessEvaluation-Output"] | null;
+            /** Freshness Policy Version */
+            freshness_policy_version: string;
+            identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Order Flow Strengthening Side */
+            order_flow_strengthening_side?: string | null;
+            /** Quote Units */
+            quote_units: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Reset Semantics
+             * @default zero-at-10m-window-start;rebuild-on-window-roll-or-venue-switch/v1
+             */
+            reset_semantics?: string;
+            /** Rolling Cvd */
+            rolling_cvd?: string | null;
+            /** Rolling Quote Cvd */
+            rolling_quote_cvd?: string | null;
+            /** Series Identity */
+            series_identity: string;
+            /**
+             * State Method
+             * @default last-vs-prior-5m;directional-delta-and-quote-imbalance;print-close/v1
+             */
+            state_method?: string;
+            /** Trade Set Hash */
+            trade_set_hash?: string | null;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+            /**
+             * Windows
+             * @default []
+             */
+            windows?: components["schemas"]["FiveMinuteFlow-Output"][];
         };
         /** PaginatedRagChunks */
         PaginatedRagChunks: {
@@ -1545,6 +1956,11 @@ export interface components {
             /** Strategy Version Id */
             strategy_version_id?: string | null;
         };
+        /**
+         * ProductFamily
+         * @enum {string}
+         */
+        ProductFamily: "usdm_futures" | "coinm_futures" | "spot";
         /** ProposalDecisionRequest */
         ProposalDecisionRequest: {
             /**
@@ -1567,6 +1983,30 @@ export interface components {
          * @enum {string}
          */
         ProvenanceSource: "user_supplied" | "agent_inferred" | "watcher_observed" | "trade_outcome" | "system_generated";
+        /**
+         * ProviderProvenance
+         * @description Read-only provider provenance attached to every evidence envelope.
+         */
+        ProviderProvenance: {
+            /** Adapter Version */
+            adapter_version: string;
+            /** Detail */
+            detail?: string | null;
+            /** Fallback Used */
+            fallback_used: boolean;
+            /** Is Live */
+            is_live: boolean;
+            /** Is Mock */
+            is_mock: boolean;
+            /** Provider Name */
+            provider_name: string;
+            /**
+             * Regional Failure
+             * @default false
+             */
+            regional_failure?: boolean;
+            source_family: components["schemas"]["SourceFamily"];
+        };
         /**
          * QuantityUnit
          * @enum {string}
@@ -1936,6 +2376,21 @@ export interface components {
             policy_id: string;
             /** Policy Version */
             policy_version: string;
+        };
+        /**
+         * SourceFamily
+         * @enum {string}
+         */
+        SourceFamily: "binance_usdm_futures_public" | "bybit_usdt_perpetual_public" | "replay_fixture";
+        /** SourceIdentity */
+        SourceIdentity: {
+            /** Adapter Version */
+            adapter_version: string;
+            /** Aggressor Convention */
+            aggressor_convention: string;
+            family: components["schemas"]["SourceFamily"];
+            /** Provider Name */
+            provider_name: string;
         };
         /** StrategyAnalyticsBucket */
         StrategyAnalyticsBucket: {
@@ -2985,6 +3440,11 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * VenueId
+         * @enum {string}
+         */
+        VenueId: "binance" | "blofin" | "bybit";
         /** VersionedDerivation */
         VersionedDerivation: {
             /** Formula Id */
@@ -3037,6 +3497,11 @@ export interface components {
             /** Transcript */
             transcript?: null;
         };
+        /**
+         * MarketType
+         * @enum {string}
+         */
+        app__market_contracts__enums__MarketType: "perpetual" | "spot" | "delivery" | "coin_m_perpetual" | "option";
         /**
          * MarketType
          * @description Market context for a user strategy card.

@@ -22,7 +22,11 @@ from app.evidence_pipeline.http_schemas import (
     CanonicalSetupEvidenceRead,
     CanonicalSourceIdentityRead,
 )
-from app.evidence_pipeline.market_intelligence import read_market_intelligence, read_order_flow
+from app.evidence_pipeline.market_intelligence import (
+    read_market_intelligence,
+    read_order_book,
+    read_order_flow,
+)
 from app.evidence_pipeline.setup_lifetime import SetupLifetimePort
 from app.evidence_pipeline.types import (
     AssembledCanonicalEvidence,
@@ -165,6 +169,7 @@ class CanonicalEvidenceService:
             identity=identity,
             instrument=instrument,
             observed_at=evaluated_at,
+            allow_later_observation=True,
         )
         order_flow = read_order_flow(
             self._source,
@@ -172,6 +177,14 @@ class CanonicalEvidenceService:
             instrument=instrument,
             observed_at=evaluated_at,
         )
+        order_book = read_order_book(
+            self._source,
+            identity=identity,
+            instrument=instrument,
+            observed_at=evaluated_at,
+            allow_later_observation=True,
+        )
+        context_evaluated_at = evaluated_at if self._replay else self._clock()
         unavailable = None
         if not price_read.usable_as_current_market_price:
             unavailable = price_reason or price_read.presentation
@@ -185,8 +198,10 @@ class CanonicalEvidenceService:
             setup_evidence=setup_read,
             market_intelligence=intelligence,
             order_flow=order_flow,
+            order_book=order_book,
             timestamps={
                 "evaluated_at": evaluated_at,
+                "market_context_evaluated_at": context_evaluated_at,
                 "current_price_source_time": price_read.source_time,
                 "trigger_interval_start": setup_read.trigger_interval_start,
                 "trigger_interval_end": setup_read.trigger_interval_end,

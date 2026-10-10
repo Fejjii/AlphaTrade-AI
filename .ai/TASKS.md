@@ -2503,3 +2503,18 @@ linkage, snapshot selection, long-lived order reconciliation, existing worker wi
 with disabled defaults and current migration-guard assertions.
 No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
 See docs/blofin_native_activity.md for contract, milestones and integration.
+
+
+## AT-MARKET-EVIDENCE — Urgent public market evidence foundation
+
+Status: READY (implementation and focused development verification; draft integration review).
+Baseline: PR237 7fc21db00a0527ee018f3fd1c478da64bcc713c0, refreshed through
+619c15fe63ffc23288c2866781e08f9cb44a2ab9 (migration test/docs correction only).
+Branch: codex/market-evidence-foundation. Own provider adapters, normalization,
+coverage and evidence contracts; reuse canonical OI and executed-flow/CVD.
+Add resting depth snapshots, causal process caches and actual Agent market consumer.
+Required historical book coverage remains unavailable and blocks qualification.
+Schema coordination posted to PR237; experiment owner acknowledgment pending.
+Native exchange API/WS acceptance unverified under current egress policy.
+No full backend CI, deployment, paid activation, orders or operator-setting changes.
+Contract/results/next consumer step: docs/market_evidence_foundation.md.
