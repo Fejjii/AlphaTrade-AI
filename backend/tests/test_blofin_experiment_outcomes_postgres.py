@@ -159,6 +159,8 @@ class NativeWorld:
             variant_key="baseline",
             ownership_command_id=self.command.id,
             plan_content_hash=self.plan.content_hash,
+            # Synthetic server assertions only; no native position producer is installed.
+            pre_entry_position_flat=True,
         )
         self.entry_audit = self.audit("experiment_native_entry_binding", self.binding, self.start)
         self.lineage = NativeExitLineage(
@@ -167,6 +169,7 @@ class NativeWorld:
             native_exit_order_ids=("exit1", "exit2"),
             entry_fill_ids=("entry-f1", "entry-f2"),
             exit_fill_ids=("exit-f1", "exit-f2"),
+            position_lineage_verified=True,
             pnl_excludes_fees=True,
             fee_convention="positive_cost",
             monetary_methodology_version="verified-fixture/v1",
@@ -343,6 +346,89 @@ def test_actual_domain_consumer_admits_one_native_outcome(native):
         and performance.win_rate == 1
     )
     assert len(n.requests) == requests
+
+
+@pytest.mark.parametrize("field", ["pre_entry_position_flat", "position_lineage_verified"])
+@pytest.mark.parametrize("value", [None, False])
+def test_position_opening_and_complete_lineage_require_verified_server_claim(native, field, value):
+    n = native
+    binding = n.binding.model_copy(
+        update={"pre_entry_position_flat": value} if field == "pre_entry_position_flat" else {}
+    )
+    lineage = n.lineage.model_copy(
+        update={
+            "entry_binding_hash": semantic_hash(binding.model_dump()),
+            **({field: value} if field == "position_lineage_verified" else {}),
+        }
+    )
+    n.reseal(n.entry_audit, binding)
+    n.reseal(n.exit_audit, lineage)
+    assert n.read().reason == "native_position_lineage_unverified"
+    with pytest.raises(ConflictError):
+        n.sample()
+    assert n.performance().reason == "insufficient_samples"
+
+
+@pytest.mark.parametrize("field", ["pre_entry_position_flat", "position_lineage_verified"])
+def test_legacy_attestations_without_position_proof_remain_unavailable(native, field):
+    n = native
+    row = n.entry_audit if field == "pre_entry_position_flat" else n.exit_audit
+    body = dict(row.redacted_metadata)
+    operation = body.pop("operation")
+    body.pop("evidence_hash")
+    body.pop(field)
+    digest = semantic_hash(body)
+    row.payload_hash = digest
+    row.redacted_metadata = {"operation": operation, "evidence_hash": digest, **body}
+    if field == "pre_entry_position_flat":
+        n.reseal(n.exit_audit, n.lineage.model_copy(update={"entry_binding_hash": digest}))
+    n.w.session.flush()
+    assert n.read().reason == "native_position_lineage_unverified"
+    with pytest.raises(ConflictError):
+        n.sample()
+
+
+@pytest.mark.parametrize("field", ["pre_entry_position_flat", "position_lineage_verified"])
+@pytest.mark.parametrize("value", ["true", 1])
+def test_position_attestations_reject_nonboolean_claims(native, field, value):
+    n = native
+    row = n.entry_audit if field == "pre_entry_position_flat" else n.exit_audit
+    body = dict(row.redacted_metadata)
+    operation = body.pop("operation")
+    body.pop("evidence_hash")
+    body[field] = value
+    digest = semantic_hash(body)
+    row.payload_hash = digest
+    row.redacted_metadata = {"operation": operation, "evidence_hash": digest, **body}
+    if field == "pre_entry_position_flat":
+        n.reseal(n.exit_audit, n.lineage.model_copy(update={"entry_binding_hash": digest}))
+    n.w.session.flush()
+    assert n.read().status == "unavailable"
+    with pytest.raises(ConflictError):
+        n.sample()
+
+
+@pytest.mark.parametrize("reduce_only", ["true", None, "unknown"])
+def test_native_entry_must_be_explicitly_nonreducing(native, reduce_only):
+    native.change("entry", reduce_only=reduce_only)
+    assert native.read().reason == "native_opening_entry_invalid"
+    with pytest.raises(ConflictError):
+        native.sample()
+
+
+@pytest.mark.parametrize("realized_pnl", ["1", "-1"])
+def test_entry_closing_pnl_cannot_be_ignored_as_opening_inventory(native, realized_pnl):
+    native.change("entry-f1", realized_pnl=realized_pnl)
+    assert native.read().reason == "native_opening_entry_invalid"
+    with pytest.raises(ConflictError):
+        native.sample()
+    assert native.performance().reason == "insufficient_samples"
+
+
+def test_explicit_zero_entry_pnl_preserves_verified_opening(native):
+    native.change("entry-f1", realized_pnl="0")
+    assert native.read().status == "available"
+    assert native.sample().kind == "closed_trade"
 
 
 @pytest.mark.parametrize(

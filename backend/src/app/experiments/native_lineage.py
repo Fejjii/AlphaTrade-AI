@@ -34,6 +34,14 @@ class NativeEntryBinding(CanonicalModel):
     plan_content_hash: Hash = Field(pattern=r"^[0-9a-f]{64}$")
     environment: Literal["demo"] = "demo"
     authority_origin: Literal["experiment"] = "experiment"
+    pre_entry_position_flat: bool | None = Field(
+        default=None,
+        strict=True,
+        description=(
+            "Trusted server producer verified the exact UID/instrument NET position was flat "
+            "before this opening command; a client echo or reduction cannot establish this."
+        ),
+    )
 
 
 class NativeExitLineage(CanonicalModel):
@@ -43,6 +51,14 @@ class NativeExitLineage(CanonicalModel):
     native_exit_order_ids: tuple[str, ...] = Field(min_length=1, max_length=100)
     entry_fill_ids: tuple[str, ...] = Field(min_length=1, max_length=1000)
     exit_fill_ids: tuple[str, ...] = Field(min_length=1, max_length=1000)
+    position_lineage_verified: bool | None = Field(
+        default=None,
+        strict=True,
+        description=(
+            "Trusted server producer verified complete flat-to-open-to-flat native position "
+            "ancestry, including all owned fills and absence of unrelated inventory or fills."
+        ),
+    )
     # Absent official/independently verified monetary semantics remain unknown.
     pnl_excludes_fees: Literal[True] | None = None
     fee_convention: Literal["positive_cost", "signed_cashflow"] | None = None

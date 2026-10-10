@@ -372,6 +372,11 @@ class BloFinExperimentSourceResolver:
             command_id,
         ) or lineage.entry_binding_hash != entry_hash:
             refuse("experiment_attribution_mismatch")
+        if (
+            binding.pre_entry_position_flat is not True
+            or lineage.position_lineage_verified is not True
+        ):
+            refuse("native_position_lineage_unverified")
         strategy = self.session.get(UserStrategyVersion, strategy_id, populate_existing=True)
         command = self.session.get(ExecutionCommand, command_id, populate_existing=True)
         plan = self.session.get(TradePlanRevision, command.revision_id) if command else None
@@ -489,6 +494,8 @@ class BloFinExperimentSourceResolver:
             refuse("experiment_native_entry_link_invalid")
         if entry.created_at_ms is None:
             refuse("native_order_fill_reconciliation_failed")
+        if entry.reduce_only != "false":
+            refuse("native_opening_entry_invalid")
         opposite = "sell" if semantic.side.value == "BUY" else "buy"
         for order_id, order in orders.items():
             related = [f for f in fills.values() if f.order_id == order_id]
@@ -533,6 +540,8 @@ class BloFinExperimentSourceResolver:
                 refuse("native_order_fill_reconciliation_failed")
         entries = [fills[i] for i in lineage.entry_fill_ids]
         closing = [fills[i] for i in lineage.exit_fill_ids]
+        if any(f.realized_pnl is not None and exact(f.realized_pnl) != 0 for f in entries):
+            refuse("native_opening_entry_invalid")
         quantity = sum((exact(f.quantity) for f in entries), Decimal(0))
         if quantity != sum((exact(f.quantity) for f in closing), Decimal(0)) or min(
             int(f.occurred_at_ms) for f in closing

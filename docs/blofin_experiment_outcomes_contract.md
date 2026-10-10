@@ -46,8 +46,8 @@ existing AuditLog storage, separately from any manual account-identity audit:
 
 | Stored operation | Contract | Required meaning |
 | --- | --- | --- |
-| `experiment_native_entry_binding` | NativeEntryBinding, `experiment-native-entry/v1` | Exact org/user, experiment/version/configuration hash, sample group, account/demo UID, variant and immutable strategy hash/ID, command and plan hash, captured before entry creation in an approved running interval |
-| `experiment_native_exit_lineage` | NativeExitLineage, `experiment-native-exit/v1` | Exact entry-binding hash, native entry and **all** owned exit orders, complete disjoint entry/exit fill sets, independently verified monetary semantics when known |
+| `experiment_native_entry_binding` | NativeEntryBinding, `experiment-native-entry/v1` | Exact org/user, experiment/version/configuration hash, sample group, account/demo UID, variant and immutable strategy hash/ID, command and plan hash, captured before entry creation in an approved running interval; `pre_entry_position_flat=true` proves the exact UID/instrument NET inventory was flat before this opening entry |
+| `experiment_native_exit_lineage` | NativeExitLineage, `experiment-native-exit/v1` | Exact entry-binding hash, native entry and **all** owned exit orders, complete disjoint entry/exit fill sets; `position_lineage_verified=true` proves complete flat-to-open-to-flat native position ancestry without unrelated inventory/fills; independently verified monetary semantics when known |
 
 Attestations have `resource_type=experiment_execution`, `resource_id=command UUID`,
 `actor_type=SYSTEM`, `actor=experiment_executor`, `result=SUCCESS`, and aware actual
@@ -68,6 +68,16 @@ ordinary manual entry/exit by instrument, time, quantity or client-order similar
 Native activity does not provide TPSL/algo parent history; unavailable protected-exit
 lineage cannot be guessed. Until those attestations exist, native samples are unavailable.
 No execution, management, approval bypass or activation authority comes from this reader.
+
+Both position assertions are strict server-only booleans, defaulting to unknown.
+Missing, false or nonboolean claims fail closed, including historical attestations that
+lack these fields. They are not inferred from NET mode, equal entry/exit quantities,
+reduceOnly exits, zero reported entry PnL or flat current positions. The reviewed producer
+must establish actual native pre-entry inventory and complete position/fill ancestry for
+the same UID/instrument, withholding attribution if unrelated/manual fills, preexisting
+inventory, average-cost mixing or unverified contract/PnL allocation could contaminate
+the outcome. No producer is installed here; synthetic fixtures explicitly assert these
+claims only to exercise the resolver. They do not prove native position attribution.
 
 The resolver independently verifies stored current UID/account identity using the
 existing account proof, immutable strategy content hash, full canonical plan hash,
@@ -93,7 +103,11 @@ Each owned order must have its terminal native fact and exact individual fill se
 Instrument, side, NET position side, positive contract quantities/prices, creation/fill/
 completion ordering and accumulated filled quantities must agree. Entry requested
 quantity equals the plan; partial entry or exit fills may qualify only after a terminal
-filled/canceled/partially_canceled state closes the remainder. Exits require the opposite
+filled/canceled/partially_canceled state closes the remainder. The entry must explicitly
+have reduceOnly false; a reducing or unknown entry is unavailable. Nonzero reported
+closing PnL on any entry fill also refuses opening attribution rather than ignoring that
+profit or loss. A zero/absent entry PnL still requires both verified position assertions.
+Exits require the opposite
 side and explicit reduceOnly. Total exit contracts must equal entry contracts; interleaved
 entry/exit histories remain conservatively unavailable. Missing terminal facts, extra or
 missing fills, unmatched quantities or incomplete closure never qualify. An empty

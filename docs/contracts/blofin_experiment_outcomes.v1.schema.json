@@ -255,6 +255,19 @@
           "title": "Plan Content Hash",
           "type": "string"
         },
+        "pre_entry_position_flat": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Trusted server producer verified the exact UID/instrument NET position was flat before this opening command; a client echo or reduction cannot establish this.",
+          "title": "Pre Entry Position Flat"
+        },
         "sample_group_id": {
           "format": "uuid",
           "title": "Sample Group Id",
@@ -392,6 +405,19 @@
           ],
           "default": null,
           "title": "Pnl Excludes Fees"
+        },
+        "position_lineage_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Trusted server producer verified complete flat-to-open-to-flat native position ancestry, including all owned fills and absence of unrelated inventory or fills.",
+          "title": "Position Lineage Verified"
         }
       },
       "required": [
