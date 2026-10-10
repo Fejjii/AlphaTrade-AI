@@ -67,16 +67,13 @@ it currently has no authorized automatic entry/stop/target plan. Setup observati
 remain research evidence, not executed trade performance. Parameter changes must
 reference a different immutable strategy version, not an experiment override.
 
-Future deterministic TrendPulse1R (`trendpulse_1r/v1`) needs an independently reviewed
-strategy/spec/compiler/evaluation adapter. It must bind causally available closed
-15m trend evidence and 5m entry evidence, explicit deterministic trend/trigger rules,
-a structural invalidation stop, and target = entry ± abs(entry − structural stop)
-(gross 1R before costs). Trend/structure definitions, entry timing, expiry, gap and
-same-bar ambiguity rules must be authored/versioned; they are not inferred here.
-Tick precision cannot silently move the stop or invent an executable 1R target.
-Reuse canonical freshness/evidence/Candidate/TradePlan/approval/dispatch authorities
-and the existing deterministic sizing/exposure/loss gates. Missing adapters/evidence
-must refuse execution. This batch implements no TrendPulse detector or executor.
+The separate deterministic TrendPulse1R research adapter (`trendpulse_1r/v1`)
+now has a fixed authored closed 15m trend/5m entry spec, structural stop and rounded
+gross 1R geometry: [adapter contract](trendpulse_1r_adapter_contract.md). The domain
+recognizes immutable authored parameters with both timeframes for setup observations
+only. Compiler/evaluation/Candidate/TradePlan/approval/dispatch integration remains
+absent; research geometry cannot grant execution authority. TrendPulse closed-trade
+samples and execution admission still refuse. Nested/SFP meanings stay unchanged.
 
 Risk preview composes the existing floor-rounded BASE sizing helper with LINEAR
 contract conversion and quote exposure. All native account positions, including
