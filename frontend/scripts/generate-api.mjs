@@ -42,6 +42,11 @@ const pilots = [
   ["experimentApprove", "/experiments/{experiment_id}/versions/{version_id}/approve", "post"],
   ["experimentPromote", "/experiments/{experiment_id}/versions/{version_id}/promote", "post"],
   ["experimentSample", "/experiments/{experiment_id}/versions/{version_id}/samples", "post"],
+  ["trendpulseScreen", "/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings", "post"],
+  ["trendpulseScreenings", "/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings", "get"],
+  ["trendpulseScreeningDetail", "/trendpulse-screenings/{record_id}", "get"],
+  ["strategyVersions", "/strategies/{strategy_id}/versions", "get"],
+  ["paperAccount", "/execution/accounts/paper", "get"],
 ];
 const schemas = schema.components.schemas;
 const used = new Set();

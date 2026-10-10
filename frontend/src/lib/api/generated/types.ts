@@ -340,10 +340,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing */
+        get: operations["listing_experiments__experiment_id__versions__version_id__trendpulse_screenings_get"];
+        put?: never;
+        /** Screen */
+        post: operations["screen_experiments__experiment_id__versions__version_id__trendpulse_screenings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trendpulse-screenings/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_trendpulse_screenings__record_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategies/{strategy_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List strategy versions */
+        get: operations["list_strategy_versions_strategies__strategy_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/execution/accounts/paper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paper Account Status */
+        get: operations["paper_account_status_execution_accounts_paper_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccountMode
+         * @enum {string}
+         */
+        AccountMode: "NET";
         /** ActionRequest */
         ActionRequest: {
             /** Arguments */
@@ -1283,6 +1357,91 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** ExperimentBoundTrendPulse */
+        ExperimentBoundTrendPulse: {
+            /**
+             * Account Verified Here
+             * @default false
+             * @constant
+             */
+            account_verified_here?: false;
+            /**
+             * Binding Id
+             * Format: uuid
+             */
+            binding_id: string;
+            /** Configuration Hash */
+            configuration_hash: string;
+            /**
+             * Contract Version
+             * @default trendpulse-experiment-research/v1
+             * @constant
+             */
+            contract_version?: "trendpulse-experiment-research/v1";
+            /**
+             * Declared Execution Account Id
+             * Format: uuid
+             */
+            declared_execution_account_id: string;
+            declared_execution_source: components["schemas"]["ExperimentSource"];
+            /** Declared Native Uid */
+            declared_native_uid: string | null;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Experiment Version Id
+             * Format: uuid
+             */
+            experiment_version_id: string;
+            /**
+             * Native Execution
+             * @default false
+             * @constant
+             */
+            native_execution?: false;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Performance */
+            performance?: null;
+            /**
+             * Runtime Activated
+             * @default false
+             * @constant
+             */
+            runtime_activated?: false;
+            /**
+             * Sample Eligible
+             * @default false
+             * @constant
+             */
+            sample_eligible?: false;
+            /**
+             * Sample Group Id
+             * Format: uuid
+             */
+            sample_group_id: string;
+            signal: components["schemas"]["TrendPulseSignal"];
+            /** Strategy Content Hash */
+            strategy_content_hash: string;
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Variant Key */
+            variant_key: string;
+        };
         /** ExperimentConfiguration */
         "ExperimentConfiguration-Input": {
             account: components["schemas"]["ExperimentAccount"];
@@ -1712,6 +1871,11 @@ export interface components {
             /** Raw Content Hash */
             raw_content_hash: string;
         };
+        /**
+         * Finality
+         * @enum {string}
+         */
+        Finality: "final" | "forming" | "corrected" | "unknown";
         /** FiveMinuteFlow */
         "FiveMinuteFlow-Output": {
             /** Aggressive Buy Base Volume */
@@ -2117,6 +2281,30 @@ export interface components {
             kind: "conversation_message" | "journal_trade" | "journal_observation" | "document" | "backtest_run" | "paper_validation_run";
         };
         /**
+         * LessonSourceMetadata
+         * @description Provenance when a strategy version is created from an accepted lesson.
+         */
+        LessonSourceMetadata: {
+            /** Accepted Lesson Text */
+            accepted_lesson_text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Lesson Id
+             * Format: uuid
+             */
+            lesson_id: string;
+            /** Mistake Type */
+            mistake_type: string;
+            /** Reviewer Notes */
+            reviewer_notes?: string | null;
+            /** Rule Update Summary */
+            rule_update_summary?: string | null;
+        };
+        /**
          * MarginMode
          * @enum {string}
          */
@@ -2250,6 +2438,59 @@ export interface components {
             unit: string;
             /** Value */
             value: string;
+        };
+        /**
+         * ObservationType
+         * @enum {string}
+         */
+        ObservationType: "ohlcv" | "trade" | "cvd" | "order_book" | "volume" | "structure" | "open_interest" | "funding";
+        /**
+         * OhlcvBar
+         * @description One venue kline after normalization.
+         */
+        "OhlcvBar-Output": {
+            /** Adapter Version */
+            adapter_version: string;
+            /** Base Volume */
+            base_volume: string;
+            /** Close */
+            close: string;
+            /** Content Hash */
+            content_hash: string;
+            finality: components["schemas"]["Finality"];
+            /** High */
+            high: string;
+            instrument: components["schemas"]["InstrumentIdentity-Output"];
+            /**
+             * Interval End
+             * Format: date-time
+             */
+            interval_end: string;
+            /**
+             * Interval Start
+             * Format: date-time
+             */
+            interval_start: string;
+            /** Low */
+            low: string;
+            /** Open */
+            open: string;
+            /** Provider Complete */
+            provider_complete: boolean;
+            /** Quote Volume */
+            quote_volume: string;
+            /** Revision */
+            revision: number;
+            /** Source Event Id */
+            source_event_id: string;
+            /**
+             * Source Time
+             * Format: date-time
+             */
+            source_time: string;
+            timeframe: components["schemas"]["Timeframe"];
+            /** Trade Count */
+            trade_count?: number | null;
         };
         /** OrderBookObservation */
         OrderBookObservation: {
@@ -2458,6 +2699,37 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PaginatedUserStrategyVersions */
+        PaginatedUserStrategyVersions: {
+            /** Items */
+            items: components["schemas"]["UserStrategyVersion"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** PaperAccountStatus */
+        PaperAccountStatus: {
+            account: components["schemas"]["PaperExecutionAccount"] | null;
+            /** Can Register */
+            can_register: boolean;
+        };
+        /** PaperExecutionAccount */
+        PaperExecutionAccount: {
+            account_mode: components["schemas"]["AccountMode"];
+            /** Enabled */
+            enabled: boolean;
+            execution_mode: components["schemas"]["app__schemas__trade_plan__ExecutionMode"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** PaperPreTradeAnalysis */
         PaperPreTradeAnalysis: {
             /** Entry */
@@ -2526,6 +2798,11 @@ export interface components {
             strategy_version_id?: string | null;
         };
         /**
+         * PrivacyClass
+         * @enum {string}
+         */
+        PrivacyClass: "public_market_data";
+        /**
          * ProductFamily
          * @enum {string}
          */
@@ -2575,6 +2852,60 @@ export interface components {
              */
             regional_failure?: boolean;
             source_family: components["schemas"]["SourceFamily"];
+        };
+        /**
+         * PublicMarketObservation
+         * @description Global public venue fact. No tenant owner.
+         */
+        "PublicMarketObservation-Output": {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Event Time
+             * Format: date-time
+             */
+            event_time: string;
+            finality: components["schemas"]["Finality"];
+            freshness_state: components["schemas"]["FreshnessState"];
+            identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /** Interval End */
+            interval_end?: string | null;
+            /** Interval Start */
+            interval_start?: string | null;
+            /**
+             * Observation Id
+             * Format: uuid
+             */
+            observation_id: string;
+            observation_type: components["schemas"]["ObservationType"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Payload Content Hash */
+            payload_content_hash: string;
+            /** @default public_market_data */
+            privacy_class?: components["schemas"]["PrivacyClass"];
+            /**
+             * Receive Time
+             * Format: date-time
+             */
+            receive_time: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Revision */
+            revision: number;
+            /** Source Event Id */
+            source_event_id: string;
+            /**
+             * Source Time
+             * Format: date-time
+             */
+            source_time: string;
         };
         /**
          * QuantityUnit
@@ -3807,6 +4138,399 @@ export interface components {
             /** Summary */
             summary: string;
         };
+        /** TrendPulseEvidenceReference */
+        TrendPulseEvidenceReference: {
+            /**
+             * Available At
+             * Format: date-time
+             */
+            available_at: string;
+            /** Observation Hash */
+            observation_hash: string;
+            /**
+             * Observation Id
+             * Format: uuid
+             */
+            observation_id: string;
+            /** Payload Hash */
+            payload_hash: string;
+            timeframe: components["schemas"]["Timeframe"];
+        };
+        /** TrendPulseScreeningCreate */
+        TrendPulseScreeningCreate: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Trigger End
+             * Format: date-time
+             */
+            trigger_end: string;
+            /** Variant Key */
+            variant_key: string;
+        };
+        /** TrendPulseScreeningDetail */
+        TrendPulseScreeningDetail: {
+            /**
+             * Acquisition Started At
+             * Format: date-time
+             */
+            acquisition_started_at: string;
+            /** Configuration Hash */
+            configuration_hash: string;
+            /**
+             * Contract Version
+             * @default trendpulse-screening/v1
+             * @constant
+             */
+            contract_version?: "trendpulse-screening/v1";
+            /**
+             * Decision At
+             * Format: date-time
+             */
+            decision_at: string;
+            /** Duplicate Of */
+            duplicate_of?: string | null;
+            /** Entry Receipts */
+            entry_receipts: number;
+            evidence: components["schemas"]["TrendPulseScreeningEvidence"];
+            /** Evidence Hash */
+            evidence_hash: string;
+            /**
+             * Evidence Mode
+             * @enum {string}
+             */
+            evidence_mode: "public_rest" | "replay";
+            /**
+             * Execution Authorized
+             * @default false
+             * @constant
+             */
+            execution_authorized?: false;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Experiment Version Id
+             * Format: uuid
+             */
+            experiment_version_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Management Authority
+             * @default false
+             * @constant
+             */
+            management_authority?: false;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Performance */
+            performance?: null;
+            /** Reason */
+            reason: string;
+            /**
+             * Receipt Provenance
+             * @enum {string}
+             */
+            receipt_provenance: "live_public_rest" | "recorded_public_receipts" | "synthetic_fixture";
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Sample Eligible
+             * @default false
+             * @constant
+             */
+            sample_eligible?: false;
+            signal?: components["schemas"]["ExperimentBoundTrendPulse"] | null;
+            /** Signal Id */
+            signal_id?: string | null;
+            status: components["schemas"]["TrendPulseStatus"];
+            /** Strategy Content Hash */
+            strategy_content_hash: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Trend Receipts */
+            trend_receipts: number;
+            /**
+             * Trigger End
+             * Format: date-time
+             */
+            trigger_end: string;
+            /** Variant Key */
+            variant_key: string;
+        };
+        /**
+         * TrendPulseScreeningEvidence
+         * @description Original canonical receipts, including partial acquisition on failure.
+         */
+        TrendPulseScreeningEvidence: {
+            /**
+             * Entry Bars
+             * @default []
+             */
+            entry_bars?: components["schemas"]["OhlcvBar-Output"][];
+            /**
+             * Entry Observations
+             * @default []
+             */
+            entry_observations?: components["schemas"]["PublicMarketObservation-Output"][];
+            instrument_rules?: components["schemas"]["InstrumentRules"] | null;
+            /**
+             * Trend Bars
+             * @default []
+             */
+            trend_bars?: components["schemas"]["OhlcvBar-Output"][];
+            /**
+             * Trend Observations
+             * @default []
+             */
+            trend_observations?: components["schemas"]["PublicMarketObservation-Output"][];
+        };
+        /** TrendPulseScreeningPage */
+        TrendPulseScreeningPage: {
+            /** Items */
+            items: components["schemas"]["TrendPulseScreeningRecord"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** TrendPulseScreeningRecord */
+        TrendPulseScreeningRecord: {
+            /**
+             * Acquisition Started At
+             * Format: date-time
+             */
+            acquisition_started_at: string;
+            /** Configuration Hash */
+            configuration_hash: string;
+            /**
+             * Contract Version
+             * @default trendpulse-screening/v1
+             * @constant
+             */
+            contract_version?: "trendpulse-screening/v1";
+            /**
+             * Decision At
+             * Format: date-time
+             */
+            decision_at: string;
+            /** Duplicate Of */
+            duplicate_of?: string | null;
+            /** Entry Receipts */
+            entry_receipts: number;
+            /** Evidence Hash */
+            evidence_hash: string;
+            /**
+             * Evidence Mode
+             * @enum {string}
+             */
+            evidence_mode: "public_rest" | "replay";
+            /**
+             * Execution Authorized
+             * @default false
+             * @constant
+             */
+            execution_authorized?: false;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Experiment Version Id
+             * Format: uuid
+             */
+            experiment_version_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Management Authority
+             * @default false
+             * @constant
+             */
+            management_authority?: false;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Performance */
+            performance?: null;
+            /** Reason */
+            reason: string;
+            /**
+             * Receipt Provenance
+             * @enum {string}
+             */
+            receipt_provenance: "live_public_rest" | "recorded_public_receipts" | "synthetic_fixture";
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Sample Eligible
+             * @default false
+             * @constant
+             */
+            sample_eligible?: false;
+            /** Signal Id */
+            signal_id?: string | null;
+            status: components["schemas"]["TrendPulseStatus"];
+            /** Strategy Content Hash */
+            strategy_content_hash: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Trend Receipts */
+            trend_receipts: number;
+            /**
+             * Trigger End
+             * Format: date-time
+             */
+            trigger_end: string;
+            /** Variant Key */
+            variant_key: string;
+        };
+        /**
+         * TrendPulseSignal
+         * @description Closed-candle research geometry, never a Candidate or executable TradePlan.
+         */
+        TrendPulseSignal: {
+            /**
+             * Adapter Version
+             * @default trendpulse-1r-research/v2
+             * @constant
+             */
+            adapter_version?: "trendpulse-1r-research/v2";
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Decision At
+             * Format: date-time
+             */
+            decision_at: string;
+            direction: components["schemas"]["TradeDirection"];
+            /** Ema50 Slope Ratio */
+            ema50_slope_ratio: string;
+            /** Entry */
+            entry: string;
+            /** Entry Ema20 */
+            entry_ema20: string;
+            /** Evidence */
+            evidence: components["schemas"]["TrendPulseEvidenceReference"][];
+            /**
+             * Execution Authorized
+             * @default false
+             * @constant
+             */
+            execution_authorized?: false;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Gross Reward Risk
+             * @default 1
+             * @constant
+             */
+            gross_reward_risk?: 1;
+            identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /** Instrument Rules Hash */
+            instrument_rules_hash: string;
+            /**
+             * Known At
+             * Format: date-time
+             */
+            known_at: string;
+            /**
+             * Management Authority
+             * @default false
+             * @constant
+             */
+            management_authority?: false;
+            /** Performance */
+            performance?: null;
+            /** Pullback Event Ids */
+            pullback_event_ids: [
+                string,
+                string,
+                string
+            ];
+            /**
+             * Runtime Activated
+             * @default false
+             * @constant
+             */
+            runtime_activated?: false;
+            /**
+             * Signal Id
+             * Format: uuid
+             */
+            signal_id: string;
+            /** Spec Hash */
+            spec_hash: string;
+            /** Structural Extreme */
+            structural_extreme: string;
+            /** Structural Stop */
+            structural_stop: string;
+            /** Structure Anchor Ids */
+            structure_anchor_ids: [
+                string,
+                string,
+                string,
+                string
+            ];
+            /** Target */
+            target: string;
+            /** Trend Ema20 */
+            trend_ema20: string;
+            /** Trend Ema50 */
+            trend_ema50: string;
+            /**
+             * Trend End
+             * Format: date-time
+             */
+            trend_end: string;
+            /**
+             * Trigger End
+             * Format: date-time
+             */
+            trigger_end: string;
+            /** Trigger Event Id */
+            trigger_event_id: string;
+        };
+        /**
+         * TrendPulseStatus
+         * @enum {string}
+         */
+        TrendPulseStatus: "unavailable" | "refused" | "no_setup" | "qualified_research_signal" | "duplicate";
         /**
          * TriggeredRule
          * @description A single rule outcome contributing to the overall verdict.
@@ -4012,6 +4736,41 @@ export interface components {
             notes?: string | null;
             setup_type?: components["schemas"]["StrategyId"] | null;
         };
+        /** UserStrategyVersion */
+        UserStrategyVersion: {
+            backtest_status: components["schemas"]["BacktestStatus"];
+            card: components["schemas"]["StrategyCard-Output"];
+            /** Content Hash */
+            content_hash?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            lesson_source_metadata?: components["schemas"]["LessonSourceMetadata"] | null;
+            paper_validation_status: components["schemas"]["PaperValidationStatus"];
+            /** Pattern Spec */
+            pattern_spec?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /** Structured Rules */
+            structured_rules?: {
+                [key: string]: unknown;
+            } | null;
+            validation_status: components["schemas"]["StrategyValidationStatus"];
+            /** Version */
+            version: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -4102,6 +4861,11 @@ export interface components {
             /** Upper */
             upper: string;
         };
+        /**
+         * ExecutionMode
+         * @enum {string}
+         */
+        app__schemas__trade_plan__ExecutionMode: "PAPER";
         /**
          * MarketType
          * @enum {string}
@@ -4842,6 +5606,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listing_experiments__experiment_id__versions__version_id__trendpulse_screenings_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                status?: components["schemas"]["TrendPulseStatus"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendPulseScreeningPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    screen_experiments__experiment_id__versions__version_id__trendpulse_screenings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrendPulseScreeningCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendPulseScreeningDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_trendpulse_screenings__record_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendPulseScreeningDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_strategy_versions_strategies__strategy_id__versions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedUserStrategyVersions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paper_account_status_execution_accounts_paper_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperAccountStatus"];
                 };
             };
         };

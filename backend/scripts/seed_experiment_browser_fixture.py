@@ -17,11 +17,34 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from tests.support.experiment_fixtures import World
+from tests.test_trendpulse_1r_adapter import END, spec
 
 from app.core.config import Settings
-from app.db.models import User
+from app.db.models import User, UserStrategyVersion
 from app.schemas.experiments import ExperimentCreate
+from app.schemas.strategy_library import StrategyCard
 from app.security.tokens import create_access_token
+
+
+class BrowserWorld(World):
+    """Domain fixtures also need a valid public strategy DTO on the actual API."""
+
+    def add_strategy_version(self, spec, number):
+        row = UserStrategyVersion(
+            id=uuid4(),
+            strategy_id=self.strategy.id,
+            version=number,
+            card=StrategyCard(
+                strategy_name="Synthetic authored research",
+                entry_conditions=["Closed trigger research observation"],
+                invalidation=["Research structure invalidated"],
+                stop_loss=["Structural research stop; no execution authority"],
+            ).model_dump(mode="json"),
+            pattern_spec=spec.model_dump(mode="json"),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
 
 
 def main() -> None:
@@ -45,7 +68,7 @@ def main() -> None:
     )
     try:
         with Session(engine, expire_on_commit=False) as session:
-            world = World(session)
+            world = BrowserWorld(session)
             world.now = datetime.now(UTC) - timedelta(minutes=3)
             user = session.get(User, world.tenant.user_id)
             assert user is not None
@@ -90,7 +113,15 @@ def main() -> None:
             )
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(
-                json.dumps({"token": token, "experiment_id": str(exploration.experiment_id)}) + "\n"
+                json.dumps(
+                    {
+                        "token": token,
+                        "experiment_id": str(exploration.experiment_id),
+                        "research_spec": spec().model_dump(mode="json"),
+                        "trigger_end": END.isoformat(),
+                    }
+                )
+                + "\n"
             )
             args.output.chmod(0o600)
             print("Seeded synthetic tenant; runtime inactive; private local auth file written.")

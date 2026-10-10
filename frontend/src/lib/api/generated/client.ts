@@ -187,3 +187,45 @@ export function experimentSample(experimentId: paths["/experiments/{experiment_i
     responseValidator: validators.experimentSampleResponse,
   });
 }
+
+export function trendpulseScreen(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/trendpulse-screenings`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.trendpulseScreenRequest,
+    errorValidators: { 422: validators.trendpulseScreenError422 },
+    responseValidator: validators.trendpulseScreenResponse,
+  });
+}
+
+export function trendpulseScreenings(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["path"]["version_id"], query?: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/trendpulse-screenings`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.trendpulseScreeningsError422 },
+    responseValidator: validators.trendpulseScreeningsResponse,
+  });
+}
+
+export function trendpulseScreeningDetail(id: paths["/trendpulse-screenings/{record_id}"]["get"]["parameters"]["path"]["record_id"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/trendpulse-screenings/{record_id}"]["get"]["responses"][200]["content"]["application/json"]>(`/trendpulse-screenings/${encodeURIComponent(id)}`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    errorValidators: { 422: validators.trendpulseScreeningDetailError422 },
+    responseValidator: validators.trendpulseScreeningDetailResponse,
+  });
+}
+
+export function strategyVersions(id: paths["/strategies/{strategy_id}/versions"]["get"]["parameters"]["path"]["strategy_id"], query?: paths["/strategies/{strategy_id}/versions"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/strategies/{strategy_id}/versions"]["get"]["responses"][200]["content"]["application/json"]>(`/strategies/${encodeURIComponent(id)}/versions`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.strategyVersionsError422 },
+    responseValidator: validators.strategyVersionsResponse,
+  });
+}
+
+export function paperAccount(options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/execution/accounts/paper"]["get"]["responses"][200]["content"]["application/json"]>("/execution/accounts/paper", {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    responseValidator: validators.paperAccountResponse,
+  });
+}

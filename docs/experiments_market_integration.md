@@ -1,179 +1,330 @@
-# Next batch: experiments, market evidence and Strategies
+# Next batch: authored experiments and durable research
 
-This batch uses `codex/experiments-market-integration`. PR237 and its hosted release
-qualification remain frozen at `3600ec89e48a6f3cf2f29b4468ab124d1219f627`.
-The initial integration was published early at
-`1ebf85357bc33c1f966e06f892a1a9a02adefafb`. The final candidate SHA is recorded in
-the integration PR and the generated cloud handoff, rather than embedding a
-self-referencing commit hash in this document.
+PR244 uses `codex/experiments-market-integration`. PR237 remains frozen at
+`3600ec89e48a6f3cf2f29b4468ab124d1219f627`; its staging smoke instructions are unchanged.
+This milestone resumes published PR244 `ba627c69d8d08d266428e68a85b1aab80efda5e5`.
+The final exact candidate is recorded in PR244 and the existing cloud handoff;
+this document does not embed a self-referencing commit SHA.
 
-| Included work | Reviewed feature revision | Integrated scope |
+| Included work | Reviewed feature SHA | Integrated scope |
 | --- | --- | --- |
-| PR241 | `6ca6a76201547524275266dfa22fdf12f5932b14` | Immutable experiment domain, lifecycle/approval API, additive a11 |
-| PR242 | `88ce82ff620c8fd206154a2e8593d242bad83e5c` | Canonical public market context and corrected acquisition clocks |
-| PR243 | `8b9d1b83ee5c4082d87005afbfdfa8343d286a7e` | Reviewed pure adapter receipt correction, research v2 only |
+| PR241 | `6ca6a76201547524275266dfa22fdf12f5932b14` | Immutable bounded domain, approval/lifecycle API, a11 |
+| PR242 | `88ce82ff620c8fd206154a2e8593d242bad83e5c` | Canonical public evidence and corrected acquisition clocks |
+| PR243 | `8b9d1b83ee5c4082d87005afbfdfa8343d286a7e` | Published pure receipt-timing correction |
+| PR245 | `93af3b27e2a5002b74e3dc38499d081d22dfe772` | Trusted native resolver foundation; admission stays closed |
+| PR246 | `62a20bb3759b3972fe935b8f05e25c21a84e8224` | Bounded durable screening, authenticated reads, immutable a12 |
 
-PR243's correction was reviewed after publication: selected candles retain their
-fixed boundaries, original receipts must be available by the actual post-close
-decision, future/same-close context cannot influence an earlier decision, and
-expiry remains close +60 seconds. Its later screening continuation is excluded.
-No sibling branch is rewritten or advanced by this integration.
+Both new contributions were fetched, reviewed against their contracts/handoffs and
+qualified on disposable PostgreSQL before integration. No sibling branch was
+rewritten. Integration corrections additionally close opening/position lineage,
+local authoring validation and request recovery issues; they grant no runtime authority.
 
-## Product and contracts
+## Connected product path
 
-The actual `/strategies` page reads generated `GET /experiments` and detail clients.
-Cards show the latest version, Exploration/Validation, lifecycle, sample count and
-a recorded lifecycle milestone. Details show a compact recent milestone list,
-per-variant sample counts and expandable exact configuration/evidence. IDs/hashes
-stay in that expansion. Back returns to the cards. Paging uses the real offset API.
-All view/read/mutation state is cleared on tenant/user/session changes; aborted or
-late responses cannot populate another identity's view. No shared persistent cache
-contains experiment data.
+The existing Agent/document capture is the authoring entry. A complete typed research
+spec can be captured as JSON or a fenced JSON block. Every binding and parameter must
+be explicit. Incomplete, conflicting or malformed recognized contracts remain invalid
+through persisted proposal confirmation: generic keyword rules cannot conceal the
+failure. Correction creates a new reviewable proposal. Existing explicit confirmation,
+content hashes, tenant identity and immutable strategy versions remain authoritative.
+A new TrendPulse strategy is `manual_review`; no executable compiler is registered.
 
-Request approval, start/resume, pause and complete use the exact version and
-`expected_revision`. Server membership and bounded approval remain authoritative;
-the UI exposes no approval bypass. A lost/malformed mutation response disables
-another action until an explicit current-state read. No mutation retries automatically.
-Starting only changes domain lifecycle. It installs no worker or trading runtime.
+The saved strategy page offers a collapsed bounded experiment draft using actual
+`GET /strategies/{id}/versions`, `GET /execution/accounts/paper` and `POST /experiments`.
+It requires an existing enabled paper account and a supported immutable authored
+version. It takes explicit USDT bounds, Exploration/Validation and setup-observation
+limits. One baseline copies the exact authored parameters/symbol/timeframes. Models
+remain disabled. It neither registers an account nor invents a native proof or risk
+envelope. Creating or starting a domain experiment does not activate trading.
 
-Agent or document capture remains the authoring entry. This compact view does not
-invent an experiment configuration, risk envelope or native performance from an
-ordinary strategy card. Existing experiment creation/version/approval/promotion
-APIs are generated, but this UI adds no authoring wizard or Owner approval form.
-Performance stays unavailable. Setup observations are not trades, and internal
-simulation is never presented as native BloFin performance.
+The actual `/strategies` route opens the created experiment, shows compact cards,
+latest lifecycle, recent activity and unavailable performance, and renders durable
+TrendPulse screenings with status, rejection reason, receipt provenance and time.
+Recent history is bounded to five rows; details contain technical IDs and evidence.
+Back returns to screening history or experiment cards. Native samples, signals and
+internal simulation remain separate; signals never become trades or portfolio returns.
+Existing approval/lifecycle operations use exact versions and expected revisions.
+Owner approval remains a server boundary; no UI approval bypass was introduced.
 
-Generated shared artifacts cover both combined backend features and all eight
-experiment operations. Generation now handles 201 JSON success responses and
-multiple path parameters while retaining the existing single-parameter signatures.
-Full OpenAPI SHA256:
-`a2d41da19557227474103f917656610329f5521838646e5c2dea13eeb9e02037`.
-MarketEvidenceContext and the pure TrendPulse interface keep their separate published
-schemas. Context does not replace required canonical qualification evidence.
+Draft and screening requests validate complete generated bodies before storing pending
+state. Definite first-attempt application refusals release the editable form. Timeouts,
+interrupted connections, malformed successful responses and unresolved concurrency
+conflicts retain exact original payloads and keys. Explicit recovery never automatically
+reissues transport. Rejection of a recovery attempt cannot prove the original did not
+commit, so it retains that identity. Pending state survives a tab reload and is scoped
+to organization/user/session/version; clearing a session aborts old reads and removes
+recovery records where storage permits. Storage denial cannot interrupt identity
+invalidation or subsequent session listeners. Foreign-tenant reads/writes return404.
 
-## Migration sequencing and rollback
+Shared generation adds three screening operations plus authored versions/paper account
+to the existing pilot clients. Full combined OpenAPI SHA256:
+`1955b672b6ed3099a3043f4fe4d23419182880b5bd3d19e70b848de9cff279bb`.
+Pilot SHA256: `2acfa70b817e7665fb05afa26eccd374e0a90478f62d7bc46795ab63f2bff681`.
+Multiple path parameters and 201 success handling preserve existing signatures.
 
-There is one head, `a11experiments001`, with explicit continuation:
+## Native trust and performance boundary
+
+PR245 is a trusted-resolver foundation, not an attestation producer. Integration
+requires a server-owned literal-true proof of a flat position before the opening
+entry and a complete flat→open→flat exit ancestry with no unrelated inventory/fills.
+The resolver rejects reducing/unknown entries, nonzero opening realized PnL, unproved
+position lineage, foreign/manual activity and receipt/source mismatches. Existing
+closing-fill aggregation counts each owned native fill once, preserves contracts,
+known fee currency and unknown costs/PnL. Simulation never supplies native proof.
+The pure contract SHA256 is
+`0d2ca13605f9542c29e0232c6edf29883186b2cc8a95b0015386b0457c122870`.
+
+No verified server-owned producer is installed. HTTP sample admission remains503,
+no native performance endpoint is enabled and performance stays unavailable. Real
+opening position, exit ancestry, contract metadata, fee/funding and PnL reconciliation
+must be accepted from actual native evidence before admission can open. No exchange
+order/read credential or operator setting was used for local qualification.
+
+PR246's published untuned four-regime synthetic replay records192 no-setups/zero
+signals. That report proves no strategy performance. The local browser separately
+uses a tagged positive synthetic fixture to exercise persistence and recovery;
+its research signal grants no execution authority or admitted sample.
+
+## Migration order and retained-schema rollback
+
+There is one head, `a12trendpulsescreen001`:
 
 ```text
-a8agentcapture001 -> a9knowledgeoutbox001 -> a10blofinactivity001 -> a11experiments001
+a8agentcapture001 -> a9knowledgeoutbox001 -> a10blofinactivity001
+                 -> a11experiments001 -> a12trendpulsescreen001
 ```
 
-Only the new a11 migration is adopted; historical migrations remain unchanged.
-PR242 and the included pure PR243 correction add no migration. Any later screening
-migration must be coordinated after a11, then independently reviewed and qualified.
-Do not introduce a parallel head or include an unpublished runtime migration.
+The a11 and a12 files are byte-identical to the reviewed feature revisions. Earlier
+migration files are unchanged. Do not stamp the database or create a parallel head.
+Hosted read-only metadata on10October verified Render PostgreSQL
+`dpg-d8fuok57vvec739lm0u0-a` (`alphatrade-postgres-staging`, PostgreSQL18) at
+`a8agentcapture001`: documents exist; outbox, native facts, experiments and screenings
+do not yet exist. This is database metadata, not proof of the API's secret connection
+binding; verify that binding securely inside the authorized release executor.
 
-Disposable PostgreSQL qualification checks upgrade a10 → a11, downgrade/reupgrade
-with native history retained, and an application rollback with the populated schema
-retained. The rollback test seeds documents/chunks, pending/processing/ready/failed
-indexing jobs and a deletion tombstone, native orders/fills/cursors, and a running
-experiment with immutable configuration, lifecycle records and a synthetic sample.
-Both plain b165 and bda sources refuse the unknown a11 revision. An archived bda
-package carrying the byte-identical a10 **and a11** migrations performs a no-op
-upgrade, passes API startup/health plus disarmed worker probes twice, and preserves
-exact row snapshots. Returning to the current source preserves those snapshots.
-This is source/startup proof; no hosted rollback image is built or deployed here.
+The disposable PostgreSQL17 retained-schema probe creates five documents/chunks,
+pending/processing/ready/failed jobs and a deletion tombstone; native account/facts/
+cursors; experiment versions/events/sample; and actual qualified, duplicate and
+refused screening rows. Both plain b165 and bda packages refuse unknown a12. An
+archived bda package with byte-identical a10/a11/a12 migration overlays performs a
+no-op upgrade, passes mock API startup/health and disarmed worker probes twice,
+and preserves exact row snapshots. Returning to the integrated source preserves
+those snapshots. Retained snapshot SHA256:
+`d1423d9f61b9b6ce6227e08ce2cc61f945d37ba624aef3be242079aed2ec7a31`.
+This is local source/startup proof, not a built hosted image or armed-worker acceptance.
 
-For a future coordinated rollback:
+Coordinated rollback sequence:
 
-1. Stop admission of new writes and drain current requests; pause/drain consumers
-   through the separately authorized release process, preserving captured operator
-   settings. Keep legacy ingestion writers from overlapping the outbox consumer.
-2. Take and verify the database/provider snapshot. Retain a11; **do not downgrade a
-   populated experiment schema**. Its downgrade drops experiments, versions, events
-   and samples. Downgrading a10/a9 also loses native history/outbox state.
-3. Use a separately built and tested migration-aware API/worker package containing
-   every retained revision through a11. A plain b165 image is not compatible proof.
-   Current proof uses bda + immutable a10/a11 overlays, with the worker disarmed;
-   an armed worker's compatibility remains unqualified.
-4. Coordinate API, worker and frontend revisions/API binding together. Check health,
-   exact database head, ownership reads and retained data before reopening writers.
-5. Restore only previously approved consumer/operator settings and resume exactly
-   one indexing consumer. Replay existing jobs, not duplicate document ingestion.
-   No order, Telegram message, provider activation or configuration reset is part
-   of the rollback probe or this integration task.
+1. Use the separately authorized existing write hold. Stop new writes, drain requests
+   and current consumers, preserving captured operator settings and checkpoints.
+   Prevent old synchronous ingestion writers from overlapping the outbox consumer.
+2. Verify a restorable database/provider snapshot and tenant-scoped inventories.
+   **Retain populated a12.** Its downgrade deletes screening history; a11 deletes
+   experiment state and a10/a9 delete native/outbox state. Never use plain b165 as
+   rollback compatibility proof, and never stamp or downgrade to hide a mismatch.
+3. Select separately built/tested migration-aware API and worker images carrying
+   every retained revision through a12, using the qualified bda overlay manifest.
+   The worker must remain disarmed unless its existing authorized behavior has
+   separately passed compatibility checks. Retain the schema during image rollback.
+4. Coordinate API, worker and a verified compatible frontend artifact/API binding.
+   Check exact installed commits, expected/database a12, paper health, ownership
+   reads and retained row/cursor inventories before reopening writes.
+5. Restore only the previously approved settings and one compatible indexing consumer.
+   Resume existing jobs with their original identities, not duplicate ingestion.
+   No order, Telegram message, provider activation or configuration reset is implied.
 
-## Focused evidence
+## Focused evidence and revision coverage
 
-These checks cover the final feature/UI contents, not full release acceptance.
-The final exact SHA is associated with them in the integration PR/handoff.
+| Selection | Executed result | Revision/source coverage |
+| --- | --- | --- |
+| PR245 resolver qualification |71 passed,0 skipped|Exact93af3b27 before integration; superseded by hardened87-case selection for resolver behavior|
+| Hardened native resolver |87 passed,0 skipped|Worker5681db9 → integrated1ff832a; source/tests/pure schema unchanged afterwards|
+| PR246 screening/acquisition/API/migration |36 passed,0 skipped|Exact62a20bb before integration; screened backend source unchanged|
+| Bybit evidence/CVD cache |118 passed,0 skipped|Worker0528b1e → integrated6c8da2a; deterministic test-only correction|
+| AgentWorkspace voice/recovery component |45 passed,0 skipped|Workerd25e60f → integrated3f64c00; production voice unchanged|
+| Captured authoring + existing confirmation |31 passed,0 skipped|Final root implementation:12 authoring cases +19 existing cases,79.15s|
+| Retained a12 PostgreSQL rollback |1 passed,0 skipped|Final a12 probe,65.73s; no hosted-image claim|
+| Research draft/screening components |20 passed,0 skipped|7 draft +13 screening cases after independent recovery review|
+| Authored-strategy route |8 passed,0 skipped|Actual route component with complete typed prerequisites|
+| Research generated client |9 passed,0 skipped|Final combined client; final summary fixture removes extra fields|
+| Existing view/contracts/transport |28 passed,0 skipped|7 view +6 experiment +7 generated +8 transport cases; reuse valid unchanged-path evidence|
+| Actual Chromium API/browser |2 passed,0 skipped;24.8s +17.3s|Synthetic document→confirmation→bounded draft→malformed-success recovery; real API restart; history/reload/tenant404/sample503|
 
-- Backend: **255 passed, zero skipped**, 167.21s, disposable PostgreSQL 17. The
-  selection includes six experiment persistence/API/risk/identity/migration modules,
-  canonical context/timing, three pure TrendPulse modules, and retained-schema rollback.
-- Frontend: **28 passed, zero skipped**, four files: experiment view, experiment
-  generated boundary, existing generated boundaries and authenticated transport.
-- Actual Chromium Strategies flow: **1 passed, zero skipped**, 13.7s against a local
-  mock-provider API and PostgreSQL. It creates a domain experiment over an immutable
-  synthetic strategy, requests approval, checks Owner approval before start, loses
-  a reply after the server commits, checks one transport/no automatic duplicate,
-  explicitly reads recovery state, pauses/reloads, checks mobile width, verifies
-  default sample ingestion503 and another tenant's detail404.
-- Shared API and MarketEvidenceContext schema drift pass; frontend typecheck and
-  changed-file ESLint pass; changed Python lint/format pass. One migration head.
-- Initial browser fixture used an email rejected by the real `/auth/me` schema;
-  the local fixture was corrected to example.com. A subsequent ambiguous Pause
-  locator failed before any click; the selector now scopes the experiment details.
-  Neither issue changed production behavior or operator controls.
+These are focused results, not full backend acceptance. Initial PR244 CI38083209763
+had928 backend passes and one cache failure; PR246 CI38084766737 completed418 backend
+passes but one voice frontend failure. Their green jobs were inspected, not rerun or
+attributed as acceptance of newer code. The two repaired regressions preserve actual
+TTL freshness, concurrent collection/copy independence and actual voice readiness.
+Strict mypy on the two authoring services and hardened resolver sources, changed-file
+Ruff/format, frontend typecheck/ESLint, generated API/pure-schema drift and one-head
+checks pass. Late authoring annotations/local variable renames preserve tested behavior.
+The final publication's automatic focused CI is recorded separately with its exact SHA.
 
-Reproduce the backend selection from `backend/`, with an explicitly disposable
-loopback `EXPERIMENT_TEST_POSTGRES_URL` and the same URL in
-`PR237_ROLLBACK_POSTGRES_URL`:
+Reproduction uses explicitly disposable loopback PostgreSQL `alphatrade_test`:
 
 ```sh
-.venv/bin/pytest -o addopts='' -q -rs \
-  tests/test_experiment_api.py tests/test_experiment_domain.py \
-  tests/test_experiment_migration.py tests/test_experiment_concurrency.py \
-  tests/test_experiment_risk.py tests/test_experiment_native_identity.py \
-  tests/test_market_evidence_context_contract.py tests/test_required_derivative_acquisition.py \
-  tests/test_trendpulse_1r_adapter.py tests/test_trendpulse_1r_experiment_contract.py \
-  tests/test_trendpulse_1r_domain.py tests/test_pr237_migration_aware_rollback.py
+# backend; never a hosted DATABASE_URL
+EXPERIMENT_TEST_POSTGRES_URL="$disposable_url" .venv/bin/pytest -o addopts='' -q -rs \
+  tests/test_research_authoring_integration.py tests/test_strategy_conversation_foundation.py
+PR237_ROLLBACK_POSTGRES_URL="$disposable_url" .venv/bin/pytest -o addopts='' -q -rs \
+  tests/test_pr237_migration_aware_rollback.py
+# frontend
+npx vitest run src/components/strategies/ExperimentDraftPanel.test.tsx \
+  src/components/strategies/ScreeningsPanel.test.tsx src/lib/api/research.test.ts \
+  'src/app/(app)/strategy-lab/[id]/page.test.tsx'
 ```
 
-Frontend focused command:
+`backend/scripts/research_browser_fixture.py` refuses non-loopback/disarmed/mock
+settings and overrides only the real screening service's acquisition dependency
+with tagged synthetic receipts. It never changes production operator flags or makes
+public-provider calls. Seed short-lived private auth using the existing loopback-only
+seeder, start this fixture API plus the actual frontend, and run only the authoring
+phase of `frontend/ui-tests/research-api.spec.ts`. Stop that owned API process, retain
+PostgreSQL, restart the same source in a new process, then run only the restart phase.
+An explicit fixture header proves the process changed; lack of prerequisites fails
+these selected tests. Browser state restores once, so reload cannot resurrect a
+successfully resolved pending request. Screenshots contain synthetic content only.
+The existing lifecycle browser evidence on ba627 is retained for unchanged lifecycle
+operations; it is not current hosted or full-suite acceptance.
 
-```sh
-npx vitest run src/components/strategies/ExperimentsPanel.test.tsx \
-  src/lib/api/experiments.test.ts src/lib/api/generated-contracts.test.ts \
-  src/lib/api/client.test.ts
-```
+## Hosting receipt and one release access packet
 
-`backend/scripts/seed_experiment_browser_fixture.py` is a development-only fixture:
-run it as `python -m scripts.seed_experiment_browser_fixture` from `backend/`, with
-explicit `--database-url`, `--output /tmp/.../auth.json`, and a synthetic
-`--local-jwt-secret` matching the local API. It accepts only loopback PostgreSQL
-`alphatrade_test`, writes short-lived auth with mode0600, and activates no runtime.
-After a11 upgrade and local API/frontend startup, set `EXPERIMENT_BROWSER_AUTH_FILE`,
-`PLAYWRIGHT_API_URL`, `PLAYWRIGHT_BASE_URL`, `PLAYWRIGHT_SKIP_WEBSERVER=1` and the
-available Chromium executable, then run only
-`npx playwright test ui-tests/experiments-api.spec.ts --project=chromium`.
-Without an explicit synthetic fixture this browser test reports a prerequisite skip.
-Its executed local result above had no skips. Screenshots use synthetic content only.
+Read-only Render access works in workspace `tea-d7hn0fvavr4c73f62c70`:
 
-## Status and remaining gaps
+| Target | Verified configuration and live revision |
+| --- | --- |
+|API `alphatrade-api-staging` / `srv-d8fvbcd7vvec739mc060`|Tracks main; Docker backend; predeploy `alembic upgrade head`; liveb165b92276346f0e0fe3ccdbd2bec3443dc75d40, deploydep-db4gdkeq1p3s73a395u0|
+|Worker `alphatrade-paper-worker-staging` / `srv-daqej7o473hc73fsc1k0`|Tracks main; `python -m app.workers.paper_worker`; same liveb165, deploydep-db4gdkeq1p3s73a3975g|
+|PostgreSQL `alphatrade-postgres-staging` / `dpg-d8fuok57vvec739lm0u0-a`|Available PG18; read-only head a8 and table-presence metadata verified|
+|Frontend|Current target/artifact/revision/API binding **unknown**. Historical projectprj_y7vFqwbFvdpHvf2nMaDkKQauBhZQ, teamteam_LNgcEGBkqntUnTrktNjFzh7a and aliashttps://alpha-trade-ai-eight.vercel.app are evidence to verify, not current deployment proof|
 
-| Capability | Implemented | Integrated | Locally tested | Deployed |
+Never target the separate `ai-alphatrade-api-staging`. No deployment was attempted.
+The available Render deploy connector accepts no commit; using it would deploy main,
+not this candidate. No Render CLI/API credential, Vercel CLI/token or authenticated
+synthetic staging token is bound to this executor. HTTPS probes to api.render.com,
+the staging API and historical frontend returned proxy403. Vercel project listing
+returned403 requiring reauthentication to scope `alphatrade-ai`; it does not establish
+that the project/secret is absent. Read-only database access is available; write-hold,
+container execution, backup/restore and migration execution are unqualified.
+
+One concrete action packet for the existing release/access administrator:
+
+- Bind the already established Render exact-commit executor (API/CLI or existing
+  authorized release runner) to this workspace and the two exact service IDs, with
+  HTTPS to api.render.com and https://alphatrade-api-staging.onrender.com. Current
+  service-scoped MCP read access cannot select a deployment commit. Do not change
+  tracked branches, merge main or create infrastructure to work around this.
+- Reauthenticate the existing Vercel connector/CLI for the historical team/project
+  scope; allow api.vercel.com and the verified frontend/protection path. Resolve
+  the actual staging project/artifact/API binding before any promotion. Bind the
+  existing protected-deployment access where required; never assume an alias is staging.
+- Bind a scoped synthetic staging tenant/token through the executor's existing secure
+  secret configuration, plus existing container/write-hold/backup/restore permissions
+  for the verified API/worker/database. Record exact identity references securely;
+  do not paste secret values into chat. Database reads already work and need no new
+  generic credentials request.
+
+This packet enables the blocked exact-ref deploy, frontend identity/binding verification,
+coordinated backup/drain/migration and authenticated hosted smoke. It grants no runtime,
+provider, exchange, Telegram, billing or kill-switch changes.
+
+## Prepared staging order and workstream status
+
+1. Supervising review freezes the exact PR244 candidate and accepts the rollback
+   source/image manifest. Preserve frozen PR237 independently. Capture current operator
+   flags/account identity/providers securely without resetting render.yaml defaults.
+2. Through the established authorized release executor, verify API/worker database
+   binding, restorable snapshot, existing write hold and tenant-scoped inventories.
+   Drain old ingestion/API writers and worker consumers before migration. Stop at a
+   concrete blocker if the existing process cannot select this SHA without main merge.
+3. Exact-commit deploy API `srv-d8fvbcd7vvec739mc060`; its predeploy upgrades a8→a9→a10→a11→a12.
+   Require one database head a12 and matching packaged expected head, paper health and
+   exact installed SHA. Retire old synchronous ingestion writers before resuming writes.
+4. Exact-commit deploy worker `srv-daqej7o473hc73fsc1k0` at that same SHA with captured
+   existing command/settings. Verify one compatible outbox consumer and no old writer
+   overlap. Previously disabled consumers/screening remain disabled; do not activate
+   them merely to manufacture acceptance.
+5. Build/deploy the verified existing frontend from the same SHA and existing approved
+   API binding; verify team/project/deployment/environment, CORS/cookies and turn
+   budget. Require API commit = worker commit = frontend Git source = frozen candidate,
+   with database/code a12. No new project, alias guess or unreviewed main merge.
+6. Execute the preserved [authenticated staging smoke](reviewer_wave/staging_smoke_sequence.md),
+   plus this actual authoring/draft/history/recovery/tenant journey with synthetic content
+   and read-only native checks. Disabled screening/indexing means that operation remains
+   unaccepted; this task grants no activation. Keep the manual BloFin order incident
+   undiagnosed absent actual request/server evidence.
+7. Complete fresh required SFP diagnostics and naturally scheduled successful evaluations
+   for approved scopes under existing settings. Neither local synthetic signals nor
+   a startup heartbeat prove live scheduling or native performance.
+8. After review, aligned staging acceptance and fresh SFP prerequisites, freeze the ref
+   and dispatch the **single** final `.ai/RELEASE.md` gate with `full_backend=true` only
+   under the explicit final acceptance request. Record exact SHA, all jobs/counts/skips.
+   No such dispatch is justified while these hosted prerequisites are blocked.
+
+Routine required PR checks remain focused; superseded PR runs cancel, and expensive
+frontend build/evaluation/Docker/browser/full backend remain explicit manual gates.
+No workflow protection is weakened. The attached playbook reconciles the existing
+AGENTS/workflows/checkpoint: standing authority persists, routine implementation and
+batched publication do not require approval loops, the owner collects up to two
+workers directly, and missing access pauses only its operation. Protected release
+and financial boundaries remain intact. Mac/iCloud access is unavailable here;
+cloud publication source equality is verified separately without a downstream sync claim.
+
+| Named milestone | Implemented | Integrated/local accepted | Deployed | Live accepted |
 | --- | --- | --- | --- | --- |
-| Experiment domain/API/a11 | Yes | Yes | PostgreSQL/API | No |
-| Public evidence/Agent context | Yes | Yes | Deterministic receipts/contracts | No |
-| Pure TrendPulse receipt correction | Yes | Yes | Synthetic replay/domain | No |
-| Compact Strategies lifecycle view | Yes | Yes | Components + actual local browser/API | No |
-| Durable screening/read consumer | Separate owner continuation | No | No claim | No |
-| Trading/performance/sample adapters | Not installed | No | Fail-closed boundaries only | No |
+| Focused CI repairs |2/2|2/2|Unexecuted|Unexecuted|
+| Authoring-to-research journey |6/6|6/6|0/6|0/6|
+| Trust and privacy |4/4 safeguards|4/4 safeguards; native performance unqualified|0/4|0/4|
+| Migration/release preparation |4/4|4/4|0/4|0/4|
 
-Remaining integration work: Agent/document-to-bounded-experiment-draft authoring,
-Owner approval presentation if requested, durable screening/deduplication/rejection
-read consumer, canonical evidence persistence wiring, and separately trusted sample/
-performance adapters. Native exchange connectivity/coverage and armed worker/image
-rollback acceptance remain unverified. OI change/notional and historical book remain
-unsupported; no invented signal counts, portfolio returns or native performance.
+All local capabilities remain undeployed. Remaining external dependencies are the
+single access packet, verified rollback images/armed-worker compatibility, supervising
+review, aligned staging smoke/fresh SFP, final full gate and a separately verified
+native attestation producer before any sample/performance activation.
 
-Hosted access blockers carry forward independently: Render exact-commit deployment
-credentials/HTTPS path, verified frontend artifact/revision and deployment access,
-and an authenticated synthetic staging tenant. No hosted deployment or smoke was
-attempted or claimed here. Keep PR237's staging smoke instructions unchanged.
-Routine PR checks remain focused; expensive combined validation/full backend stays
-manual after the repository's explicit review/staging prerequisites. No full CI
-dispatch, main merge, deployment, provider activation, external order or operator
-setting change occurred.
+## Active milestone contract — 10 October 2026
+
+Accountable owner: current integration agent; two isolated repair workers maximum.
+Starting candidate: ba627c69d8d08d266428e68a85b1aab80efda5e5. Published contributions
+under review: PR245 93af3b27e2a5002b74e3dc38499d081d22dfe772 and PR246
+62a20bb3759b3972fe935b8f05e25c21a84e8224. PR237 stays frozen at
+3600ec89e48a6f3cf2f29b4468ab124d1219f627.
+
+The following denominator is fixed before implementation. Report each milestone's
+accepted/total separately for focused implementation, integrated local journey,
+staging deployment and live acceptance. A local pass establishes no hosted pass.
+
+- **Focused CI repairs (2):** R1 within-TTL Bybit consumers share one collection and
+  TTL expiry still refreshes; R2 voice recording waits for actual conversation
+  readiness and uses the same composer with an observable transcript.
+- **Authoring-to-research journey (6):** J1 existing Agent/document capture persists
+  an authored strategy; J2 that strategy can seed a bounded Exploration/Validation
+  draft through actual APIs without an alternative authoring wizard; J3 existing
+  approval/lifecycle boundaries persist and domain start grants no execution;
+  J4 actual Strategies renders durable screening status/reasons and compact recent
+  history with Back and technical evidence in details; J5 screening request identity
+  survives an ambiguous reply and explicit recovery without automatic duplicate
+  acquisition; J6 reload/fresh server sessions preserve screening outcomes and
+  deduplicate the same request across restart.
+- **Trust and privacy (4):** S1 account/tenant changes clear scoped UI state and
+  foreign tenants cannot read/write these experiments or receipts; S2 PR245 stays a
+  trusted-resolver foundation with HTTP native admission closed absent a verified
+  server-owned attestation producer; S3 opening-entry/exit lineage, contract units,
+  native position/monetary attribution and simulation separation are verified in
+  focused contracts, with unavailable performance kept explicit; S4 synthetic replay
+  with zero signals is labelled research evidence and never performance.
+- **Migration and release preparation (4):** M1 reviewed contributions integrate
+  with one immutable a8→a9→a10→a11→a12 ancestry and combined generated contracts;
+  M2 disposable PostgreSQL retained-schema rollback preserves documents, jobs,
+  native activity, experiments and actual screening history while plain old code
+  refuses the new head; M3 existing instructions/checkpoint adopt autonomous delivery
+  without routine approval/manual relay loops while retaining protected operations;
+  M4 one focused hosting pass identifies exact targets, blocked operations and the
+  coordinated staging/rollback sequence without changing settings.
+
+Authority: focused implementation, isolated worker branches, integration and batched
+publication to PR244. No main merge, deployment, provider activation, financial
+transaction, external message, credential/operator mutation or full CI dispatch.
+Final full backend gate remains after supervising review, staging and fresh SFP
+prerequisites under .ai/RELEASE.md. Native attestations/execution are not authorized
+by this milestone. No new paid model/resource, no new management system.

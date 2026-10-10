@@ -3160,7 +3160,9 @@ Nonblocking PG single-flight and process capacity protect the existing worker;
 database uniqueness and immutable guards preserve dedupe across restarts. Explicit
 public/recorded/synthetic provenance cannot grant native execution/sample authority.
 Authenticated bounded GET summaries/detail consume durable records. One reserved
-a12 follows a11; integration coordination and schema adoption remain outside RC.
+a12 follows a11; reviewed PR24662a20bb is now adopted by next-batch PR244 with
+one immutable migration head and retained-schema rollback proof. It remains outside
+frozen PR237 and is neither deployed nor full-release accepted.
 Synthetic untuned four-regime replay yields192 no-setups/zero signals; genuine
 original-arrival market replay remains unverified. Disabled defaults, gross1R,
 structural stops, no runner, no quantity/sample/performance or operator changes.

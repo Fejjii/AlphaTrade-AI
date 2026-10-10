@@ -2506,7 +2506,11 @@ See docs/blofin_native_activity.md for contract, milestones and integration.
 
 ## AT-119 — Generic Exploration and Validation experiment domain
 
-Status: READY (draft PR241; domain and integration correction locally verified).
+Status: INTEGRATED in next-batch PR244 at reviewed PR2416ca6a762; not deployed.
+The frozen PR237 candidate remains separate. Current next-batch migration head is
+a12trendpulsescreen001, preserving immutable a11 and its ancestry. Domain approval
+and lifecycle remain distinct from execution; current milestone evidence and
+accepted/total criteria are in docs/experiments_market_integration.md.
 Integration correction from bed8994: a11 roundtrip expectation and preserved ancestry,
 shared OpenAPI/hash regeneration, existing disposable CI PostgreSQL URL. Local
 affected selection 75 passed/no skips; CI policy 28 passed; frontend generated
@@ -2530,7 +2534,8 @@ Branch: codex/market-evidence-foundation. Own provider adapters, normalization,
 coverage and evidence contracts; reuse canonical OI and executed-flow/CVD.
 Add resting depth snapshots, causal process caches and actual Agent market consumer.
 Required historical book coverage remains unavailable and blocks qualification.
-Schema coordination posted to PR237; experiment owner acknowledgment pending.
+Schema coordination completed by the accountable next-batch owner: reviewed PR242
+88ce82ff is integrated in PR244 with shared generation. PR237 remains frozen.
 Native exchange API/WS acceptance unverified under current egress policy.
 No full backend CI, deployment, paid activation, orders or operator-setting changes.
 Contract/results/next consumer step: docs/market_evidence_foundation.md.
@@ -2559,16 +2564,21 @@ changes, full backend CI or activation. Contract: docs/trendpulse_1r_adapter_con
 
 ## AT-121 — Receipt correction then bounded TrendPulse research screening
 
-Status: READY (separate receipt correction published; screening continuation
-locally verified for draft publication). Correction 8b9d1b8:140 local passes,
+Status: INTEGRATED in next-batch PR244 at reviewed PR24662a20bb; not deployed.
+The real Strategies consumer now shows persisted screening/rejection history;
+Agent/document confirmation seeds a bounded draft. HTTP native sample admission
+stays closed, models stay disabled, and unavailable performance remains explicit.
+Current focused evidence/acceptance and hosted blockers are in the existing
+docs/experiments_market_integration.md checkpoint. Historical builder evidence:
+Correction 8b9d1b8:140 local passes,
 automatic focused CI305 backend/no skips and12 frontend. Screening:36 new and329
 combined focused passes/no skips, shared drift, Ruff/format/strict typing and
 frontend generated-contract/lint/typecheck pass. Untuned four-regime synthetic
 replay192 decisions/zero signals; genuine original-arrival market replay remains
 unverified. Migration compatibility follow-up33 passes/no skips, all legacy
 current-head guards updated with history/merge assertions preserved. One reserved
-a12 aftera11, coordination posted; integration merge
-sequencing acknowledgment remains a prerequisite. Exact continuation SHA/automatic
+a12 aftera11; sequencing is adopted in PR244 with immutable ancestry and retained
+schema rollback through the actual a12 head. Exact continuation SHA/automatic
 focused CI in draft PR and docs/trendpulse_screening_verification.md.
 Continue PR243 bab0e9ce; publish the receipt eligibility
 correction first. Test positive delayed arrivals at all three 5m positions in a

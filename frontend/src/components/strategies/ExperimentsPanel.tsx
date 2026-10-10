@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { experiments, experimentDetail, experimentTransition } from "@/lib/api/generated/client";
+import { ScreeningsPanel } from "./ScreeningsPanel";
 import { ApiError } from "@/lib/api/client";
 import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
 import {
@@ -17,22 +18,22 @@ function timestamp(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
-export function ExperimentsPanel() {
+export function ExperimentsPanel({ initialExperiment }: { initialExperiment?: string | null }) {
   const { user, organization } = useAuth();
   const [generation, setGeneration] = useState(sessionGeneration);
   useEffect(() => onSessionCleared(() => setGeneration(sessionGeneration())), []);
   if (!user || !organization) return null;
   // All local reads, selection and mutation state belong to this authenticated identity.
-  return <ScopedExperiments key={JSON.stringify([organization.id, user.id, generation])} />;
+  return <ScopedExperiments key={JSON.stringify([organization.id, user.id, generation])} initialExperiment={initialExperiment} />;
 }
 
-function ScopedExperiments() {
+function ScopedExperiments({ initialExperiment }: { initialExperiment?: string | null }) {
   const [page, setPage] = useState<ExperimentPage | null>(null);
   const [offset, setOffset] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialExperiment ?? null);
   const backFocus = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -166,6 +167,7 @@ function ExperimentDetails({ id, onBack, onChange }: { id: string; onBack: () =>
               <p className="text-xs text-text-muted">{version.configuration.account.source === "blofin_demo" ? "BloFin demo" : "Internal simulation"} samples remain separate. No portfolio return is inferred.</p>
             </div>
           </div>
+          {version.configuration.family === "trendpulse_1r/v1" ? <ScreeningsPanel key={version.id} version={version} /> : null}
           <details className="rounded-card border border-border-subtle p-4">
             <summary className="min-h-11 cursor-pointer font-semibold">Configuration &amp; evidence</summary>
             <div className="space-y-3 pt-3 text-sm">
