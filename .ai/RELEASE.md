@@ -11,7 +11,9 @@ uv run ruff format --check .
 # Run tests relevant to the changed behavior (not the complete suite each iteration).
 uv run pytest tests/<affected-test>.py
 # frontend/
-npm run lint && npm run typecheck && npm run test && npm run build
+npm run lint && npm run typecheck
+npx vitest run <affected-test-files>
+# Full frontend unit/build/browser validation requires an explicit combined request.
 ```
 - Inspect `git status` and full diff; confirm every changed file is intentional.
 - Secret scan the diff; confirm no secrets, keys, or private URLs.
@@ -19,13 +21,44 @@ npm run lint && npm run typecheck && npm run test && npm run build
   `EXECUTION_MODE=paper`, `ENABLE_REAL_TRADING=false`, `EXCHANGE_MODE=paper_internal`,
   Watcher/Telegram flags `false`.
 
-Ordinary push/PR CI keeps all six job names, dependencies and quality checks.
+Ordinary push/PR CI keeps the six existing job names and required development quality
+checks. PR runs for the same PR cancel superseded runs; main/master pushes and manual
+runs have separate concurrency groups and are not cancelled by PR updates. Read-only
+workflow permissions and job timeouts bound routine execution.
 Backend pytest runs `scripts/run_backend_focused.py`: a small config/deployment/
 workflow baseline, changed backend test files, matching module test names and an
 explicit SFP/receipt/logging regression group for those paths. This is a development
 selection, not exhaustive dependency analysis. For other cross-module changes,
 include their focused tests explicitly in the PR; the complete gate below remains
 required. A successful focused run is **not complete backend acceptance**.
+Native activity/schema/client changes include scoped provider, account and migration
+regressions. `BLOFIN_ACTIVITY_TEST_POSTGRES_URL` uses the existing disposable CI
+PostgreSQL service so the activity durability/migration cases actually execute.
+
+The frontend keeps generated drift, lint and type checks, then runs
+`scripts/run_frontend_focused.py`: contract/cache baselines, changed tests and
+module/domain neighbors, including Agent/API/account boundaries. This heuristic is
+not exhaustive dependency analysis; owners must record focused local checks for their
+actual changes. Preserve backend, frontend and deployment-safety merge checks and
+failure propagation. No branch-protection settings are changed by this policy.
+
+Expensive combined validation is manual only: full frontend unit/build, deterministic
+evaluations, Docker build and production-browser smoke. Their jobs/steps are skipped
+on routine events, and those skips do **not** establish acceptance. Both manual
+booleans default to false; `full_backend=true` also enables combined validation.
+Only when explicitly requested, run development combined validation with:
+
+```sh
+gh workflow run ci.yml --ref <reviewed-ref> -f combined_validation=true -f full_backend=false
+```
+
+This still uses the focused backend selection and is not the full release gate.
+Manual development selection compares the branch to its `origin/main` merge base,
+so a final evidence-only commit cannot omit the accumulated feature changes.
+Do not repeat green runs merely to show progress. Record the exact tested SHA,
+selected tests, failures and skips; batch related fixes before pushing. Cancel older
+active PR runs where authorized access permits. Never cancel the current release
+acceptance run as a development cost measure.
 
 ## Final consolidated release acceptance
 
@@ -36,9 +69,9 @@ evaluations, dispatch **one** complete CI run on the exact reviewed release ref:
 gh workflow run ci.yml --ref <reviewed-release-ref> -f full_backend=true
 ```
 
-The Actions UI exposes the same `full_backend` boolean, defaulting to true for
-manual dispatch. Ordinary push/PR events always use focused mode. A manual false
-value requests development checks only. Do not dispatch a full run during routine
+The Actions UI exposes the same `full_backend` boolean, defaulting to false for
+manual dispatch. Ordinary push/PR events always use development mode. A manual false
+value without `combined_validation=true` requests development checks only. Do not dispatch a full run during routine
 implementation or call a focused green check the complete release gate.
 
 The full dispatch runs unfiltered `uv run pytest` with PostgreSQL and all existing

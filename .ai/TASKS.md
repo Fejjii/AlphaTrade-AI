@@ -2481,3 +2481,25 @@ realized outcome or repeat-entry release; unresolved history remains held.
 
 ## AT-UI-AGENT — Consolidated workspace and conversational capture
 Status: REVIEW_REQUIRED (implementation and stated development checks complete). Accepted PR232 head9d44dec/main merge d175613 integrated; PR233 targets main. Scope: five destinations, compact status/dialogs, private durable capture/retrieval and structured drafts. Validation: frontend1,420; PostgreSQL-backed backend228 passed/no skips, including16 capture contract/concurrency cases; safety108; full Chromium47 passed/13 staging skips/no retries; deterministic evaluations16/16,5/5,7/7. Ruff/format1,157 files pass; same495-error mypy baseline with zero introduced. Local offline-font build passes; ordinary CI run814 passed normal build at0dcd847. Final published-ref CI recorded in PR233. Remaining: product review, live model/native/physical checks, reviewed migration rollout and one supervised complete exact-ref release gate; Mac mirror unverified. See docs/alphatrade_workspace_redesign.md. No PR233 merge/deploy or runtime/enforcement changes.
+
+
+## AT-REVIEWER-WAVE-1 — Frontend reliability and API contracts
+
+Status: REVIEW_REQUIRED (independent implementation complete; dependent schemas blocked).
+Owner: Agent 1, `codex/reviewer-wave-frontend`, baseline PR233/main
+`b165b92276346f0e0fe3ccdbd2bec3443dc75d40`. Scope, shared requests, schema hashes and
+completed/pending/deferred/blocked ledger: `docs/reviewer_wave/agent1_contract.md`.
+No Python Agent/RAG/provider, migration, dedicated manual-order widget or CI ownership changes.
+Development checks only; consolidated release and authenticated live acceptance remain supervised.
+
+## AT-118 — Account-scoped BloFin native activity mirroring
+
+Status: READY (PR239 review corrections and focused verification complete; consolidated update). Risk: Medium (account identity and exact history data).
+Base: refreshed PR237 bda597c2fffbf1a49beadc64d757100808094ca2.
+Own additive activity provider/schema/repository/service/API/worker and migration.
+Focused deterministic and isolated PostgreSQL verification only.
+Continue from 85adbde2b242340cac29b45b8673eb8296385903: verified UID/execution-account
+linkage, snapshot selection, long-lived order reconciliation, existing worker wiring
+with disabled defaults and current migration-guard assertions.
+No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
+See docs/blofin_native_activity.md for contract, milestones and integration.

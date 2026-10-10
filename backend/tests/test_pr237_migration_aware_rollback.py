@@ -1,0 +1,336 @@
+"""Qualify retained a10 data with a migration-aware older application package.
+
+This creates isolated PostgreSQL schemas and archived source trees only. It never
+deploys, downgrades, starts a scanner or contacts an exchange/provider.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
+
+from app.db.models import Organization, User
+
+BASELINE = "b165b92276346f0e0fe3ccdbd2bec3443dc75d40"
+ROLLBACK_BASE = "bda597c2fffbf1a49beadc64d757100808094ca2"
+MIGRATION = (
+    "src/app/db/migrations/versions/a10blofinactivity001_account_scoped_native_blofin_activity.py"
+)
+TABLES = (
+    "alembic_version",
+    "organizations",
+    "users",
+    "documents",
+    "chunks",
+    "knowledge_indexing_jobs",
+    "blofin_activity_accounts",
+    "blofin_activity_facts",
+    "blofin_activity_cursors",
+)
+
+
+def _archive(root: Path, revision: str, target: Path) -> Path:
+    archive = subprocess.check_output(["git", "archive", revision, "backend"], cwd=root)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+        bundle.extractall(target, filter="data")
+    return target / "backend"
+
+
+def _snapshot(engine):
+    with engine.connect() as connection:
+        return {
+            table: list(
+                connection.scalars(
+                    text(f"SELECT to_jsonb(t) FROM {table} t ORDER BY to_jsonb(t)::text")
+                )
+            )
+            for table in TABLES
+        }
+
+
+def _seed(engine):
+    org, user = uuid4(), uuid4()
+    with Session(engine) as session:
+        session.add(Organization(id=org, name="Synthetic rollback tenant"))
+        session.add(
+            User(id=user, email=f"rollback-{user}@example.com", hashed_password="synthetic")
+        )
+        session.commit()
+    with engine.begin() as connection:
+        for index, status in enumerate((None, "pending", "processing", "ready", "failed")):
+            document, job = uuid4(), uuid4()
+            connection.execute(
+                text(
+                    "INSERT INTO documents (id,organization_id,user_id,source_type,title,"
+                    "source_hash,version,tags,ingestion_metadata,indexing_generation) VALUES "
+                    "(:id,:org,:user,'GENERAL_NOTE',:title,:hash,2,'[\"synthetic\"]',"
+                    "CAST(:metadata AS json),:generation)"
+                ),
+                {
+                    "id": document,
+                    "org": org,
+                    "user": user,
+                    "title": f"Synthetic retained document {index}",
+                    "hash": str(index) * 64,
+                    "metadata": json.dumps({"indexing": {"status": status or "unknown"}}),
+                    "generation": job if status else None,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO chunks (id,document_id,organization_id,user_id,ordinal,"
+                    "content,text_hash,metadata) VALUES (:id,:doc,:org,:user,0,:content,:hash,'{}')"
+                ),
+                {
+                    "id": uuid4(),
+                    "doc": document,
+                    "org": org,
+                    "user": user,
+                    "content": f"Synthetic retained source passage {index}",
+                    "hash": str(index) * 64,
+                },
+            )
+            if status:
+                connection.execute(
+                    text(
+                        "INSERT INTO knowledge_indexing_jobs (id,document_id,organization_id,"
+                        "user_id,document_version,source_hash,operation,status,attempts,available_at,"
+                        "claimed_until,claim_token,error_code) VALUES (:id,:doc,:org,:user,2,"
+                        ":hash,'upsert',:status,2,now(),"
+                        "CASE WHEN :processing THEN now()+interval '5 minutes' END,"
+                        ":claim,:error)"
+                    ),
+                    {
+                        "id": job,
+                        "doc": document,
+                        "org": org,
+                        "user": user,
+                        "hash": str(index) * 64,
+                        "status": status,
+                        "processing": status == "processing",
+                        "claim": uuid4() if status == "processing" else None,
+                        "error": "synthetic_provider_unavailable" if status == "failed" else None,
+                    },
+                )
+        # A deletion tombstone must survive without a corresponding document row.
+        connection.execute(
+            text(
+                "INSERT INTO knowledge_indexing_jobs (id,document_id,organization_id,user_id,"
+                "document_version,operation,status,attempts,available_at) "
+                "VALUES (:id,:doc,:org,:user,3,'delete','pending',1,now())"
+            ),
+            {"id": uuid4(), "doc": uuid4(), "org": org, "user": user},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO blofin_activity_accounts (organization_id,environment,account_uid,"
+                "credential_binding,identity_verified_at) VALUES (:org,'demo','synthetic-uid',"
+                "repeat('a',64),now())"
+            ),
+            {"org": org},
+        )
+        for kind, native in (("order", "order-1"), ("fill", "fill-1"), ("fill", "fill-2")):
+            connection.execute(
+                text(
+                    "INSERT INTO blofin_activity_facts (organization_id,environment,account_uid,"
+                    "kind,native_id,order_id,occurred_at_ms,content_hash,payload,"
+                    "first_observed_at) "
+                    "VALUES (:org,'demo','synthetic-uid',:kind,:native,'order-1',123456789,"
+                    "repeat('b',64),CAST(:payload AS json),now())"
+                ),
+                {
+                    "org": org,
+                    "kind": kind,
+                    "native": native,
+                    "payload": json.dumps(
+                        {"quantity_contracts": "1.00000000", "fee": None, "pnl": None}
+                    ),
+                },
+            )
+        for kind in ("order", "fill"):
+            connection.execute(
+                text(
+                    "INSERT INTO blofin_activity_cursors (organization_id,environment,account_uid,"
+                    "kind,window_begin_ms,window_end_ms,native_cursor,seen_cursors,window_complete,"
+                    "gap_detected,last_successful_sync) VALUES (:org,'demo','synthetic-uid',:kind,"
+                    "123456000,123457000,:cursor,'[\"retained-page\"]',false,true,now())"
+                ),
+                {"org": org, "kind": kind, "cursor": f"retained-{kind}-cursor"},
+            )
+
+
+BOOT_PROBE = """
+import json
+import os
+from pathlib import Path
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from app.core.config import get_settings
+from app.db.models import Document, KnowledgeIndexingJob
+from app.db.session import get_session_factory
+from app.main import create_app
+import app.main
+from app.providers.qdrant import InMemoryVectorStore
+from app.workers.paper_worker import run_paper_worker_process
+from app.workers.watcher_activation import expected_migration_head, read_migration_revision
+
+assert Path(app.main.__file__).resolve().is_relative_to(Path(os.environ['PYTHONPATH']).resolve())
+app.main.get_process_vector_store = lambda: InMemoryVectorStore()
+settings = get_settings()
+assert settings.provider_mode == 'mock'
+assert not settings.knowledge_indexing_enabled
+with TestClient(create_app(settings)) as client:
+    health = client.get('/health')
+    assert health.status_code == 200
+    assert health.json()['real_trading_enabled'] is False
+with get_session_factory()() as session:
+    assert expected_migration_head() == read_migration_revision(session) == 'a10blofinactivity001'
+    docs = list(session.scalars(select(Document)))
+    jobs = list(session.scalars(select(KnowledgeIndexingJob)))
+    assert len(docs) == len(jobs) == 5
+    assert all(doc.user_id and doc.organization_id for doc in docs)
+    assert any(job.operation == 'delete' for job in jobs)
+# The worker's disarmed boot role is specifically a staging posture. The API
+# above uses local/mock settings; neither modifies deployed operator settings.
+os.environ.update({
+    'ENVIRONMENT': 'staging',
+    'PROVIDER_MODE': 'fallback',
+    'AUTH_REFRESH_COOKIE_ENABLED': 'true',
+    'AUTH_COOKIE_SECURE': 'true',
+    'CORS_ORIGINS': 'https://app.example.com',
+    'RATE_LIMIT_USE_REDIS': 'true',
+    'RATE_LIMIT_ALLOW_IN_MEMORY_FALLBACK': 'false',
+    'ACCESS_TOKEN_DENYLIST_USE_REDIS': 'true',
+    'TRUSTED_PROXY_HOPS': '1',
+})
+# The real disarmed worker must not open operational dependencies. Fallback is
+# only its validated configuration token; no provider is constructed or called.
+import app.db.session
+def forbidden_dependency(*args, **kwargs):
+    raise AssertionError('disarmed rollback worker opened the database')
+app.db.session.get_session_factory = forbidden_dependency
+assert run_paper_worker_process(once=True) == 'disarmed'
+print(json.dumps({'api_health': 200, 'worker': 'disarmed', 'head': 'a10blofinactivity001'}))
+"""
+
+
+def test_migration_aware_rollback_retains_documents_jobs_and_native_history(tmp_path, monkeypatch):
+    raw = os.environ.get("PR237_ROLLBACK_POSTGRES_URL") or os.environ.get("PHASE1_POSTGRES_URL")
+    if not raw:
+        pytest.skip("Set PR237_ROLLBACK_POSTGRES_URL to disposable loopback PostgreSQL.")
+    url = make_url(raw)
+    assert url.get_backend_name() == "postgresql" and url.host in {"127.0.0.1", "localhost"}
+    assert url.database in {"alphatrade_test", "pr237_rollback_test"}
+    backend = Path(__file__).resolve().parents[1]
+    admin = create_engine(url)
+    schema = "pr237_rollback_" + uuid4().hex
+    with admin.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    scoped = url.update_query_dict({"options": f"-csearch_path={schema}"})
+    dsn = scoped.render_as_string(hide_password=False)
+    monkeypatch.setenv("ALEMBIC_DATABASE_URL", dsn)
+    engine = create_engine(scoped)
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "src/app/db/migrations"))
+    try:
+        command.upgrade(config, "head")
+        _seed(engine)
+        retained = _snapshot(engine)
+        env = {
+            **os.environ,
+            "ALEMBIC_DATABASE_URL": dsn,
+            "DATABASE_URL": dsn,
+            "ENVIRONMENT": "local",
+            "PROVIDER_MODE": "mock",
+            "EXECUTION_MODE": "paper",
+            "EXCHANGE_MODE": "paper_internal",
+            "ENABLE_REAL_TRADING": "false",
+            "WATCHER_ORCHESTRATION_ENABLED": "false",
+            "WATCHER_PAPER_STAGING_ACTIVATION": "false",
+            "MARKET_WATCHER_ENABLED": "false",
+            "MARKET_WATCHER_BRIDGE_ENABLED": "false",
+            "MARKET_WATCHER_BRIDGE_AUTO_TICK": "false",
+            "TELEGRAM_ALERTS_ENABLED": "false",
+            "TELEGRAM_INTERACTION_ENABLED": "false",
+            "AUTOMATIC_TELEGRAM_DELIVERY_ENABLED": "false",
+            "TELEGRAM_PAPER_ACTIVATION_ARMED": "false",
+            "TELEGRAM_NETWORK_PERMITTED": "false",
+            "TELEGRAM_INBOUND_MODE": "off",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TELEGRAM_WEBHOOK_SECRET": "",
+            "KNOWLEDGE_INDEXING_ENABLED": "false",
+            "BLOFIN_ACTIVITY_ENABLED": "false",
+            "RATE_LIMIT_USE_REDIS": "false",
+            "ACCESS_TOKEN_DENYLIST_USE_REDIS": "false",
+            "MARKET_DATA_CACHE_USE_REDIS": "false",
+        }
+        for label, revision in (
+            ("plain-b165", BASELINE),
+            ("plain-bda", ROLLBACK_BASE),
+            ("rollback", ROLLBACK_BASE),
+        ):
+            target = _archive(backend.parent, revision, tmp_path / label)
+            if label == "rollback":
+                (target / MIGRATION).write_bytes((backend / MIGRATION).read_bytes())
+            env["PYTHONPATH"] = str(target / "src")
+            result = subprocess.run(
+                [sys.executable, "-m", "alembic", "upgrade", "head"],
+                cwd=target,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=40,
+            )
+            if label.startswith("plain-"):
+                assert result.returncode != 0
+                assert "Can't locate revision identified by 'a10blofinactivity001'" in (
+                    result.stdout + result.stderr
+                )
+            else:
+                assert result.returncode == 0, result.stdout + result.stderr
+                for _restart in range(2):
+                    boot = subprocess.run(
+                        [sys.executable, "-c", BOOT_PROBE],
+                        cwd=target,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=45,
+                    )
+                    assert boot.returncode == 0, boot.stdout + boot.stderr
+                    assert _snapshot(engine) == retained
+            assert _snapshot(engine) == retained
+        command.upgrade(config, "head")  # Return to the candidate; no schema rollback.
+        env["PYTHONPATH"] = str(backend / "src")
+        forward = subprocess.run(
+            [sys.executable, "-c", BOOT_PROBE],
+            cwd=backend,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        assert forward.returncode == 0, forward.stdout + forward.stderr
+        assert _snapshot(engine) == retained
+        fingerprint = hashlib.sha256(json.dumps(retained, sort_keys=True).encode()).hexdigest()
+        print(f"Preserved row counts: { {table: len(rows) for table, rows in retained.items()} }")
+        print(f"Exact retained data SHA256: {fingerprint}")
+    finally:
+        engine.dispose()
+        with admin.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin.dispose()

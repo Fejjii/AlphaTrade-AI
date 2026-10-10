@@ -6,10 +6,7 @@ import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
-import { StrategyConversationPanel } from "@/components/strategy/StrategyConversationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
-import { StructuredRuleEditor } from "@/components/strategy/StructuredRuleEditor";
-import { emptyStrategyCard } from "@/components/strategy/StrategyCardForm";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,13 +44,11 @@ export default function StrategyDetailPage() {
       strategyReady,
     });
 
-  const [versionBusy, setVersionBusy] = useState(false);
   const [paperBusy, setPaperBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [rulesBusy, setRulesBusy] = useState(false);
 
   const testabilityLoader = useCallback(() => api.strategies.testability(id), [id]);
-  const { data: testabilityData, reload: reloadTestability } = useAsyncData(testabilityLoader, [id]);
+  const { data: testabilityData } = useAsyncData(testabilityLoader, [id]);
 
   const versionsLoader = useCallback(() => api.strategies.listVersions(id), [id]);
   const { data: versionsData } = useAsyncData(versionsLoader, [id]);
@@ -89,24 +84,6 @@ export default function StrategyDetailPage() {
       ? (sources.trades.data?.items ?? [])
       : [];
 
-  async function createVersion() {
-    if (!data) return;
-    setVersionBusy(true);
-    setActionError(null);
-    try {
-      const base = card ?? emptyStrategyCard(data.name);
-      await api.strategies.createVersion(id, {
-        card: { ...base, strategy_name: `${base.strategy_name} (rev)` },
-        validation_status: "in_review",
-      });
-      await reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Version failed");
-    } finally {
-      setVersionBusy(false);
-    }
-  }
-
   async function withPaperAction(action: () => Promise<void>) {
     setPaperBusy(true);
     setActionError(null);
@@ -132,14 +109,11 @@ export default function StrategyDetailPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={`/strategy-lab/${id}/edit`}
+            href={`/agent?strategy_id=${encodeURIComponent(id)}`}
             className="inline-flex h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm hover:bg-zinc-900"
           >
-            Edit card
+            Discuss changes with Agent
           </Link>
-          <Button variant="secondary" disabled={versionBusy} onClick={() => void createVersion()}>
-            {versionBusy ? "Creating…" : "New version"}
-          </Button>
         </div>
       </div>
 
@@ -203,27 +177,8 @@ export default function StrategyDetailPage() {
         </div>
       ) : null}
 
-      <StructuredRuleEditor
-        rules={testabilityData?.structured_rules ?? null}
-        testability={testabilityData ?? null}
-        busy={rulesBusy}
-        onSave={async (rules) => {
-          setRulesBusy(true);
-          setActionError(null);
-          try {
-            await api.strategies.patchStructuredRules(id, rules);
-            await reloadTestability();
-          } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Save failed");
-          } finally {
-            setRulesBusy(false);
-          }
-        }}
-      />
-
       {versionsData ? <StrategyVersionHistory versions={versionsData.items} /> : null}
 
-      {data ? <StrategyConversationPanel strategyId={id} /> : null}
 
       <section
         aria-labelledby="strategy-paper-sources-heading"

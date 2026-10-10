@@ -642,6 +642,9 @@ class StrategyProposalService:
         )
         now = datetime.now(UTC)
         row.status = StrategyProposalStatus.CONFIRMED
+        conversation = self._session.get(Conversation, row.conversation_id)
+        if conversation is not None and conversation.strategy_id is None:
+            conversation.strategy_id = strategy.id
         row.resulting_strategy_id = strategy.id
         row.resulting_version_id = version.id
         row.resulting_content_hash = version.content_hash
@@ -733,8 +736,10 @@ class StrategyProposalService:
             UserStrategyCreate(
                 organization_id=row.organization_id,
                 user_id=user_id,
-                name=f"{name} {str(row.id)[:8]}",
-                setup_type=StrategyId.HTF_TREND_PULLBACK,
+                name=f"{name[:111]} {str(row.id)[:8]}",
+                setup_type=StrategyId(
+                    (row.context_refs or {}).get("setup_type") or StrategyId.HTF_TREND_PULLBACK
+                ),
                 card=StrategyCard.model_validate(row.proposed_card)
                 if row.proposed_card
                 else StrategyCard(

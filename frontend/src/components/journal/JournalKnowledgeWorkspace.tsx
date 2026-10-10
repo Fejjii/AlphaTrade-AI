@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KnowledgeDocumentCard } from "@/components/knowledge/KnowledgeDocumentCard";
 import { KnowledgeDetailPanel } from "@/components/knowledge/KnowledgeDetailPanel";
 import { JournalReturnLink, journalReturnKey } from "./JournalReturnLink";
@@ -19,6 +19,8 @@ import {
 } from "@/lib/api/saved-entries";
 import { formatDateTime } from "@/lib/format";
 import { isAlphaTradeBloFinExecution } from "@/lib/journal-activity";
+import { NativeActivity } from "@/components/activity/NativeActivity";
+import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
 
 export function SavedEntryDetail({
   entry,
@@ -150,6 +152,13 @@ export function SavedEntryDetail({
 }
 
 export function JournalKnowledgeWorkspace() {
+  const { user, organization } = useAuth();
+  const [session, setSession] = useState(sessionGeneration);
+  useEffect(() => onSessionCleared(() => setSession(sessionGeneration())), []);
+  return <JournalWorkspaceContent key={JSON.stringify([organization?.id, user?.id, session])} />;
+}
+
+function JournalWorkspaceContent() {
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -164,6 +173,20 @@ export function JournalKnowledgeWorkspace() {
   const sourcePage = Math.max(0, Number(params.get("source_page")) || 0);
   const chunkPage = Math.max(0, Number(params.get("chunk_page")) || 0);
   const loader = useCallback(async () => {
+    if (savedId || documentId) {
+      // Exact source navigation must not wait for unrelated library listings.
+      const [linked, chunks] = await Promise.allSettled([
+        savedId ? savedEntries.get(savedId) : Promise.resolve(null),
+        documentId ? api.knowledge.listChunks({
+          document_id: documentId, limit: 50, offset: chunkPage * 50,
+        }) : Promise.resolve(null),
+      ]);
+      return {
+        entries: [], entryTotal: 0, sourceTotal: 0, trades: [], documents: [],
+        linked: linked.status === "fulfilled" ? linked.value : null,
+        chunks: chunks.status === "fulfilled" ? chunks.value : null,
+      };
+    }
     const [entries, trades, documents, linked, chunks] =
       await Promise.allSettled([
         savedEntries.list({
@@ -229,6 +252,16 @@ export function JournalKnowledgeWorkspace() {
     sourcePage,
     chunkPage,
   ]);
+  const readinessDeadline = useRef(0);
+  const hasPending = Boolean(data?.documents?.some(document =>
+    document.ingestion_metadata?.indexing?.vector_index_status === "pending"));
+  useEffect(() => {
+    if (!knowledge || savedId || documentId || !hasPending) { readinessDeadline.current = 0; return; }
+    if (!readinessDeadline.current) readinessDeadline.current = Date.now() + 60_000;
+    if (Date.now() >= readinessDeadline.current) return;
+    const timer = setTimeout(() => { void reload(); }, 2_000);
+    return () => clearTimeout(timer);
+  }, [knowledge, savedId, documentId, hasPending, data, reload]);
   const returnKey = journalReturnKey(user?.id, organization?.id);
   useEffect(() => {
     if (loading || savedId || documentId) return;
@@ -322,6 +355,8 @@ export function JournalKnowledgeWorkspace() {
           Knowledge
         </Link>
       </nav>
+      {!knowledge && !savedId && !documentId ? <NativeActivity /> : null}
+      {knowledge ? <Button variant="outline" onClick={() => { readinessDeadline.current = 0; void reload(); }}>Refresh search readiness</Button> : null}
       <div className="flex flex-wrap items-center gap-3">
         <Input
           aria-label="Search entries"
@@ -356,6 +391,7 @@ export function JournalKnowledgeWorkspace() {
         <p role="status">Loading entries…</p>
       ) : (
         <>
+          {!knowledge && !savedId && !documentId ? <h2 className="text-base font-semibold">Saved notes &amp; recorded trade reviews</h2> : null}
           {savedId ? (
             data?.linked ? (
               <SavedEntryDetail
@@ -458,7 +494,7 @@ export function JournalKnowledgeWorkspace() {
                       {t.symbol} · {t.direction}
                     </h2>
                     <p className="text-sm text-text-muted">
-                      BloFin · {t.status} · {formatDateTime(t.entry_time)}
+                      Recorded trade review · {t.status} · {formatDateTime(t.entry_time)}
                       {t.source === "manual_demo_test"
                         ? " · Connectivity test"
                         : ""}
@@ -488,7 +524,7 @@ export function JournalKnowledgeWorkspace() {
                   ? documents?.length === 0
                   : visibleTrades?.length === 0) && (
                   <p className="text-sm text-text-muted">
-                    No matching entries.
+                    {knowledge ? "No matching entries." : "No matching saved notes or recorded reviews."}
                   </p>
                 )}
             </div>
@@ -501,7 +537,7 @@ export function JournalKnowledgeWorkspace() {
                   "source_page",
                   sourcePage,
                   data.sourceTotal,
-                  knowledge ? "Documents" : "Activity records",
+                  knowledge ? "Documents" : "Recorded reviews",
                 ],
               ].map(([key, index, total, label]) => (
                 <nav

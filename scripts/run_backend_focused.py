@@ -30,11 +30,61 @@ SFP_PATHS = (
 )
 
 
+REVIEWER_BOUNDARY_PATHS = (
+    "backend/src/app/agents/",
+    "backend/src/app/interactive_agent/",
+    "backend/src/app/services/rag_service",
+    "backend/src/app/rag/",
+    "backend/src/app/workers/knowledge_indexing",
+    "backend/src/app/services/turn_",
+    "backend/src/app/services/chat_turn",
+    "backend/src/app/services/quota_",
+    "backend/src/app/repositories/usage",
+    "frontend/scripts/generate-api",
+    "frontend/src/lib/api/",
+    "frontend/src/components/agent/",
+)
+REVIEWER_BOUNDARY_TESTS = (
+    "tests/test_agent_vector_retrieval.py",
+    "tests/test_reviewer_integration_postgres.py",
+    "tests/test_knowledge_indexing.py",
+    "tests/test_turn_coordinator_postgres.py",
+    "tests/test_shared_turn_policy.py",
+    "tests/test_usage_quota.py",
+    "tests/test_strategy_conversation_postgres.py",
+)
+
+ACTIVITY_BOUNDARY_PATHS = (
+    "backend/src/app/core/blofin_readonly_access.py",
+    "backend/src/app/api/routes/blofin_activity.py",
+    "backend/src/app/db/blofin_activity.py",
+    "backend/src/app/db/migrations/versions/a10blofin",
+    "backend/src/app/providers/exchange/blofin_activity.py",
+    "backend/src/app/repositories/blofin_activity.py",
+    "backend/src/app/schemas/blofin_activity.py",
+    "backend/src/app/services/blofin_activity",
+    "backend/src/app/workers/blofin_activity.py",
+    "frontend/src/components/activity/",
+    "frontend/src/lib/api/",
+)
+ACTIVITY_BOUNDARY_TESTS = (
+    "tests/test_blofin_activity_provider.py",
+    "tests/test_blofin_activity_postgres.py",
+    "tests/test_blofin_activity_migration.py",
+    "tests/test_blofin_provider.py",
+    "tests/test_dashboard_demo_account.py",
+)
+
+
 def select_tests(changed: list[str], backend: Path) -> list[str]:
     selected = set(BASE_TESTS)
     for path in changed:
         if path.startswith(SFP_PATHS):
             selected.update(SFP_TESTS)
+        if path.startswith(REVIEWER_BOUNDARY_PATHS):
+            selected.update(REVIEWER_BOUNDARY_TESTS)
+        if path.startswith(ACTIVITY_BOUNDARY_PATHS):
+            selected.update(ACTIVITY_BOUNDARY_TESTS)
         candidate = Path(path.removeprefix("backend/"))
         if path.startswith("backend/tests/") and candidate.name.startswith("test_"):
             selected.add(candidate.as_posix())
@@ -58,10 +108,35 @@ def changed_paths(root: Path, base: str, head: str) -> list[str]:
         base and not re.fullmatch(r"[0-9a-f]{40}", base)
     ):
         raise ValueError("CI base/head must be commit SHAs.")
+    if not base and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        # A manual combined check must cover the branch, even when its last commit
+        # only records evidence. Checkout fetch-depth: 0 supplies origin/main.
+        base = subprocess.check_output(
+            ["git", "merge-base", "origin/main", head], cwd=root, text=True
+        ).strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", base):
+            raise ValueError("Manual comparison base must be a commit SHA.")
     if base and base != "0" * 40:
-        command = ["git", "diff", "--name-only", "--diff-filter=ACDMR", base, head, "--"]
+        command = [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACDMR",
+            base,
+            head,
+            "--",
+        ]
     else:
-        command = ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-m", head]
+        command = [
+            "git",
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "-m",
+            head,
+        ]
     return subprocess.check_output(command, cwd=root, text=True).splitlines()
 
 

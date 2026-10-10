@@ -120,7 +120,11 @@ def propose_action(
                     text=inputs.text,
                     strategy_id=target,
                     source_message_id=source_message_id,
-                    context_refs={"agent_action": tool.name, "evidence_document_ids": evidence},
+                    context_refs={
+                        "agent_action": tool.name,
+                        "evidence_document_ids": evidence,
+                        "setup_type": inputs.setup_type.value if inputs.setup_type else None,
+                    },
                 )
                 linked = record.id
                 payload["linked_preview_stored"] = True
