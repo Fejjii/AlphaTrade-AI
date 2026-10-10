@@ -109,6 +109,7 @@ class PaperWorkerHealth:
     stopping: bool
     authority_intact: bool
     indexing: ComponentHealth | None = None
+    activity: ComponentHealth | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,10 +133,12 @@ class _Component:
         name: str,
         cycle: Callable[[], CycleOutcome],
         guard: _AuthorityGuard | None,
+        poll_seconds: float | None = None,
     ) -> None:
         self.name = name
         self.cycle = cycle
         self.guard = guard
+        self.poll_seconds = poll_seconds
         self.lock = threading.Lock()
         self.status = "idle"
         self.last_heartbeat_at: datetime | None = None
@@ -191,6 +194,8 @@ class PaperWorkerSupervisor:
         self._telegram = _Component("telegram", telegram_cycle, _guard(telegram_authority))
         self._indexing: _Component | None = None
         self._indexing_stop: Callable[[], None] | None = None
+        self._activity: _Component | None = None
+        self._activity_stop: Callable[[], None] | None = None
         self._memory_diagnostics = WorkerMemoryDiagnostics() if memory_diagnostics_enabled else None
 
     def attach_indexing(
@@ -214,8 +219,23 @@ class PaperWorkerSupervisor:
 
         self._on_stop = stop
 
+    def attach_activity(
+        self,
+        cycle: Callable[[], CycleOutcome],
+        *,
+        poll_seconds: float,
+        request_stop: Callable[[], None],
+    ) -> None:
+        """One bounded read-only component in this worker; no separate service."""
+        self._activity = _Component("activity", cycle, None, poll_seconds=poll_seconds)
+        self._activity_stop = request_stop
+
     def _components(self) -> tuple[_Component, ...]:
-        return (self._watcher, self._telegram) + ((self._indexing,) if self._indexing else ())
+        return (
+            (self._watcher, self._telegram)
+            + ((self._indexing,) if self._indexing else ())
+            + ((self._activity,) if self._activity else ())
+        )
 
     def snapshot(self) -> PaperWorkerHealth:
         """Copy both health records. Callers cannot mutate the supervisor."""
@@ -226,6 +246,7 @@ class PaperWorkerSupervisor:
             stopping=self._stop.is_set(),
             authority_intact=self._authority_intact,
             indexing=self._indexing.health() if self._indexing else None,
+            activity=self._activity.health() if self._activity else None,
         )
 
     def run_round(self) -> PaperWorkerHealth:
@@ -249,13 +270,15 @@ class PaperWorkerSupervisor:
         self._stop.set()
         if self._indexing_stop:
             self._indexing_stop()
+        if self._activity_stop:
+            self._activity_stop()
 
     def join(self) -> None:
         for component in self._components():
             thread = component.thread
             if thread is not None:
                 thread.join(self._join_timeout_seconds)
-                if component is self._indexing and thread.is_alive():
+                if component in (self._indexing, self._activity) and thread.is_alive():
                     thread.join()
 
     def close(self) -> None:
@@ -263,6 +286,9 @@ class PaperWorkerSupervisor:
 
         if self._closed:
             return
+        if self._activity is not None:
+            self.request_stop()
+            self.join()
         self._closed = True
         hook = self._on_stop
         if hook is None:
@@ -310,7 +336,7 @@ class PaperWorkerSupervisor:
             os.close(write_fd)
         self.request_stop()
         self.join()
-        for component in (self._watcher, self._telegram):
+        for component in self._components():
             self._mark_stopped(component)
         self.close()
         self._log_health()
@@ -329,7 +355,10 @@ class PaperWorkerSupervisor:
     def _loop(self, component: _Component) -> None:
         while not self._stop.is_set():
             self._step(component)
-            if self._stop.wait(self._poll_seconds if self._poll_seconds > 0 else 0.05):
+            interval = (
+                component.poll_seconds if component.poll_seconds is not None else self._poll_seconds
+            )
+            if self._stop.wait(interval if interval > 0 else 0.05):
                 break
         self._mark_stopped(component)
 
@@ -421,6 +450,8 @@ class PaperWorkerSupervisor:
             telegram_last_delivery=_iso(health.telegram.last_delivery_at),
             indexing_status=health.indexing.status if health.indexing else "disabled",
             indexing_error=health.indexing.last_error if health.indexing else "",
+            activity_status=health.activity.status if health.activity else "disabled",
+            activity_error=health.activity.last_error if health.activity else "",
             stopping=health.stopping,
             authority_intact=health.authority_intact,
             paper_only=True,
@@ -526,6 +557,16 @@ def build_paper_worker_supervisor(settings: Settings) -> PaperWorkerSupervisor:
 
         cycle = KnowledgeIndexingCycle(settings.model_copy(deep=True))
         supervisor.attach_indexing(cycle, close=cycle.close, request_stop=cycle.request_stop)
+    from app.services.blofin_activity_config import get_activity_settings
+
+    activity_config = get_activity_settings()
+    if activity_config.enabled:
+        from app.workers.blofin_activity import BloFinActivityCycle
+
+        activity = BloFinActivityCycle(settings.model_copy(deep=True), activity_config)
+        supervisor.attach_activity(
+            activity, poll_seconds=activity_config.poll_seconds, request_stop=activity.request_stop
+        )
     return supervisor
 
 

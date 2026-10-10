@@ -1,13 +1,12 @@
 """Separate disarmed activity settings; dedicated read-only credentials only."""
 
-import hashlib
-import json
 from dataclasses import dataclass
 from uuid import UUID
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.blofin_identity import connection_binding
 from app.core.config import Settings
 from app.core.errors import ExchangeDemoInactiveError
 from app.providers.exchange.blofin_activity import identifier
@@ -25,6 +24,7 @@ class BloFinActivitySettings(BaseSettings):
     page_size: int = Field(default=100, ge=1, le=100)
     budget_seconds: int = Field(default=30, ge=1, le=60)
     stale_seconds: int = Field(default=300, ge=30, le=3600)
+    poll_seconds: int = Field(default=60, ge=30, le=3600)
 
 
 @dataclass(frozen=True)
@@ -47,14 +47,7 @@ def configured_scope(config: BloFinActivitySettings) -> ActivityScope:
 
 def credential_binding(settings: Settings) -> str:
     """Opaque binding selector only. UID remains the trading account identity."""
-    credentials = (
-        settings.blofin_readonly_api_key.strip(),
-        settings.blofin_readonly_api_secret.strip(),
-        settings.blofin_readonly_api_passphrase.strip(),
-    )
-    if not all(credentials):
-        raise ExchangeDemoInactiveError("Dedicated read-only activity credentials missing.")
-    return hashlib.sha256(json.dumps(credentials).encode()).hexdigest()
+    return connection_binding(settings, readonly=True)
 
 
 def get_activity_settings() -> BloFinActivitySettings:

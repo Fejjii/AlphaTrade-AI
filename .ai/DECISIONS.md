@@ -3093,9 +3093,15 @@ Implementation, fixture verification and presentation guide:
 Date: 2026-10-10. AT-118 stores exact native completed orders/fills under
 organization/demo/authenticated UID; credential bindings are selectors, never
 account identities. Page facts and checkpoints commit atomically; incompatible
-replays stop without overwriting. Echoed native client order identity may link
-an existing BloFin demo command, but cannot create execution/strategy/Journal
+replays stop without overwriting. Command links require verified native UID,
+hash-verified original execution-account evidence and a compatible native order receipt;
+organization/client echo/instrument/side alone never prove account identity.
+Missing proof retains native origin and cannot create execution/strategy/Journal
 authority. Count individual native fills once and preserve partial coverage,
 unknown currency/funding and observed metadata provenance. The bounded runner
-is disarmed by default; no execution, frontend or runtime activation changes.
+is an optional component of the existing worker and is disarmed by default. Orders
+use recurring cursor reconciliation without undocumented time-filter assumptions;
+fills retain bounded incremental windows. Existing snapshots require current-binding
+verification and UID selection; historical unverified rows are retained but withheld.
+Execution authority, frontend and runtime activation remain unchanged.
 See docs/blofin_native_activity.md.

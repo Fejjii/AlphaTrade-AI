@@ -1,115 +1,133 @@
-# AT-118 focused verification ledger
+# PR239 review-correction verification — AT-118
 
-Actual refreshed PR237 base: `bda597c2fffbf1a49beadc64d757100808094ca2`.
-Recorded `4e515ddb8de20f4b2cfb7498ed6ce9bbbd2d2f2f` was superseded before the fork.
-The base was checked again before publication and remained unchanged.
+Continuation baseline: `85adbde2b242340cac29b45b8673eb8296385903`.
+PR base remains `bda597c2fffbf1a49beadc64d757100808094ca2` on
+`codex/reviewer-wave-integration`. Tests ran October 10, 2026 from the isolated
+`/workspace/blofin-native-activity/backend` worktree.
 
-All venue responses use deterministic `httpx.MockTransport`. PostgreSQL is a
-disposable local PostgreSQL 17 container. Native persistence cases use a distinct
-schema per test; migration roundtrip uses its own fresh schema and the actual full
-Alembic chain. Existing regression helpers use their established disposable database
-fixtures. No shared/deployed database was migrated.
+## Disposable database and scope
 
-## Final new-package acceptance
+PostgreSQL 17 runs in the disposable local `alphatrade-activity-pg` container,
+`activity_test` database on localhost port 55437. `BLOFIN_ACTIVITY_TEST_POSTGRES_URL`
+and `PHASE1_POSTGRES_URL` selected that fixture, with dummy fixture credentials.
+New activity/snapshot tests create and drop unique schemas. The migration test starts
+from its own empty schema; existing PostgreSQL regression fixtures may reset only this
+throwaway database's public schema. No deployed database was accessed.
 
-```sh
-cd backend
-BLOFIN_ACTIVITY_TEST_POSTGRES_URL=<disposable-postgresql> \
-PHASE1_POSTGRES_URL=<disposable-postgresql> \
-  .venv/bin/pytest tests/test_blofin_activity_provider.py \
-  tests/test_blofin_activity_postgres.py tests/test_blofin_activity_migration.py
-```
+All exchange requests in tests use deterministic mock transports. Simulated manual
+submissions exercise existing command/receipt paths; they do not contact BloFin.
+Worker lifecycle/signal tests use fixtures, and Telegram delivery tests use fake transports.
+No full backend suite or manual CI workflow was run.
 
-Exit 0: **55 passed, no skips, 18.74 seconds**.
-
-Coverage includes exact long decimal strings and signed fees, partial contract fills,
-unknown currency/PnL/funding, canonical UID versus parent identity, dedicated read-only
-credentials and active-demo compatibility, bounded/signed GET-only transport refusals,
-overlap/replay, entire-page conflict rollback, interruption/restart, foreign checkpoint
-refusal, organization/UID switching, rotation, stale and missed-window coverage, initial
-identity failure, malformed native shapes, pagination loops, rate-limit backoff, competing
-worker refusal, keyset cursor scope, unauthenticated/wrong-tenant API refusal, verified
-manual command matching without new execution records, and migration rollback/re-upgrade.
-
-The manual matching case creates one real existing manual command through a simulated
-venue, then reads separate native activity pages. Two native fills link to that command;
-direct native activity has no command. Replays do not add facts, local fill rows or
-commands. No external order is sent by the test.
-
-## Focused existing regressions
+## Correction selection
 
 ```sh
-PHASE1_POSTGRES_URL=<disposable-postgresql> .venv/bin/pytest \
-  tests/test_blofin_provider.py tests/test_blofin_execution.py \
-  tests/test_manual_demo_native_pagination.py tests/test_blofin_presentation_evidence.py
-```
-
-Exit 0: **90 passed, no skips, 12.68 seconds**.
-
-```sh
-BLOFIN_ACTIVITY_TEST_POSTGRES_URL=<disposable-postgresql> \
-PHASE1_POSTGRES_URL=<disposable-postgresql> .venv/bin/pytest \
+BLOFIN_ACTIVITY_TEST_POSTGRES_URL="$ACTIVITY_FIXTURE_URL" .venv/bin/pytest -o addopts='' -q \
   tests/test_blofin_activity_provider.py tests/test_blofin_activity_postgres.py \
-  tests/test_blofin_activity_migration.py tests/test_dashboard_demo_account.py \
-  tests/test_external_integrations_acceptance.py
+  tests/test_blofin_snapshot_identity.py tests/test_blofin_activity_worker.py \
+  tests/test_blofin_activity_migration.py tests/test_watcher_paper_activation.py
 ```
 
-The combined development run reported **150 passed and one migration-fixture failure**
-in 154.43 seconds, no skips. Both existing Dashboard and external-integration modules
-passed all **96** cases, including the unchanged balance-sync and sealed-execution
-credential restrictions. Another regression helper had replaced the public schema with
-ORM-created tables, so migration version metadata was absent and a fresh full upgrade
-hit an existing table. The new migration test was corrected to create its own fresh
-schema; the final 55-case package command above passes the complete migration roundtrip.
-The passing existing modules were not rerun after this test-only isolation correction.
+**106 passed, no skips, 39.99 seconds.** Coverage includes signed UID identity,
+identical client/order echoes in two UIDs of one organization, a proven positive link,
+missing original account proof, incompatible account/order/UID receipts and corrupt
+hashes; snapshot rotation, switching UIDs, unverified replacement keys, legacy rows,
+identity failure and historical retention; paginated later completion of an order
+created 90 days earlier; page atomicity/replay, interruption/deadline, rate-limit backoff,
+advisory-lock contention, API tenant/cursor isolation, worker defaults/wiring/thread
+isolation/retry caps/shutdown, real migration roundtrip and activation migration guards.
 
-There are **241 distinct passing focused cases** across the final package and those
-existing regression selections. This is not a complete backend or release-suite claim.
-
-## Static and contract checks
-
-Changed-file Ruff check and format check: exit 0. `git diff --check`: exit 0.
+A final worker isolation correction moved missing-pin validation into its supervised
+cycle, before database access. The resulting additional case and the strengthened
+migration ancestry assertions passed in this final targeted check:
 
 ```sh
-.venv/bin/mypy --follow-imports=silent \
-  src/app/services/blofin_activity_config.py src/app/services/blofin_activity_service.py \
-  src/app/repositories/blofin_activity.py src/app/providers/exchange/blofin_activity.py \
-  src/app/schemas/blofin_activity.py src/app/db/blofin_activity.py \
-  src/app/api/routes/blofin_activity.py src/app/workers/blofin_activity.py \
-  src/app/core/blofin_readonly_access.py
-.venv/bin/alembic heads
-.venv/bin/python -m app.workers.blofin_activity
+BLOFIN_ACTIVITY_TEST_POSTGRES_URL="$ACTIVITY_FIXTURE_URL" .venv/bin/pytest -o addopts='' -q \
+  tests/test_blofin_activity_worker.py tests/test_blofin_activity_migration.py
 ```
 
-Focused typing: no issues in nine source files. One migration head:
-`a10blofinactivity001`. Default worker reports disabled and performs no synchronization.
-Scoped OpenAPI JSON was regenerated directly from the route and compared byte-for-byte;
-SHA256 is recorded in [the package contract](blofin_native_activity.md).
+**7 passed, no skips, 6.95 seconds.** Six worker cases and one migration roundtrip;
+six overlap the 106-case selection, so the correction selection has **107 distinct
+passing cases**, not a single 107-case command.
 
-Development-only setup corrections: the first shell fetch required the tool's supported
-network permission; uv used a writable `/tmp` cache; the migration generator's Ruff
-hook needed the virtualenv executable path (generated SQL was retained and formatted);
-initial fixtures needed an explicit demo URL, the actual tenant dependency name and an
-order helper import. An assertion was corrected to preserve a completed checkpoint's
-last native frontier. A one-case diagnostic without the opt-in PostgreSQL URL skipped;
-the final opt-in package command has no skips. An Alembic head check invoked from the
-repository root was rerun from its required backend directory. No production workaround
-or relaxed safety assertion was introduced for these harness/command issues.
+After requiring revision/command plan-hash equality, the eight linkage scenarios were
+rechecked: **8 passed, 19 deselected, 26.32 seconds** with
+`tests/test_blofin_activity_postgres.py -k verified_alphatrade_echo` (the migration path
+was also supplied but deselected by that filter; its final seven-case run above executes it).
 
-## Completion and remaining acceptance
+## Existing focused regressions
 
-Implementation, API/ownership contract, migration/rollback notes and focused verification
-are complete: **85% before the final publication milestone**. Creating the one draft PR
-completes the remaining 15%; its PR description records final 100% package progress.
+```sh
+PHASE1_POSTGRES_URL="$ACTIVITY_FIXTURE_URL" .venv/bin/pytest -o addopts='' -q \
+  tests/test_dashboard_demo_account.py tests/test_external_integrations_acceptance.py \
+  tests/test_paper_worker_supervisor.py tests/test_manual_demo_native_pagination.py \
+  tests/test_blofin_presentation_evidence.py tests/test_blofin_provider.py \
+  tests/test_blofin_execution.py tests/test_manual_blofin_demo.py
+```
 
-Next tasks belong to integration/release: owner review, full generated-client refresh,
-later Dashboard/Journal integration, reviewed migration rollout, explicitly authorized
-read-only native account acceptance and only then any synchronization activation.
-The full generated OpenAPI hash will drift until the designated owner regenerates it;
-no frontend/generated client or CI workflow was edited by this package.
+**263 passed, no skips, 291.00 seconds.** This verifies existing account reads,
+credential isolation, provider/execution behavior, manual native pagination and
+presentation evidence, worker failure isolation, single-thread starts, signal shutdown
+and real PostgreSQL lease behavior.
 
-No full backend CI or manual workflow dispatch, merge, deploy, runtime flag change,
-external order/cancellation/transfer, credential change or Telegram message. Automatic
-PR checks after publication are separate from this local evidence. The manual-order
-incident is still unverified; its failing request/server evidence remains outstanding.
-Mac/iCloud synchronization is unverified in this cloud environment.
+The final original-account audit and hidden-provenance changes were additionally checked:
+
+```sh
+PHASE1_POSTGRES_URL="$ACTIVITY_FIXTURE_URL" .venv/bin/pytest -o addopts='' -q \
+  tests/test_manual_blofin_demo.py tests/test_dashboard_demo_account.py \
+  tests/test_at037_tradingview_blofin.py::test_blofin_sync_read_only_contract
+```
+
+**107 passed, no skips, 182.43 seconds.** This is a targeted recheck, with one additional
+legacy snapshot contract case; it does not add another 107 distinct cases. Together
+there are **264 distinct existing regression cases** and **371 distinct passing focused
+cases** across all selections. Earlier development runs and the original PR's 241-case
+ledger are not counted again.
+
+## Static, migration and contract evidence
+
+Changed-file Ruff check and format check: **21 Python files, exit 0**.
+Focused mypy with `--follow-imports=silent`: **13 changed source files, no issues**.
+`git diff --check`: exit 0. Default `python -m app.workers.blofin_activity` reports
+synchronization disabled and does no sync IO.
+
+`alembic heads` returns only `a10blofinactivity001`. Script inspection confirms one
+base, 78 reachable revisions, no revision dependencies, and exactly
+`a9knowledgeoutbox001 -> a10blofinactivity001` as the current continuation.
+The pre-existing historical merge `a3release002` joins `a2tgpolicy002` and `a2sfp002`;
+no historical migration was edited or new branch introduced. A diagnostic assertion
+that every historical revision had a single parent failed on that existing merge;
+checking the actual graph and the current continuation established the correct guard.
+The two activation tests now expect a10 while preserving missing/multiple-head refusal
+and working-directory-independent discovery assertions.
+
+The scoped OpenAPI contract was regenerated from the backend router and checked against
+its stored bytes. SHA256:
+`14b14a34c77f598793207a1fa2485e5572b2afd8eee92f86bc2c1e2f5cb76307`.
+It exposes `selection=cursor_sweep` for orders and `time_window` for fills, with null
+order time-coverage bounds. Frontend/generated-client and CI files remain untouched.
+Development lint/type issues were corrected before the passing final checks.
+
+## Remaining coverage and activation prerequisites
+
+Official order-history documentation does not specify the begin/end filter timestamp
+basis or venue retention. Recurring unfiltered order cursor sweeps capture later
+completion if the record remains available through a subsequent sweep. Discovery
+latency, collection churn, outages and retention still limit coverage. A scan guard
+stops at 1,000 distinct nonempty frontiers; conflicts/guard failures require review.
+Fills retain a 1–30 day configured lookback (default seven), overlap and explicit outage
+gaps. Pending orders, separate TPSL/algo ancestry, spot/copy-trading and funding remain
+outside coverage; unavailable fee currency/PnL and historical conversion remain unknown.
+`partial_coverage` is always true. Historical commands without verified original
+execution UID evidence stay native without a command link.
+
+Before activation: integration-owner client regeneration and Dashboard/Journal counting
+integration; reviewed a10 schema upgrade and migration-aware rollback image; correct
+organization and UID pins; separately authorized dedicated demo read-only credentials;
+safe paper posture, aggregate UID/IP rate budget and running existing paper worker;
+then explicit activity opt-in and supervised read-only acceptance. Existing balance
+snapshot rotation requires verification of its own current credential source.
+
+No deployment, exchange activation, order, account mutation, Telegram message,
+credential change, runtime flag change, full backend suite, manual CI dispatch or merge.
+Live venue acceptance and the separate manual-order incident remain unverified.

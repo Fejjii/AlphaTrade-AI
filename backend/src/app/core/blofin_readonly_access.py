@@ -46,17 +46,22 @@ class BloFinReadOnlyClient(BloFinClient):
             allowed = {"begin", "end", "after", "limit"}
             if not signed or not params or set(params) - allowed:
                 raise ExchangeDemoInactiveError("BloFin history permits bounded signed GET only.")
-            if not {"begin", "end", "limit"} <= set(params):
-                raise ExchangeDemoInactiveError("BloFin history requires a bounded window.")
+            required = {"begin", "end", "limit"} if path.endswith("fills-history") else {"limit"}
+            if not required <= set(params) or (("begin" in params) != ("end" in params)):
+                raise ExchangeDemoInactiveError("BloFin history requires bounded pagination.")
             if any(
                 not isinstance(params[k], str)
                 or not params[k].isascii()
                 or not params[k].isdecimal()
                 or len(params[k]) > 15
-                for k in ("begin", "end", "limit")
+                for k in params
+                if k != "after"
             ) or not (
-                0 <= int(params["begin"]) <= int(params["end"]) <= 253402300799999
-                and 1 <= int(params["limit"]) <= 100
+                1 <= int(params["limit"]) <= 100
+                and (
+                    "begin" not in params
+                    or 0 <= int(params["begin"]) <= int(params["end"]) <= 253402300799999
+                )
             ):
                 raise ExchangeDemoInactiveError("BloFin history parameters are invalid.")
             if "after" in params and (

@@ -22,7 +22,12 @@ def test_additive_migration_and_rollback_preserve_existing_organization(monkeypa
     isolated_url = make_url(url).update_query_dict({"options": f"-csearch_path={schema}"})
     monkeypatch.setenv("ALEMBIC_DATABASE_URL", isolated_url.render_as_string(hide_password=False))
     config = Config("alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["a10blofinactivity001"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["a10blofinactivity001"]
+    assert script.get_revision("a10blofinactivity001").down_revision == "a9knowledgeoutbox001"
+    assert script.get_revision("a9knowledgeoutbox001").nextrev == frozenset(
+        {"a10blofinactivity001"}
+    )
     engine = create_engine(isolated_url)
     try:
         _verify_roundtrip(config, engine)

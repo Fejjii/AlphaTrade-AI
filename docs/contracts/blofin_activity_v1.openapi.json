@@ -96,6 +96,14 @@
             ],
             "title": "Next Retry At"
           },
+          "selection": {
+            "enum": [
+              "cursor_sweep",
+              "time_window"
+            ],
+            "title": "Selection",
+            "type": "string"
+          },
           "window_begin_ms": {
             "anyOf": [
               {
@@ -125,7 +133,8 @@
           }
         },
         "required": [
-          "kind"
+          "kind",
+          "selection"
         ],
         "title": "ActivityCoverage",
         "type": "object"

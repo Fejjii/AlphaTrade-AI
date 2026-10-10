@@ -295,6 +295,21 @@ def test_disabled_and_shutdown_before_send_have_no_io(world):
     assert world[4].requests == []
 
 
+def test_dispatch_budget_stops_before_another_request_or_page_commit(world):
+    clock = [0.0]
+    world[4].on_page = lambda: clock.__setitem__(0, 31.0)
+    result = sync(world, monotonic=lambda: clock[0])
+    assert result.status == "interrupted" and result.pages_committed == 0
+    history = [
+        r
+        for r in world[4].requests
+        if r.url.path.endswith("orders-history") or r.url.path.endswith("fills-history")
+    ]
+    assert len(history) == 1
+    with Session(world[0]) as session:
+        assert session.scalar(select(func.count()).select_from(BloFinActivityFact)) == 0
+
+
 def test_authenticated_api_pins_organization_and_validates_cursor(world):
     sync(world)
     app = FastAPI()
@@ -328,7 +343,20 @@ def test_authenticated_api_pins_organization_and_validates_cursor(world):
         assert client.post("/exchange/blofin/activity").status_code == 405
 
 
-def test_verified_alphatrade_echo_matches_once_without_simulator_projection(world):
+@pytest.mark.parametrize(
+    "proof_case",
+    [
+        "proven",
+        "other_uid",
+        "missing_uid",
+        "wrong_order",
+        "wrong_account",
+        "corrupt_hash",
+        "missing_account_proof",
+        "receipt_uid_mismatch",
+    ],
+)
+def test_verified_alphatrade_echo_matches_once_without_simulator_projection(world, proof_case):
     """A real manual command through a simulated venue, then native account history."""
     from decimal import Decimal
 
@@ -336,6 +364,7 @@ def test_verified_alphatrade_echo_matches_once_without_simulator_projection(worl
 
     from app.core.config import Environment, Settings
     from app.db.models import (
+        AuditLog,
         ExecutionAccount,
         ExecutionCommand,
         ExecutionFillFact,
@@ -398,13 +427,22 @@ def test_verified_alphatrade_echo_matches_once_without_simulator_projection(worl
         update={"environment": Environment.STAGING, "perpetual_evidence_source": "binance_usdm"}
     )
     execution_venue = ManualVenue(Decimal("100000"))
+
+    def execution_handle(request):
+        if request.url.path == "/api/v1/user/query-apikey":
+            identity = {"readOnly": 0}
+            if proof_case != "missing_uid":
+                identity["uid"] = world[3].account_uid
+            return httpx.Response(200, json={"code": "0", "data": identity})
+        return execution_venue.handle(request)
+
     execution_provider = GovernedBloFinDemoProvider(
         BloFinClient(
             base_url=execution_settings.blofin_demo_rest_base_url,
             api_key="fixture",
             api_secret="fixture",
             api_passphrase="fixture",
-            transport=httpx.MockTransport(execution_venue.handle),
+            transport=httpx.MockTransport(execution_handle),
             sleeper=lambda _: None,
             max_retries=0,
         ),
@@ -435,23 +473,78 @@ def test_verified_alphatrade_echo_matches_once_without_simulator_projection(worl
         )
         local_fills_before = session.scalar(select(func.count()).select_from(ExecutionFillFact))
         commands_before = session.scalar(select(func.count()).select_from(ExecutionCommand))
+        if proof_case == "missing_account_proof":
+            from sqlalchemy import delete
+
+            session.execute(
+                delete(AuditLog).where(
+                    AuditLog.resource_id == str(command_id),
+                    AuditLog.redacted_metadata["operation"].as_string()
+                    == "manual_demo_execution_account_verified",
+                )
+            )
+            session.commit()
+        if proof_case in {"wrong_order", "wrong_account", "corrupt_hash", "receipt_uid_mismatch"}:
+            from app.services.canonical_serialization import canonical_sha256
+
+            receipt = session.scalar(
+                select(AuditLog).where(
+                    AuditLog.resource_id == str(command_id),
+                    AuditLog.redacted_metadata["operation"].as_string()
+                    == "manual_demo_native_order_receipt",
+                )
+            )
+            data = dict(receipt.redacted_metadata)
+            if proof_case == "wrong_order":
+                data["venue_order_id"] = "different-order"
+            elif proof_case == "wrong_account":
+                data["execution_account_id"] = str(uuid4())
+            elif proof_case == "receipt_uid_mismatch":
+                data["native_account_uid"] = "different-native-account"
+            proof = {k: v for k, v in data.items() if k not in {"operation", "receipt_hash"}}
+            data["receipt_hash"] = (
+                "invalid" if proof_case == "corrupt_hash" else canonical_sha256(proof)
+            )
+            receipt.redacted_metadata = data
+            session.commit()
     assert client_id and execution_venue.post_count == 1
     world[4].pages["order"] = {
         None: [
             order("o2", clientOrderId="looksAlphaTradeButUnverified"),
-            order("o1", clientOrderId=client_id),
+            order("demo-1", clientOrderId=client_id, size="2", filledSize="2", state="filled"),
         ],
-        "o1": [],
+        "demo-1": [],
     }
     world[4].pages["fill"] = {
-        None: [fill("f3", "o2"), fill("f2", "o1"), fill("f1", "o1")],
+        None: [
+            fill("f3", "o2"),
+            fill("f2", "demo-1", fillSize="1"),
+            fill("f1", "demo-1", fillSize="1"),
+        ],
         "f1": [],
     }
+    if proof_case == "other_uid":
+        # Same organization, native order ID and echoed client ID; execution proof is A's.
+        # Verify A first, then switch the read-only connection to native account B.
+        assert sync(world).status == "bounded"
+        assert len([i for i in page(world).items if i.command_id == command_id]) == 2
+        engine, settings, config, _, venue = world
+        venue.uid = "native-account-B"
+        venue.identity = {"uid": venue.uid, "readOnly": 1}
+        scope = ActivityScope(config.organization_id, venue.uid)
+        world = (
+            engine,
+            settings,
+            config.model_copy(update={"expected_uid": venue.uid}),
+            scope,
+            venue,
+        )
     assert sync(world).status == "bounded"
     result = page(world)
     assert len(result.items) == 3
     matched = [i for i in result.items if i.origin == "alphatrade_matched"]
-    assert len(matched) == 2 and all(i.command_id == command_id for i in matched)
+    assert len(matched) == (2 if proof_case == "proven" else 0)
+    assert all(i.command_id == command_id for i in matched)
     assert all(i.strategy_id is None for i in result.items)
     assert result.items[0].origin == "native" and result.items[0].command_id is None
     sync(world)
@@ -480,8 +573,43 @@ def test_missed_window_gap_is_explicit(world):
         result = read_activity(
             session, scope=world[3], binding=credential_binding(world[1]), kind="fill", now=later
         )
-        assert all(c.gap_detected for c in result.coverage)
+        assert result.coverage[1].gap_detected
+        assert result.coverage[0].selection == "cursor_sweep"
+        assert result.coverage[0].covered_begin_ms is None
         assert result.partial_coverage
+
+
+def test_later_completion_of_old_order_is_captured_by_next_resumable_sweep(world):
+    engine, settings, config, scope, venue = world
+    venue.pages["order"] = {None: [order("newer")], "newer": []}
+    assert sync(world).status == "bounded"
+    # This order was absent while live. It completes after the first sweep.
+    old = order("long-lived", createTime=str(MS - 90 * 86400000), updateTime=str(MS + 1000))
+    venue.pages["order"] = {None: [order("newer")], "newer": [old], "long-lived": []}
+    bounded = config.model_copy(update={"max_pages": 2})
+    for _ in range(4):
+        result = run_activity_sync(
+            engine,
+            settings,
+            bounded,
+            provider=venue.provider(),
+            clock=lambda: NOW + timedelta(seconds=2),
+        )
+        assert result.pages_committed <= 2
+    with Session(engine) as session:
+        stored = session.get(BloFinActivityFact, (*scope.key(), "order", "long-lived"))
+        assert stored is not None and stored.payload["created_at_ms"] == old["createTime"]
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(BloFinActivityFact)
+                .where(BloFinActivityFact.native_id == "long-lived")
+            )
+            == 1
+        )
+    requests = [r for r in venue.requests if r.url.path.endswith("orders-history")]
+    assert all("begin" not in r.url.params and "end" not in r.url.params for r in requests)
+    assert any(r.url.params.get("after") == "newer" for r in requests)
 
 
 def test_repository_cannot_advance_another_account_checkpoint(world):

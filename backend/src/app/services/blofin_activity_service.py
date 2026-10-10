@@ -17,7 +17,13 @@ from app.core.blofin_readonly_access import get_readonly_client
 from app.core.config import Settings
 from app.core.errors import ExchangeDemoInactiveError, NotFoundError, ValidationAppError
 from app.db.blofin_activity import BloFinActivityAccount, BloFinActivityCursor, BloFinActivityFact
-from app.db.models import ExecutionCommand, TradePlanRevision, VenueSubmitEffect
+from app.db.models import (
+    AuditLog,
+    ExecutionAccount,
+    ExecutionCommand,
+    TradePlanRevision,
+    VenueSubmitEffect,
+)
 from app.providers.exchange.blofin_activity import ActivityIdentityError, BloFinActivityProvider
 from app.providers.exchange.errors import ExchangeError, ExchangeRateLimitError
 from app.repositories.blofin_activity import ActivityConflictError, BloFinActivityRepository
@@ -33,6 +39,8 @@ from app.services.blofin_activity_config import (
     configured_scope,
     credential_binding,
 )
+from app.services.canonical_serialization import canonical_sha256
+from app.services.manual_demo_history import current_native_receipt
 
 LIMITATIONS = [
     "history_retention_not_documented",
@@ -41,6 +49,8 @@ LIMITATIONS = [
     "history_fee_currency_unavailable_unless_returned_explicitly",
     "instrument_metadata_is_observed_current_metadata_not_historical_conversion_proof",
     "exhausted_window_is_endpoint_coverage_not_complete_account_performance",
+    "orders_reconciled_without_time_filter_retention_and_sweep_latency_not_guaranteed",
+    "command_link_requires_verified_execution_uid_and_compatible_native_receipt",
 ]
 
 
@@ -75,7 +85,9 @@ def _window(
 ) -> BloFinActivityCursor:
     cursor = repo.cursor(kind)
     end = int(now.timestamp() * 1000)
-    floor = max(0, end - config.lookback_days * 86400000)
+    # Orders use recurring cursor sweeps: begin/end semantics are undocumented.
+    # These bounds describe observation time, not a claimed order-event interval.
+    floor = 0 if kind == "order" else max(0, end - config.lookback_days * 86400000)
     if cursor is None:
         cursor = BloFinActivityCursor(
             organization_id=repo.scope.organization_id,
@@ -93,7 +105,7 @@ def _window(
     elif cursor.window_complete:
         begin = max(0, cursor.window_end_ms - config.overlap_seconds * 1000)
         cursor.gap_detected = cursor.gap_detected or floor > cursor.window_end_ms
-        cursor.window_begin_ms = max(begin, floor)
+        cursor.window_begin_ms = 0 if kind == "order" else max(begin, floor)
         cursor.window_end_ms = max(end, cursor.window_end_ms)
         cursor.native_cursor = None
         cursor.seen_cursors = []
@@ -240,6 +252,9 @@ def _command_link(
     session: Session, repo: BloFinActivityRepository, fact: NativeActivityFact
 ) -> UUID | None:
     order = fact
+    account = session.get(BloFinActivityAccount, repo.scope.key())
+    if account is None or account.identity_verified_at is None or account.identity_error:
+        return None
     if fact.kind == "fill":
         row = session.get(BloFinActivityFact, (*repo.scope.key(), "order", fact.order_id))
         if row is None:
@@ -247,16 +262,20 @@ def _command_link(
         order = NativeActivityFact.model_validate(row.payload)
     if not order.client_order_id:
         return None
-    # The native echoed identifier, not a naming heuristic, establishes linkage.
-    matches = list(
+    candidates = list(
         session.scalars(
-            select(ExecutionCommand.id)
+            select(ExecutionCommand)
             .join(VenueSubmitEffect, VenueSubmitEffect.command_id == ExecutionCommand.id)
             .join(TradePlanRevision, TradePlanRevision.id == ExecutionCommand.revision_id)
+            .join(ExecutionAccount, ExecutionAccount.id == ExecutionCommand.account_id)
             .where(
                 ExecutionCommand.organization_id == repo.scope.organization_id,
                 TradePlanRevision.organization_id == repo.scope.organization_id,
                 TradePlanRevision.account_id == ExecutionCommand.account_id,
+                TradePlanRevision.content_hash == ExecutionCommand.plan_content_hash,
+                TradePlanRevision.user_id == ExecutionCommand.user_id,
+                ExecutionAccount.organization_id == ExecutionCommand.organization_id,
+                ExecutionAccount.user_id == ExecutionCommand.user_id,
                 TradePlanRevision.execution_venue == "BLOFIN_DEMO",
                 TradePlanRevision.execution_instrument == order.instrument,
                 TradePlanRevision.semantic_payload["side"].as_string() == order.side.upper(),
@@ -265,6 +284,54 @@ def _command_link(
             .limit(2)
         )
     )
+    matches = []
+    for command in candidates:
+        # Evidence captured before dispatch binds the command's original execution
+        # connection. A later reconciliation with replacement keys cannot assign it.
+        attestations = list(
+            session.scalars(
+                select(AuditLog)
+                .where(
+                    AuditLog.organization_id == command.organization_id,
+                    AuditLog.user_id == command.user_id,
+                    AuditLog.resource_type == "manual_demo_test",
+                    AuditLog.resource_id == str(command.id),
+                    AuditLog.redacted_metadata["operation"].as_string()
+                    == "manual_demo_execution_account_verified",
+                )
+                .limit(2)
+            )
+        )
+        if len(attestations) != 1:
+            continue
+        identity = dict(attestations[0].redacted_metadata)
+        identity_digest = identity.pop("evidence_hash", None)
+        identity.pop("operation", None)
+        if (
+            canonical_sha256(identity) != identity_digest
+            or identity.get("plan_content_hash") != command.plan_content_hash
+            or identity.get("environment") != repo.scope.environment
+            or identity.get("native_account_uid") != repo.scope.account_uid
+            or identity.get("execution_account_id") != str(command.account_id)
+        ):
+            continue
+        receipt = current_native_receipt(session, command)
+        if receipt is None:
+            continue
+        proof = dict(receipt.redacted_metadata)
+        digest = proof.pop("receipt_hash", None)
+        proof.pop("operation", None)
+        if (
+            canonical_sha256(proof) == digest
+            and proof.get("plan_content_hash") == command.plan_content_hash
+            and proof.get("environment") == repo.scope.environment
+            and proof.get("native_account_uid") == repo.scope.account_uid
+            and proof.get("execution_account_id") == str(command.account_id)
+            and proof.get("venue_order_id") == order.order_id
+            and proof.get("client_order_id") == order.client_order_id
+            and proof.get("instrument") == order.instrument
+        ):
+            matches.append(command.id)
     if len(matches) > 1:
         raise ActivityConflictError("Ambiguous AlphaTrade native command linkage.")
     return matches[0] if matches else None
@@ -371,19 +438,22 @@ def read_activity(
     for stream in ("order", "fill"):
         checkpoint = repo.cursor(stream)
         coverage.append(
-            ActivityCoverage(kind=stream)
+            ActivityCoverage(
+                kind=stream, selection="cursor_sweep" if stream == "order" else "time_window"
+            )
             if checkpoint is None
             else ActivityCoverage(
                 kind=stream,
-                window_begin_ms=str(checkpoint.window_begin_ms),
-                window_end_ms=str(checkpoint.window_end_ms),
+                selection="cursor_sweep" if stream == "order" else "time_window",
+                window_begin_ms=str(checkpoint.window_begin_ms) if stream == "fill" else None,
+                window_end_ms=str(checkpoint.window_end_ms) if stream == "fill" else None,
                 native_cursor=checkpoint.native_cursor,
                 window_complete=checkpoint.window_complete,
                 covered_begin_ms=str(checkpoint.covered_begin_ms)
-                if checkpoint.covered_begin_ms is not None
+                if checkpoint.covered_begin_ms is not None and stream == "fill"
                 else None,
                 covered_end_ms=str(checkpoint.covered_end_ms)
-                if checkpoint.covered_end_ms is not None
+                if checkpoint.covered_end_ms is not None and stream == "fill"
                 else None,
                 gap_detected=checkpoint.gap_detected,
                 last_successful_sync=checkpoint.last_successful_sync,
@@ -400,8 +470,15 @@ def read_activity(
             s is not None and 0 <= (now - s).total_seconds() < stale_seconds for s in successes
         ) and not any(
             c.last_error_code
-            or c.window_end_ms is None
-            or not 0 <= int(now.timestamp() * 1000) - int(c.window_end_ms) < stale_seconds * 1000
+            or (
+                c.kind == "fill"
+                and (
+                    c.window_end_ms is None
+                    or not 0
+                    <= int(now.timestamp() * 1000) - int(c.window_end_ms)
+                    < stale_seconds * 1000
+                )
+            )
             for c in coverage
         ):
             freshness = "fresh"

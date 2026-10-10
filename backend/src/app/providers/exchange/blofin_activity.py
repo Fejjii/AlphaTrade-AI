@@ -172,7 +172,11 @@ class BloFinActivityProvider:
         before_send: Callable[[], None],
     ) -> tuple[NativeActivityFact, ...]:
         self.verify_identity(expected_uid, before_send)
-        params = {"begin": str(begin_ms), "end": str(end_ms), "limit": str(limit)}
+        # Completed orders may have been created years before completion. A recurring
+        # cursor sweep avoids assuming what the optional begin/end timestamps filter.
+        params = {"limit": str(limit)}
+        if kind == "fill":
+            params.update(begin=str(begin_ms), end=str(end_ms))
         if after:
             params["after"] = identifier(after)
         data = self.client.request(
@@ -185,11 +189,7 @@ class BloFinActivityProvider:
             if not isinstance(row, dict):
                 raise ExchangeRequestError("Invalid native history row.")
             fact = parse_fact(kind, row)
-            # Order begin/end filtering is not specified against createTime vs updateTime.
-            times = [fact.occurred_at_ms]
-            if fact.created_at_ms is not None:
-                times.append(fact.created_at_ms)
-            if not any(begin_ms <= int(at) <= end_ms for at in times):
+            if kind == "fill" and not begin_ms <= int(fact.occurred_at_ms) <= end_ms:
                 raise ExchangeRequestError("Native history outside requested window.")
             facts.append(fact)
         return tuple(facts)

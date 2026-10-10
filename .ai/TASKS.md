@@ -2494,9 +2494,12 @@ Development checks only; consolidated release and authenticated live acceptance 
 
 ## AT-118 — Account-scoped BloFin native activity mirroring
 
-Status: READY (implementation/focused checks complete; draft publication is final action). Risk: Medium (account identity and exact history data).
+Status: READY (PR239 review corrections and focused verification complete; consolidated update). Risk: Medium (account identity and exact history data).
 Base: refreshed PR237 bda597c2fffbf1a49beadc64d757100808094ca2.
 Own additive activity provider/schema/repository/service/API/worker and migration.
 Focused deterministic and isolated PostgreSQL verification only.
-No execution, frontend, Agent turn, CI, deployment or runtime activation changes.
+Continue from 85adbde2b242340cac29b45b8673eb8296385903: verified UID/execution-account
+linkage, snapshot selection, long-lived order reconciliation, existing worker wiring
+with disabled defaults and current migration-guard assertions.
+No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
 See docs/blofin_native_activity.md for contract, milestones and integration.

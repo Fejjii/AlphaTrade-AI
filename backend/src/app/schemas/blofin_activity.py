@@ -48,6 +48,7 @@ class ActivityItem(NativeActivityFact):
 
 class ActivityCoverage(BaseModel):
     kind: Literal["order", "fill"]
+    selection: Literal["cursor_sweep", "time_window"]
     window_begin_ms: str | None = None
     window_end_ms: str | None = None
     native_cursor: str | None = None
