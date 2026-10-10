@@ -43,6 +43,7 @@ from app.schemas.nested_continuation import NestedContinuationSpec, NestedParame
 from app.security.tenant import TenantContext
 from app.services.canonical_serialization import canonical_sha256
 from app.strategy_brain.sfp.contracts import SfpParameters, SfpSpec
+from app.strategy_brain.trendpulse_1r.contracts import TrendPulseParameters, TrendPulseSpec
 
 
 def semantic_hash(value: dict[str, Any]) -> str:
@@ -103,8 +104,8 @@ class ExperimentService:
                     "Experiment family differs from immutable strategy.",
                     code="experiment_strategy_mismatch",
                 )
-            authored: NestedContinuationSpec | SfpSpec
-            parameters: NestedParameters | SfpParameters
+            authored: NestedContinuationSpec | SfpSpec | TrendPulseSpec
+            parameters: NestedParameters | SfpParameters | TrendPulseParameters
             try:
                 if config.family is ExperimentFamily.NESTED:
                     authored = NestedContinuationSpec.model_validate(spec)
@@ -113,10 +114,8 @@ class ExperimentService:
                     authored = SfpSpec.model_validate(spec)
                     parameters = SfpParameters.model_validate(variant.parameters)
                 else:
-                    raise ConflictError(
-                        "TrendPulse1R needs its deterministic authored adapter.",
-                        code="experiment_adapter_unavailable",
-                    )
+                    authored = TrendPulseSpec.model_validate(spec)
+                    parameters = TrendPulseParameters.model_validate(variant.parameters)
             except ValidationError as exc:
                 raise ConflictError(
                     "Stored strategy parameters are invalid.", code="experiment_strategy_mismatch"
@@ -130,6 +129,8 @@ class ExperimentService:
                 )
             symbols.add(authored.symbol)
             timeframes.add(authored.trigger_timeframe)
+            if isinstance(authored, TrendPulseSpec):
+                timeframes.add(authored.trend_timeframe)
             hashes[str(version.id)] = version.content_hash
         if symbols != set(config.symbols) or timeframes != set(config.timeframes):
             raise ConflictError(
@@ -142,6 +143,14 @@ class ExperimentService:
         ):
             raise ConflictError(
                 "SFP has no authorized automatic trade plan.", code="experiment_adapter_unavailable"
+            )
+        if (
+            config.family is ExperimentFamily.TRENDPULSE_1R
+            and config.sample_target.kind != "setup_observation"
+        ):
+            raise ConflictError(
+                "TrendPulse1R research geometry has no authorized automatic trade plan.",
+                code="experiment_adapter_unavailable",
             )
         if (
             config.sample_target.kind == "closed_trade"

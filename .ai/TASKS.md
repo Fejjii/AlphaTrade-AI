@@ -2520,3 +2520,18 @@ configuration, tenant/verified account/source fences and independent promotion
 samples. Focused disposable-fixture verification only. No runtime activation,
 replacement engine, external orders, credential changes, deployment or full CI.
 Contract: docs/experiment_domain_contract.md.
+
+## AT-120 — Pure deterministic TrendPulse1R research adapter
+
+Status: READY (separate draft feature branch codex/trendpulse-1r-adapter).
+Focused combined selection: 261 passed/no skips; 80 new adapter/contract/domain
+cases; scoped Ruff/format/mypy(6 source files), shared api:check and schema guard
+pass. Exact final SHA/automatic focused evidence in draft PR and
+docs/trendpulse_1r_verification.md.
+Dependency: PR241 correction 6ca6a76201547524275266dfa22fdf12f5932b14; automatic
+focused CI run38066879849 passed (472 backend/no skips,143 frontend). Implement
+closed causal 15m trend/5m entry, fixed conservative authored v1 rules, structural
+stop and rounded gross 1R; pure experiment-config/v1 research attribution. Preserve
+Nested/SFP. Focused synthetic/disposable PostgreSQL tests and schema/lint/typing.
+No replacement engine, execution/performance runtime, migration, operator setting
+changes, full backend CI or activation. Contract: docs/trendpulse_1r_adapter_contract.md.

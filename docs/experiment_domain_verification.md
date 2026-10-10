@@ -137,9 +137,10 @@ Readers and mutations remain scoped to the authenticated organization/user; this
 batch adds no cross-user approval delegation.
 
 Nested semantics/targets are preserved. SFP is structural observation-only until an
-authorized execution adapter exists. Future TrendPulse1R requires reviewed authored
-closed 15m trend/5m entry rules, structural stop and gross 1R target; new drafts are
-refused until that deterministic strategy adapter is available.
+authorized execution adapter exists. The separate future
+TrendPulse1R branch publishes a deterministic research adapter and exact two-timeframe
+authored spec recognition. Its [contract](trendpulse_1r_adapter_contract.md) still
+requires compiler/plan/runtime integration; no execution or performance is claimed.
 
 No full backend CI, manual CI dispatch, deployment, external orders, credential
 changes, account mutations, Telegram messages or runtime activation were performed.
