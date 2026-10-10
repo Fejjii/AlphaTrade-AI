@@ -122,6 +122,13 @@ from app.db.watcher_orchestration import (  # noqa: F401
     WatcherWorkerLeaseRow,
 )
 from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow  # noqa: F401
+from app.experiments import guards as _experiment_guards  # noqa: F401
+from app.experiments.models import (  # noqa: F401
+    ExperimentEventRow,
+    ExperimentRow,
+    ExperimentSampleRow,
+    ExperimentVersionRow,
+)
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,

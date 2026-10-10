@@ -46,6 +46,7 @@ jobs:
       PHASE1_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
       AT028_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
       BLOFIN_ACTIVITY_TEST_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
+      EXPERIMENT_TEST_POSTGRES_URL: postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test
     defaults:
       run:
         working-directory: backend

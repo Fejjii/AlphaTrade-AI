@@ -3105,3 +3105,20 @@ fills retain bounded incremental windows. Existing snapshots require current-bin
 verification and UID selection; historical unverified rows are retained but withheld.
 Execution authority, frontend and runtime activation remain unchanged.
 See docs/blofin_native_activity.md.
+
+## AT-ADR-099 — Experiments approve bounded configurations, not execution authority
+
+Date: 2026-10-10. AT-119 provides generic Exploration/Validation lifecycle over
+immutable strategy versions. Each immutable experiment version binds organization,
+owner, verified account/source, exact strategy hashes, configuration and independent
+sample identity. Owner approval seals the hash with finite budgets and an expiry of
+at most 30 days. Running is domain state only. Promotion creates an unapproved
+Validation version with no carried samples; records cannot be reused across versions.
+Internal simulation and native BloFin have separate identities and provenance.
+Manual native exposure consumes capacity without granting management authority.
+Trusted adapters, existing canonical strategy/risk/dispatch authorities and fresh
+execution UID verification remain prerequisites for future runtime adoption. No
+source resolver or runtime is installed. SFP remains observation-only and future
+TrendPulse1R needs explicit closed 15m trend/5m entry, structural stop and gross 1R
+compiler/evaluation contracts. One additive a11 migration follows a10 on the future
+feature branch, outside the release candidate. See docs/experiment_domain_contract.md.
