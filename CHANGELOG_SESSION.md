@@ -1,47 +1,45 @@
-# PR237 integration session
+# PR237 final integration session
 
 ## 1. Session metadata
 
-2026-10-10T11:47:00Z; Etc/UTC; branch codex/reviewer-wave-integration; candidate e019a214d8c264780a1346cb088ab5de945b8487. Status BLOCKED.
+2026-10-10T11:59:30Z, Etc/UTC; codex/reviewer-wave-integration; candidate c859ae1393c8e47c67dd63ab5183d51d61cee1fa; REVIEW_REQUIRED for supervising release review.
 
 ## 2. Starting state
 
-Reviewed baseline bda597c2fffbf1a49beadc64d757100808094ca2. Passing baseline CI38042313649 remains baseline-only evidence. Initial feature heads were not accepted as final corrections.
+Reviewed bda597c2fffbf1a49beadc64d757100808094ca2. Baseline CI38042313649 remains baseline-only focused acceptance. Initial voice43996d5/native85adbde foundations awaited owner corrections.
 
 ## 3. Work performed
 
-Implemented CI cost controls first, reviewed corrected feature handoffs/diffs, merged PR239 18e66dac and PR238 af672dff with history intact. Built compact native Dashboard/Journal views and generated strict API artifacts from integrated backend. Adapted two existing CI browser assertions to mounted voice/expandable Strategy options. No owner implementation edits.
+CI cost controls first; corrected PR238 af672dff and PR23918e66dac reviewed/merged; compact account-scoped native views and strict generated API completed. Adapted two legacy smoke expectations. Initial automatic focused CI found one old DailyReview auth fixture; repaired it without changing assertions. Verified owner769e78a4 worker timing correction before merge, including a serialization negative control, then integrated it. Accumulated those two necessary corrections in final follow-up publication; no full/combined dispatch.
 
 ## 4. Files created, changed, or removed
 
-CI/release/selectors, native API pilot/generated artifacts, activity widgets/helpers/tests, Dashboard/Journal account fencing, deterministic browser fixtures/config, integration release document and two legacy smoke specs. Restored test-generated screenshots/results; operational handoff/session kept separate from product commits.
+CI/release/selectors; generated API pilot/artifacts; activity facade/helpers/component and account/session tests; Dashboard/Journal views; three legacy test-fixture updates; integration evidence document. Included owner test/handoff only for latest worker correction. No edits to owner production implementations. Generated screenshot/results noise restored. Root operational docs excluded from product commits.
 
 ## 5. Commands and tests run
 
-Frontend: npm run api:generate; npm run api:check; npm run typecheck; npx vitest run with generated-contracts, native client/helpers/component/Dashboard/account/Journal and eight Agent/voice/recovery files; changed-file npx eslint --max-warnings=0.
-Backend: focused pytest policy/provider/worker; isolated six-case worker rerun; temporary diagnostic wrapper measuring allocator duration; final policy pytest plus changed CI Ruff/format. Alembic heads and graph/scoped-contract comparison. PostgreSQL --collect-only for owner ledger inventory, not database execution.
-Chromium: playwright.activity.config.ts (3); playwright.voice.config.ts (8); default chromium two affected legacy cases selected by --grep (2), isolated SQLite/mock backend. No full suite/build/dispatch.
+Standard npm api:generate/api:check, repository typecheck, focused 16-file Vitest (Agent/voice/recovery/native/client/Dashboard/DailyReview/account/Journal), changed-file ESLint. Focused backend policy/provider/worker/supervisor/memory/process tests with explicit PostgreSQL lease exclusion, plus separately restored four policy cases matching postgres and current six-case worker/policy check. Ruff/format/diff/static Alembic/scoped-schema comparisons. Isolated owner31 cases; temporary shared-lock mutation expected-negative test. Chromium native3, actual Agent8, real isolated SQLite/mock legacy2. No full suite/build/dispatch.
 
 ## 6. Exact results
 
-e019a214d8c264780a1346cb088ab5de945b8487: 217 frontend cases passed/15 files/47.34s; 28 policy cases passed/2.13s; API drift/typecheck/lint/Ruff/format/diff pass; two durable SQLite/mock smoke cases passed/3.4m. fa1cb97 unchanged application implementation: native browser 3 passed/1.0m; actual Agent browser 8 passed/1.4m. Backend 18e66dac unchanged source: 70 passed/1 failed in policy/provider/worker; isolated worker 5 passed/1 failed. Diagnostic measured 2.045s watcher collector versus 1s wait. No skip/weakening. Independently collected 371 owner-ledger cases; reported owner execution not rerun. One a10 head, one base/78 revisions; owner contract hash and all scoped schemas equal regenerated full export. Scoped credential-pattern matches zero. Source comparisons to both owners show no differences.
+Current candidate c859ae1393c8e47c67dd63ab5183d51d61cee1fa: six worker/policy cases passed, 24 unrelated policy cases deselected, 0.82s; Ruff/format pass. Backend tree identical to bfd3452: 92 pass/6 deselected/43.13s plus four policy pass/24 deselected/0.52s =96 distinct passing cases; only two PostgreSQL lease cases remain outside selection, no skips. Frontend tree identical to94833da: 232 pass/16files/44.91s; changed fixture lint passes. e019: drift/typecheck/28 policy pass and two legacy SQLite/mock smoke pass; fa1: native3 and actual Agent8 browser pass, application source unchanged. Owner769 premerge31 pass/two lease deselected; mutation2 expected fail specifically at watcher-progress assertion. Historical18 worker70pass/1failure recorded and resolved, not erased. Owner371 collection verified; PostgreSQL not rerun. Single a10head/base/78 revisions. Scope contract exact hash/components equal generated full export. Credential-pattern matches zero.
 
 ## 7. Latest successful step
 
-Focused candidate frontend/CI and two legacy real-API/mock browser repairs pass. Product candidate published with one consolidated push; PR remains draft with worker blocker.
+Resolved owner worker blocker with independent focused/mutation verification; final integrated backend/current candidate checks pass, source-tree identity verified. Ready for supervising integration review.
 
 ## 8. Blockers or review requests
 
-BloFin-owner worker regression; awaiting corrected revision after focused verification. PostgreSQL Docker socket denied. Missing Render exact-commit/drain access, Vercel project/team authorization (prior 403), hosted HTTPS, synthetic staging tenant/session and GitHub Actions cancel/write API access. Inspected corrected feature CI runs were already complete (failure); no active superseded run cancelled.
+No implementation blocker. Hosted Render exact-commit/drain access, Vercel project authorization, HTTPS and synthetic staging tenant/session access missing. Docker socket denies local PostgreSQL. Native microphone/Safari/iPhone and venue checks remain unverified. Full acceptance prerequisites outstanding. Current automatic CI status recorded separately, never treated as full acceptance.
 
 ## 9. Warnings and risks
 
-Not release-ready. Full acceptance never run. Native microphone/Safari/iPhone, venue coverage and staging unverified. Rollback must stop/drain new consumers, retain additive schema/history, use qualified migration-aware API/worker/frontend revisions and recheck gates. b165 default automatic Alembic startup cannot locate a9/a10. Never reset operator settings to Blueprint defaults. Manual BloFin order incident undiagnosed.
+Not release-ready. Prior deployments remain observed b165b922, not this candidate. Migration order a8→a9→a10; preserve operator configuration and stop incompatible old ingestion writers. Rollback requires drain/checkpoints/additive retention/migration-aware image and alignment. Baseline startup cannot resolve new revisions. Manual-order incident undiagnosed. No live action occurred.
 
 ## 10. Follow-up actions
 
-Review exact PR237 revision; verify and integrate worker-owner correction; qualify a8→a9→a10 rollout/rollback; supervising review, authenticated aligned staging smoke and fresh SFP diagnostics/evaluations precede one explicit full_backend=true acceptance. Existing staging smoke sequence preserved. No runtime actions during current task.
+Orchestrator reviews exact final feature/candidate SHAs; qualify rollback, align approved existing staging targets, authenticate synthetic smoke, complete fresh SFP diagnostics/evaluations. Then one explicitly authorized full_backend=true acceptance, exact-SHA evidence. No main merge or new infrastructure.
 
 ## 11. Final status
 
-BLOCKED for qualification. Implemented/integrated/focused frontend tested; not deployed or activated. Published one product batch; publish a separate handoff-only branch, verify remote bytes/hash. Mac/iCloud verification unavailable. No main merge, paid provider, exchange order, Telegram or operator-setting mutation.
+REVIEW_REQUIRED: implemented/integrated/focused tested; not deployed/activated; full release acceptance unexecuted. Initial product batch plus one necessary failed-CI/owner-correction follow-up batch; handoff-only branch separately published/verified. Do not claim earlier runs accept newer revisions. Mac/iCloud remains unverified.
