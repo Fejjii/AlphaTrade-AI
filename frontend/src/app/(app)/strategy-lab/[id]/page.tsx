@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { BacktestPanel } from "@/components/strategy/BacktestPanel";
+import { ExperimentDraftPanel } from "@/components/strategies/ExperimentDraftPanel";
 import { PaperValidationPanel } from "@/components/strategy/PaperValidationPanel";
 import { StrategyVersionHistory } from "@/components/strategy/StrategyVersionHistory";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
@@ -117,6 +118,8 @@ export default function StrategyDetailPage() {
         </div>
       </div>
 
+      <Link href="/strategies" className="inline-flex min-h-11 items-center text-accent">← Back to Strategies</Link>
+      {data ? <ExperimentDraftPanel strategyId={id} name={data.latest_card?.strategy_name || data.name} /> : null}
       <WatcherMonitoringPanel compact />
 
       {loading ? <LoadingState label="Loading strategy…" /> : null}

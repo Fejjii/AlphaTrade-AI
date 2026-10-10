@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 
 import { PrivateQueryProvider } from "@/components/query/PrivateQueryProvider";
 import { sessionCleared, sessionGeneration } from "@/lib/auth/session-events";
+import { bindRecoverySession, recoverySession } from "@/lib/auth/recovery-session";
 import { api, ApiError } from "@/lib/api";
 import type { AuthResponse, MeResponse } from "@/lib/api/types";
 import { sanitizeNextPath } from "@/lib/auth/boundary";
@@ -51,6 +52,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const generation = sessionGeneration();
     const me = await api.auth.me();
     if (generation !== sessionGeneration()) return;
+    const previous = recoverySession();
+    if (previous && (previous.userId !== me.user.id || previous.organizationId !== me.organization.id)) sessionCleared();
+    bindRecoverySession(me.organization.id, me.user.id);
     setUser(me.user);
     setOrganization(me.organization);
   }, []);
@@ -76,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const applyAuthResponse = useCallback(async (response: AuthResponse) => {
     sessionCleared();
     setTokens(response.tokens.access_token, response.tokens.refresh_token || undefined);
+    bindRecoverySession(response.organization.id, response.user.id);
     setUser(response.user);
     setOrganization(response.organization);
   }, []);
