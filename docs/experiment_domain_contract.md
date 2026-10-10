@@ -33,6 +33,10 @@ experiment/version/sample identities, variants, exact parameters, model policy,
 universe, risk and targets. Decimal inputs use strings/integers, never floats.
 Models can only provide bounded advisory text; they cannot modify deterministic risk,
 size, strategy approval, execution or account authority.
+Monetary risk limits accept at most 24 digits and 12 decimal places. Admission
+previews refuse instrument/account amounts beyond 32 digits, 18 fractional places
+or 31 integer places; arithmetic uses an explicit 80-digit context and rechecks
+rounded loss, exposure and lot alignment against the approved envelope.
 
 BloFin demo requires the existing verified native UID record and hash-verified
 execution-account identity audit. Current stored read-only credential binding must
@@ -88,11 +92,27 @@ Reserve one additive revision `a11experiments001` directly after current head
 `a10blofinactivity001`, on this future feature branch only. No historical migration
 changes. Integration owner must sequence/rebase it if another future migration is
 reserved first; one head and a10 data preservation are required before adoption.
-The existing release's a10 head guards remain pinned to that release; fixture tests
-on this branch must distinguish the a10 milestone from this new head.
+Current-head expectations advance to a11 on this feature branch while retaining
+the historical ancestry assertions. The separate release branch remains at a10.
 
-Initial publication is an interface, not completed implementation evidence.
-Focused lifecycle/immutability/account/attribution/rounding/promotion tests and a
-disposable PostgreSQL roundtrip follow. No full backend CI, deployment, external
-orders, credential change or activation is authorized. Shared client/presentation
-owners can bind to these models; final scoped OpenAPI and verification follow here.
+Initial interface publication: `401b4eb576319d9dd8dde4801f9f7f500a8b28f2` in draft
+PR241. Final scoped OpenAPI: [experiments_v1.openapi.json](contracts/experiments_v1.openapi.json).
+Focused fixture evidence and reproduction commands:
+[experiment_domain_verification.md](experiment_domain_verification.md).
+
+The default API has no source resolver. Its sample endpoint returns 503 until the
+source owner installs a trusted adapter. Native adapters must verify complete
+experiment-owned entry/exit lineage and account identity; simulator adapters must
+resolve independent immutable simulator records. An ordinary manual command is
+identity evidence only and never experiment management or sample authority.
+The tests use a trusted fixture resolver and HTTP MockTransport, not native exchange
+performance. This batch implements neither native closed-trade reconciliation nor
+performance calculation, and installs no execution, scheduling or replenishment
+runtime. These are explicit adoption prerequisites, alongside reviewed canonical
+strategy adapters, fresh native execution UID verification, atomic account-wide
+reservations/loss counters and existing final dispatch authorities.
+
+No full backend CI, deployment, external orders, credential changes or activation.
+Shared client/presentation owners can use the published schema and API; generated
+clients, Dashboard and Journal are outside this PR. Integration should adopt the
+migration and feature only in a later batch, preserving one Alembic head.

@@ -35,8 +35,7 @@ def test_accepted_branch_upgrade_merge_downgrade_reupgrade(source_head: str) -> 
         command.upgrade(config, "head")
         with engine.connect() as conn:
             assert (
-                conn.scalar(text("SELECT version_num FROM alembic_version"))
-                == "a10blofinactivity001"
+                conn.scalar(text("SELECT version_num FROM alembic_version")) == "a11experiments001"
             )
             assert "public_market_observations" in inspect(conn).get_table_names()
             assert "telegram_policy" in {
@@ -72,8 +71,7 @@ def test_accepted_branch_upgrade_merge_downgrade_reupgrade(source_head: str) -> 
         command.upgrade(config, "head")
         with engine.connect() as conn:
             assert (
-                conn.scalar(text("SELECT version_num FROM alembic_version"))
-                == "a10blofinactivity001"
+                conn.scalar(text("SELECT version_num FROM alembic_version")) == "a11experiments001"
             )
     finally:
         engine.dispose()

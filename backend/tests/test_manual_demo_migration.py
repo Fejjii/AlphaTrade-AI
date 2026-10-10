@@ -32,7 +32,7 @@ def test_single_head_extends_verified_demo_lifecycle():
         "script_location", str(Path(__file__).parents[1] / "src/app/db/migrations")
     )
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["a10blofinactivity001"]
+    assert scripts.get_heads() == ["a11experiments001"]
     assert scripts.get_revision("a10blofinactivity001").down_revision == "a9knowledgeoutbox001"
     assert scripts.get_revision("a9knowledgeoutbox001").down_revision == "a8agentcapture001"
     assert scripts.get_revision("a8agentcapture001").down_revision == "a7manualrecovery001"

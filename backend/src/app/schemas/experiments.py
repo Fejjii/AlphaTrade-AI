@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal, Self
 from uuid import UUID
@@ -78,7 +79,7 @@ class ExperimentModelPolicy(CanonicalModel):
     model: str | None = Field(default=None, min_length=1, max_length=120)
     max_calls: int = Field(default=0, ge=0, le=10000)
     max_tokens: int = Field(default=0, ge=0, le=10000000)
-    max_cost_usd: NonNegativeCanonicalDecimal = 0
+    max_cost_usd: NonNegativeCanonicalDecimal = Field(default=Decimal("0"), le=1000000)
 
     @model_validator(mode="after")
     def bounded_advice(self) -> Self:
@@ -99,17 +100,17 @@ class ExperimentModelPolicy(CanonicalModel):
 
 class ExperimentRiskLimits(CanonicalModel):
     quote_currency: Literal["USDT"] = "USDT"
-    max_risk_per_trade: PositiveCanonicalDecimal
-    max_position_notional: PositiveCanonicalDecimal
-    max_total_exposure: PositiveCanonicalDecimal
-    max_daily_loss: PositiveCanonicalDecimal
-    max_weekly_loss: PositiveCanonicalDecimal
-    max_drawdown: PositiveCanonicalDecimal
+    max_risk_per_trade: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
+    max_position_notional: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
+    max_total_exposure: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
+    max_daily_loss: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
+    max_weekly_loss: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
+    max_drawdown: PositiveCanonicalDecimal = Field(max_digits=24, decimal_places=12)
     max_leverage: PositiveCanonicalDecimal = Field(le=10)
     max_open_positions: int = Field(ge=1, le=100)
     max_trades_per_day: int = Field(ge=1, le=1000)
     max_trades_total: int = Field(ge=1, le=100000)
-    cost_allowance: NonNegativeCanonicalDecimal
+    cost_allowance: NonNegativeCanonicalDecimal = Field(max_digits=24, decimal_places=12)
 
     @model_validator(mode="after")
     def ordered(self) -> Self:
