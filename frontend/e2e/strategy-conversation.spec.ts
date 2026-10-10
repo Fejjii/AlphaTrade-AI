@@ -121,6 +121,7 @@ test.describe("Strategy Lab conversation", () => {
     const headers = { Authorization: `Bearer ${token}` };
     await installSharedE2ESession(page, request);
     await page.goto("/strategy-lab/new");
+    await page.getByText("Strategy options", { exact: true }).click();
     await page.getByLabel("Strategy setup type").selectOption("liquidity_sweep_reversal");
     await page.getByRole("button", { name: "Attach document" }).click();
     await page.getByLabel("Attach document", { exact: true }).setInputFiles({

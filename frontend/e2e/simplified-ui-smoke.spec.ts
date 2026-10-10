@@ -94,7 +94,9 @@ test("desktop/mobile five destinations and preview→Send retains a source witho
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/agent");
   await expect(page.getByTestId("agent-workspace")).toBeVisible();
-  await expect(page.getByTestId("agent-voice")).toBeEnabled();
+  const voice = page.getByRole("region", { name: "Voice conversation" });
+  await expect(voice).toBeVisible();
+  await expect(voice.getByRole("button", { name: "Record", exact: true })).toBeEnabled();
   await expect(page.getByTestId("agent-attach-image")).toHaveCount(0);
   const title = `Agent import smoke ${Date.now()}`;
   const text =
