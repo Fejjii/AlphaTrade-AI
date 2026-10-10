@@ -6224,6 +6224,27 @@
         "title": "Body_upload_journal_trade_attachment_journal_trades__journal_trade_id__attachments_post",
         "type": "object"
       },
+      "BookLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "base_quantity": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Quantity",
+            "type": "string"
+          },
+          "price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "price",
+          "base_quantity"
+        ],
+        "title": "BookLevel",
+        "type": "object"
+      },
       "BridgeDashboardStatus": {
         "additionalProperties": false,
         "properties": {
@@ -6681,6 +6702,16 @@
             },
             "title": "Market Intelligence",
             "type": "array"
+          },
+          "order_book": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderBookObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "order_flow": {
             "anyOf": [
@@ -10439,9 +10470,27 @@
             "title": "Calculation Method",
             "type": "string"
           },
+          "collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collected At"
+          },
           "content_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Content Hash",
+            "type": "string"
+          },
+          "coverage_kind": {
+            "const": "single_provider_record",
+            "default": "single_provider_record",
+            "title": "Coverage Kind",
             "type": "string"
           },
           "event_time": {
@@ -10472,8 +10521,20 @@
             "title": "Freshness Policy Version",
             "type": "string"
           },
+          "historical_coverage": {
+            "const": false,
+            "default": false,
+            "title": "Historical Coverage",
+            "type": "boolean"
+          },
           "identity": {
             "$ref": "#/components/schemas/EvidenceMarketIdentity-Input"
+          },
+          "methodology_version": {
+            "const": "provider-reported-derivatives/v2",
+            "default": "provider-reported-derivatives/v2",
+            "title": "Methodology Version",
+            "type": "string"
           },
           "metric": {
             "$ref": "#/components/schemas/DerivativeMetric"
@@ -10546,9 +10607,27 @@
             "title": "Calculation Method",
             "type": "string"
           },
+          "collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collected At"
+          },
           "content_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Content Hash",
+            "type": "string"
+          },
+          "coverage_kind": {
+            "const": "single_provider_record",
+            "default": "single_provider_record",
+            "title": "Coverage Kind",
             "type": "string"
           },
           "event_time": {
@@ -10579,8 +10658,20 @@
             "title": "Freshness Policy Version",
             "type": "string"
           },
+          "historical_coverage": {
+            "const": false,
+            "default": false,
+            "title": "Historical Coverage",
+            "type": "boolean"
+          },
           "identity": {
             "$ref": "#/components/schemas/EvidenceMarketIdentity-Output"
+          },
+          "methodology_version": {
+            "const": "provider-reported-derivatives/v2",
+            "default": "provider-reported-derivatives/v2",
+            "title": "Methodology Version",
+            "type": "string"
           },
           "metric": {
             "$ref": "#/components/schemas/DerivativeMetric"
@@ -23731,6 +23822,105 @@
         "title": "MarketDataMeta",
         "type": "object"
       },
+      "MarketEvidenceContext": {
+        "additionalProperties": false,
+        "description": "Stable v1 optional context; required qualification uses canonical evidence.\n\nEvent selection can retain an earlier cutoff than evaluation/receipt. Every\navailable observation still needs a consumer freshness/hash/identity check.\nUnsupported capabilities below carry no inferred observations or values.",
+        "properties": {
+          "anchor_symbol": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Anchor Symbol",
+            "type": "string"
+          },
+          "anchor_venue": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Anchor Venue",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "public-market-context/v1",
+            "default": "public-market-context/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "cross_venue_components": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cross Venue Components",
+            "type": "array"
+          },
+          "derivatives": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DerivativeObservation-Output"
+            },
+            "title": "Derivatives",
+            "type": "array"
+          },
+          "evaluated_at": {
+            "format": "date-time",
+            "title": "Evaluated At",
+            "type": "string"
+          },
+          "evidence_cutoff_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Cutoff At"
+          },
+          "historical_order_book": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
+          },
+          "open_interest_change": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
+          },
+          "open_interest_notional": {
+            "$ref": "#/components/schemas/UnavailableContextMetric"
+          },
+          "order_book": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderBookObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order_flow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderFlowObservation-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qualification_authority": {
+            "const": false,
+            "default": false,
+            "title": "Qualification Authority",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evaluated_at",
+          "anchor_venue",
+          "anchor_symbol"
+        ],
+        "title": "MarketEvidenceContext",
+        "type": "object"
+      },
       "MarketMonitorActivationRead": {
         "additionalProperties": false,
         "description": "Configured evidence source. Does not start Watcher or trading.",
@@ -24288,6 +24478,16 @@
       "MarketQuoteView": {
         "additionalProperties": false,
         "properties": {
+          "evidence_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketEvidenceContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fallback_used": {
             "title": "Fallback Used",
             "type": "boolean"
@@ -27018,6 +27218,256 @@
         "title": "OpenPositionInput",
         "type": "object"
       },
+      "OrderBookObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "ask_base_quantity": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Base Quantity"
+          },
+          "ask_quote_notional": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Quote Notional"
+          },
+          "asks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BookLevel"
+            },
+            "title": "Asks",
+            "type": "array"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/EvidenceAvailability"
+          },
+          "base_units": {
+            "title": "Base Units",
+            "type": "string"
+          },
+          "bid_base_quantity": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Base Quantity"
+          },
+          "bid_quote_notional": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Quote Notional"
+          },
+          "bids": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BookLevel"
+            },
+            "title": "Bids",
+            "type": "array"
+          },
+          "calculation_method": {
+            "default": "visible-resting-depth/base-and-unrounded-quote/v1",
+            "title": "Calculation Method",
+            "type": "string"
+          },
+          "collected_at": {
+            "format": "date-time",
+            "title": "Collected At",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "coverage_kind": {
+            "const": "depth_limited_snapshot",
+            "default": "depth_limited_snapshot",
+            "title": "Coverage Kind",
+            "type": "string"
+          },
+          "cross_sequence": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Sequence"
+          },
+          "event_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time"
+          },
+          "excluded_liquidity": {
+            "const": "RPI",
+            "default": "RPI",
+            "title": "Excluded Liquidity",
+            "type": "string"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FreshnessEvaluation-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "freshness_policy_version": {
+            "default": "resting-book/event-age-10s/no-future/v1",
+            "title": "Freshness Policy Version",
+            "type": "string"
+          },
+          "historical_coverage": {
+            "const": false,
+            "default": false,
+            "title": "Historical Coverage",
+            "type": "boolean"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/EvidenceMarketIdentity-Output"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "price_units": {
+            "title": "Price Units",
+            "type": "string"
+          },
+          "provider_generated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Generated At"
+          },
+          "quote_units": {
+            "title": "Quote Units",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested_depth": {
+            "const": 20,
+            "default": 20,
+            "title": "Requested Depth",
+            "type": "integer"
+          },
+          "resting_base_imbalance_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resting Base Imbalance Ratio"
+          },
+          "sequence_status": {
+            "default": "independent_snapshot",
+            "enum": [
+              "independent_snapshot",
+              "resync_required"
+            ],
+            "title": "Sequence Status",
+            "type": "string"
+          },
+          "spread": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread"
+          },
+          "update_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Id"
+          }
+        },
+        "required": [
+          "identity",
+          "observed_at",
+          "collected_at",
+          "availability",
+          "base_units",
+          "quote_units",
+          "price_units",
+          "content_hash"
+        ],
+        "title": "OrderBookObservation",
+        "type": "object"
+      },
       "OrderFlowObservation-Input": {
         "additionalProperties": false,
         "properties": {
@@ -27064,6 +27514,15 @@
               }
             ],
             "title": "Coverage Content Hash"
+          },
+          "coverage_kind": {
+            "default": "unproven",
+            "enum": [
+              "proven_executed_trade_window",
+              "unproven"
+            ],
+            "title": "Coverage Kind",
+            "type": "string"
           },
           "cvd_change": {
             "anyOf": [
@@ -27324,6 +27783,15 @@
               }
             ],
             "title": "Coverage Content Hash"
+          },
+          "coverage_kind": {
+            "default": "unproven",
+            "enum": [
+              "proven_executed_trade_window",
+              "unproven"
+            ],
+            "title": "Coverage Kind",
+            "type": "string"
           },
           "cvd_change": {
             "anyOf": [
@@ -48032,6 +48500,33 @@
         ],
         "title": "TurnOperation",
         "type": "string"
+      },
+      "UnavailableContextMetric": {
+        "additionalProperties": false,
+        "description": "Capability limitation, not an observation or a zero-valued market fact.",
+        "properties": {
+          "availability": {
+            "const": "UNSUPPORTED",
+            "default": "UNSUPPORTED",
+            "title": "Availability",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "null"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "UnavailableContextMetric",
+        "type": "object"
       },
       "UsageEvent": {
         "additionalProperties": false,

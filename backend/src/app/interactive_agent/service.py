@@ -1183,6 +1183,10 @@ def _market_reply(bundle: ReadBundle) -> str:
         )
         if quote.is_stale:
             parts.append("The quote is stale and is not a current market price.")
+        if quote.evidence_context is not None:
+            from app.interactive_agent.market_context import market_context_text
+
+            parts.append(market_context_text(quote.evidence_context))
     elif bundle.market_availability:
         reason = bundle.market_reason or "No price was invented."
         parts.append(f"Canonical perpetual evidence is {bundle.market_availability}. {reason}")
