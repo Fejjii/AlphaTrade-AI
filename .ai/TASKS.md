@@ -2491,3 +2491,15 @@ Owner: Agent 1, `codex/reviewer-wave-frontend`, baseline PR233/main
 completed/pending/deferred/blocked ledger: `docs/reviewer_wave/agent1_contract.md`.
 No Python Agent/RAG/provider, migration, dedicated manual-order widget or CI ownership changes.
 Development checks only; consolidated release and authenticated live acceptance remain supervised.
+
+## AT-118 — Account-scoped BloFin native activity mirroring
+
+Status: READY (PR239 review corrections and focused verification complete; consolidated update). Risk: Medium (account identity and exact history data).
+Base: refreshed PR237 bda597c2fffbf1a49beadc64d757100808094ca2.
+Own additive activity provider/schema/repository/service/API/worker and migration.
+Focused deterministic and isolated PostgreSQL verification only.
+Continue from 85adbde2b242340cac29b45b8673eb8296385903: verified UID/execution-account
+linkage, snapshot selection, long-lived order reconciliation, existing worker wiring
+with disabled defaults and current migration-guard assertions.
+No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
+See docs/blofin_native_activity.md for contract, milestones and integration.

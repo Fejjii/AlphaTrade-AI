@@ -484,6 +484,20 @@ class ManualDemoService:
             )
         )
         command_id = result.command_id
+        if snapshot.native_account_uid is not None:
+            account_evidence = {
+                "native_account_uid": snapshot.native_account_uid,
+                "execution_account_id": str(plan.account_id),
+                "environment": "demo",
+                "plan_content_hash": plan.content_hash,
+            }
+            self._audit(
+                tenant,
+                AuditEventType.APPROVAL_DECISION,
+                command_id,
+                "manual_demo_execution_account_verified",
+                {**account_evidence, "evidence_hash": canonical_sha256(account_evidence)},
+            )
         self.session.commit()  # Durable exact authority and reservation before provider IO.
         if result.outcome is ExecutionCommandOutcome.ALLOW:
             dispatch = self._dispatcher()
@@ -699,6 +713,10 @@ class ManualDemoService:
                 "native_tpsl_id": evidence.native_tpsl_id,
                 "diagnostics": [d.model_dump(exclude_none=True) for d in diagnostics],
             }
+            if evidence.native_account_uid is not None:
+                receipt["native_account_uid"] = evidence.native_account_uid
+                receipt["execution_account_id"] = str(command.account_id)
+                receipt["environment"] = "demo"
             receipt_hash = canonical_sha256(receipt)
             prior_receipt = self.session.scalar(
                 select(AuditLog.id).where(
