@@ -173,7 +173,7 @@ permission to omit the new a10 head.
 | --- | --- | --- | --- | --- |
 | CI cost controls | Yes | Yes | Policy/event tests | Published workflow only; no manual run |
 | Browser voice | Owner complete | Corrected af672dff | Focused components and simulated Chromium | No new deployment; native microphone unverified |
-| Native backend activity | Owner complete | Corrected 18e66dac | Provider/worker/static contract; PostgreSQL inventory only | No new deployment or activity opt-in |
+| Native backend activity | Owner complete | Corrected 769e78a4 | Provider/worker/static contract; PostgreSQL inventory only | No new deployment or activity opt-in |
 | Dashboard/Journal native views | Yes | Yes | Focused component/account/browser fixtures | No |
 | Generated client | Yes | Yes | Generation, drift, strict validation/type checks | No |
 | Release acceptance | Preparation only | Candidate assembled | Staging/full acceptance unexecuted | No |
