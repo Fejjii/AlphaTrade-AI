@@ -1,0 +1,139 @@
+# Consolidation verification ledger
+
+Runtime candidate: `17ad41a0577722db16a9e5a8a017e93ac5f80a63`.
+PostgreSQL authoring/selection follow-up:
+`7dd06c6745dd019b088e7e417a69f2705c529bb5` changes only two test files and the
+focused CI selector; runtime/frontend/evaluation bytes are unchanged from 17ad41a.
+The final documentation commit does not change implementation or tests. PR CI is
+reported separately against its actual head in the PR description and canonical
+handoff. Results from earlier source branches are not combined acceptance.
+
+## Exact integrated sources
+
+Main b165b92276346f0e0fe3ccdbd2bec3443dc75d40;
+PR234 69778070cbc9f7431e3af6224e393722cf5eafb9;
+PR235 d1bf70babc8db4a7219fa32fe7af229b4b466031;
+PR236 44d68013477c06a44e03f6e8f49a584906d4a9e4.
+All four refs were refreshed again before publication and remained unchanged.
+Merge commits preserve all source history; no other branch was overwritten.
+
+## Local checks at 17ad41a
+
+Commands use `backend/.venv` installed from the lockfile and frontend `npm ci`.
+PostgreSQL 17.11 is disposable loopback on port 55432. Test providers are deterministic.
+Each row is a separate selection; counts overlap and must not be added together.
+
+| Check | Exit | Result |
+| --- | --- | --- |
+| Backend selection below | 0 | 150 passed, 0 skipped, two Qdrant compatibility warnings, 93.42s |
+| Ruff check `.` and focused selector | 0 | All checks passed |
+| Ruff format check `.` and focused selector | 0 | 1,180 files formatted |
+| Eleven-file strict typing command below | 0 | No issues |
+| `npm run lint` | 0 | No warnings/errors |
+| `npm run typecheck` | 0 | Passed |
+| `npm test -- --maxWorkers=4` | 0 | 232 files, 1,481 passed, no skips/errors, 112.14s |
+| Production build command below | 0 | 61 prerendered pages |
+| Production browser selection below | 0 | 17 passed, one optional skip, no retries/failures, 35.3s |
+| `python ../evaluation/evaluate_agent.py` | 0 | 16/16 |
+| `python ../evaluation/evaluate_rag.py` | 0 | 5/5 |
+| `python ../evaluation/evaluate_guardrails.py` | 0 | 7/7 |
+| `UV_CACHE_DIR=/tmp/agent2-uv-cache npm run api:check` | 0 | Drift check passed |
+| `alembic heads` | 0 | One head: a9knowledgeoutbox001 |
+| Diff whitespace and secret-pattern scan | 0 | Passed; no deployment/credential/activation changes |
+
+Backend (working directory `backend`):
+
+```sh
+PHASE1_POSTGRES_URL=postgresql+psycopg://agent2@127.0.0.1:55432/postgres \
+INDEXING_MIGRATION_POSTGRES_URL=postgresql+psycopg://agent2@127.0.0.1:55432/agent3_migrations \
+.venv/bin/pytest -o addopts='' -q \
+ tests/test_knowledge_indexing_migration.py tests/test_reviewer_integration_postgres.py \
+ tests/test_agent_vector_retrieval.py tests/test_turn_coordinator_postgres.py \
+ tests/test_shared_turn_policy.py tests/test_usage_quota.py tests/test_knowledge_indexing.py \
+ tests/test_qdrant_dimensions.py tests/test_strategy_conversation_foundation.py \
+ tests/test_interactive_agent_foundation.py tests/test_schemas.py tests/test_backend_ci_scope.py
+.venv/bin/ruff check . ../scripts/run_backend_focused.py
+.venv/bin/ruff format --check . ../scripts/run_backend_focused.py
+.venv/bin/mypy src/app/rag/indexing.py src/app/workers/knowledge_indexing.py \
+ src/app/providers/qdrant.py src/app/repositories/usage.py src/app/services/rag_service.py \
+ src/app/services/quota_service.py src/app/services/turn_coordinator.py \
+ src/app/agents/phase_runtime.py src/app/schemas/common.py \
+ src/app/interactive_agent/vector_adapter.py src/app/services/strategy_proposal_service.py \
+ --follow-imports=silent
+```
+
+Full `mypy src/ --no-error-summary` remains red (exit 1): main has 495 errors in
+100 files; candidate has 489 in 98 files. Same environment, normalized file/message
+diagnostics: zero additions and six removals. This is not a full typing pass.
+
+Frontend (working directory `frontend`):
+
+```sh
+NEXT_FONT_GOOGLE_MOCKED_RESPONSES="$PWD/test-fixtures/offline-fonts.cjs" npm run build
+PLAYWRIGHT_PRODUCTION=true CI=true UV_CACHE_DIR=/tmp/agent2-uv-cache \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npx playwright test \
+ e2e/strategy-conversation.spec.ts e2e/blofin-repair.spec.ts \
+ e2e/workspace-redesign.spec.ts e2e/smoke.spec.ts \
+ ui-tests/reviewer-wave.spec.ts ui-tests/reviewer-api-persistence.spec.ts \
+ --project=chromium --reporter=line
+```
+
+Build uses the explicit test-only offline font fixture because Google Fonts is
+unavailable in this cloud environment. It does not verify real font delivery.
+Browser skip: optional `Browser happy path (local optional)` registration/workspace/
+logout test is gated by its existing environment opt-in. Actual authoring/import,
+save/reload/compile/approve, acknowledgment latency, private context, billing routes,
+recorded BloFin rendering, history/receipts and journal retrieval all executed.
+Browser persistence in this selection uses SQLite; PostgreSQL evidence is separate.
+
+## Local follow-up at 7dd06c6
+
+```sh
+PHASE1_POSTGRES_URL=postgresql+psycopg://agent2@127.0.0.1:55432/postgres \
+.venv/bin/pytest -o addopts='' -q tests/test_strategy_conversation_postgres.py \
+ tests/test_backend_ci_scope.py
+```
+
+Exit 0: 15 passed, no skips, 4.72s. This includes the real PostgreSQL API authoring
+journey, canonical confirmation, setup type and conversation binding reload, replay
+without another version, existing concurrent confirmation, and CI selection assertions.
+The focused selector includes PostgreSQL authoring for future Agent/API changes.
+
+## Repair history (development evidence only)
+
+Initial combined retrieval: two failures/one pass. Initial RAG evaluation: 0/5.
+The first new retry fixture used the wrong provider error attribute; correcting it
+produced 10/10 new PostgreSQL tests. The migration fixture initially lacked its
+separate disposable database; after creating it, focused migration passed, then the
+candidate selection passed 150/150. Frontend checks caught a misplaced readiness
+control and generated nested-response optional fields; the final unit/type/build
+results above cover their repairs. No complete backend suite ran during repairs.
+
+First development browser selection: 11 failed, six passed, one skipped. Contract
+fixtures, route UUIDs and cookie host were corrected. The next selection passed 15,
+failed two, skipped one: upload/action separation and development Strict Mode request
+counts. Authoring then passed both journeys. Production browser verification preserved
+the request-count assertions and passed 17/17 executed tests. CI downloads the frontend
+job's verified production build and runs the registered reviewer tests against it.
+
+## CI, staging and production
+
+Source CI links and exact source revisions are in integration_contract.md; their
+failures were refreshed and inspected. Final consolidated PR CI runs the existing
+six required jobs, focused backend selection, schema drift, production browser tests,
+and all three deterministic evaluations. Its exact run/head/job results are recorded
+in the PR description and canonical handoff after completion, without an evidence-only
+product push that would trigger another unnecessary Actions run.
+
+No staging deployment, external model/Qdrant acceptance, Mac/iCloud sync or production
+verification occurred. The manual BloFin incident remains undiagnosed; required owner
+request/error/request ID, existing command and native read-only evidence are listed in
+manual_order_incident.md. No external order was submitted to reproduce it.
+
+The full backend CI pipeline was not dispatched: `.ai/RELEASE.md` requires supervising
+review, approved consolidated staging deployment and fresh diagnostics/evaluations first.
+After those prerequisites, run exactly one full dispatch on the reviewed release ref.
+Local checks and focused PR CI do not constitute complete release acceptance.
+
+Readiness: local integration verification complete; inspect exact-head PR CI before
+supervising review. Full release acceptance and approved rollout remain pending.
