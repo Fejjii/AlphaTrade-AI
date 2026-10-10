@@ -39,7 +39,9 @@ Manual BloFin incident remains undiagnosed; retain the evidence request in
 - One intentional turn consumes one request admission. Provider attempts, retries,
   capture stages, tokens and costs remain independently metered. Replay admits nothing.
 - Client retains the original UUID key and exact payload across uncertain outcomes
-  and reload; recovery is explicit. Browser/proxy/server budgets are coordinated at 360s.
+  and reload; recovery is explicit. Complete generated request validation precedes
+  pending state, so local rejection leaves an editable draft without recovery lock.
+  Browser/proxy/server budgets are coordinated at 360s.
 - Conversational strategy authoring remains reachable, with review/confirmation,
   exactly-once persistence and the existing compilation/approval lifecycle.
 - Integrated OpenAPI generates turn/recovery/indexing types and strict validators;
@@ -68,6 +70,7 @@ in the PR description and canonical handoff. Full release prerequisites remain p
 | Initial Qdrant failure stranded a worker instance | Bounded same-instance reconnect, preserving runner/jobs/fences | Deterministic SDK failure/recovery with original job ready and one job attempt |
 | Retry/capture events consumed additional request quota | Durable admission counting separated from actual usage; positive admitted limit can finish; token/cost/zero limits still checked | Last allowed request retries, completes, replays without new admission; next request blocked |
 | Timeout/reload could lose original intent; partial history could reverse pairs | Auth-scoped original key/body persistence, typed explicit recovery, ordered ID reconciliation and persisted conversation binding | Recovery remount/body/key tests and partial user/assistant/multiple-turn tests; production browser acknowledgment journey |
+| Generated local request rejection left an uncertain recovery lock despite no transport | Validate the complete generated body before pending state; keep draft/attachment references editable, preserve ambiguous transport recovery | a91d25f: real generated-client component regressions for local rejection/correction, retained attachment, timeout/remount, malformed HTTP 200 and explicit exact body/key recovery; focused four-file selection 53 passed |
 | Authoring routes lacked a complete replacement journey | Explicit draft action, imported evidence reference, canonical confirmation/save, reload, compile and approve; preserve setup type and bind newly created strategy conversation | PostgreSQL/API exactly-once confirmation; real browser file-import journey; old panel unit assertions retained |
 | Handwritten indexing contracts rejected or mislabeled new states | Generated DTOs/validators/client, strict offset dates with SQLite UTC serialization, status/retry/poll UI and CI drift check | Generated indexing/decimal/date validation, frontend checks and independent HTTP setup-type reload |
 | Browser/evaluation fixtures assumed old responses and synchronous vectors | Contract-valid fixtures, real isolated outbox consumer, exact-document readiness wait; reviewer tests registered against production build | RAG 5/5; Agent 16/16; guardrails 7/7; final browser evidence in ledger |

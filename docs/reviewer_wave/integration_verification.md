@@ -1,5 +1,8 @@
 # Consolidation verification ledger
 
+The latest narrow PR237 correction is recorded in **Local validation completion**
+below. The earlier integration results retain their original revision coverage.
+
 Runtime candidate: `17ad41a0577722db16a9e5a8a017e93ac5f80a63`.
 PostgreSQL authoring/selection follow-up:
 `7dd06c6745dd019b088e7e417a69f2705c529bb5` changes only two test files and the
@@ -215,3 +218,74 @@ The successful 519-test CI result above uses PostgreSQL's guarded database name.
 The final documentation follow-up does not change tested code. Required PR CI
 must cover its actual published head; record that final run in the PR description
 and canonical handoff, without another evidence-only product push.
+
+## Local validation completion
+
+Correction implementation: `a91d25f9666235eb25fd872aa20e1fe62483fc57`.
+The reviewed integration branch was refreshed before editing and still matched
+`4e515ddb8de20f4b2cfb7498ed6ce9bbbd2d2f2f`. The correction was committed from the
+tested working tree without changing its implementation/test bytes. The following
+ledger/contract commit changes documentation only; the PR description and handoff
+record the exact consolidated published head. Both commits are published in one
+product push, with no manual full-backend dispatch during this repair.
+
+AgentWorkspace now validates the complete body with `agentTurnRequest`, the same
+generated validator used by the client, before generating/storing a pending request.
+Local rejection keeps the draft, attachment preview and imported document reference;
+correction can submit normally without importing again. Catch/recovery behavior for
+ambiguous outcomes is unchanged, including status-zero contract failures.
+
+Focused commands (`frontend`), each exit 0:
+
+```sh
+npm test -- --maxWorkers=4 src/components/agent/AgentWorkspace.test.tsx \
+ src/components/agent/turn-recovery.test.ts src/lib/api/generated-contracts.test.ts \
+ src/lib/api/client.test.ts
+npm run typecheck
+npm run lint -- --file src/components/agent/AgentWorkspace.tsx \
+ --file src/components/agent/AgentWorkspace.test.tsx \
+ --file src/lib/api/generated-contracts.test.ts
+```
+
+Result: **53 tests passed in four files**, no skips, 34.06s. Type checking passed;
+changed-file lint reported no warnings/errors (the existing Next lint deprecation
+notice remains). No backend, complete frontend suite, build, browser suite or
+evaluation suite was run locally during this narrow repair. Interfaces/schema and
+workflow checks remain unchanged.
+
+The component regressions invoke the real generated `agentTurn` and authenticated
+transport with only `fetch` stubbed. They verify 8,001-character rejection before
+network I/O, no uncertain recovery lock, editable draft/corrected normal submission,
+attachment/reference retention, timeout survival across remount, malformed contract
+and invalid-JSON HTTP 200 responses, and explicit recovery with byte-identical body
+and the original key without an automatic duplicate. The generated boundary also
+rejects 8,001 before transport and accepts exactly 8,000. Existing fixture IDs were
+made schema-valid UUIDs where request validation now applies; assertions remain.
+
+Reproduction before the fix: the isolated local-rejection regression failed with
+zero fetch calls and the uncertain recovery panel still present. First corrected
+selection: 52 passed, one attachment test failed because its panel had not been
+opened. After correcting that test setup, the final 53-test selection passed above.
+
+Earlier [CI38009093554](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38009093554)
+passed all six jobs at **4e515dd**, with focused backend selection. It does **not**
+accept a91d25f or the new published head. The new automatic PR run and exact head
+are recorded separately in the PR/handoff; no prior green status is carried forward.
+Workflow inspection confirms complete backend pytest remains exclusively behind
+`workflow_dispatch` with `full_backend=true`; required PR jobs/checks are preserved.
+
+Quota wording now agrees with `UsageRepository.count_requests_since`: `rag_indexing`
+batches/retries do not add admissions, while usage/token/cost accounting and the
+worker's pre-call budget check remain. No quota implementation changed.
+
+The concrete [staging smoke sequence](staging_smoke_sequence.md) covers Agent local
+rejection/conversation/recovery, strategy draft/confirm/persist/reload, SQL import and
+current-generation indexing/retrieval, and existing BloFin mirror presentation.
+It is prepared, not executed. The manual order incident remains undiagnosed without
+the actual failing request and authorized server/native evidence. No external orders,
+deployment, merge, activation, exchange setting or credential changes occurred.
+
+Readiness: focused correction verification complete; ready for supervising release
+review with current-head required PR checks tracked separately. Approved coordinated
+staging, fresh diagnostics/evaluations and the one exact-ref complete release gate
+under `.ai/RELEASE.md` remain prerequisites for final acceptance.
