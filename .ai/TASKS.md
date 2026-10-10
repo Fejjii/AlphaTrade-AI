@@ -2520,3 +2520,25 @@ configuration, tenant/verified account/source fences and independent promotion
 samples. Focused disposable-fixture verification only. No runtime activation,
 replacement engine, external orders, credential changes, deployment or full CI.
 Contract: docs/experiment_domain_contract.md.
+
+## AT-MARKET-EVIDENCE — Urgent public market evidence foundation
+
+Status: READY (implementation and focused development verification; draft integration review).
+Baseline: PR237 7fc21db00a0527ee018f3fd1c478da64bcc713c0, refreshed through
+619c15fe63ffc23288c2866781e08f9cb44a2ab9 (migration test/docs correction only).
+Branch: codex/market-evidence-foundation. Own provider adapters, normalization,
+coverage and evidence contracts; reuse canonical OI and executed-flow/CVD.
+Add resting depth snapshots, causal process caches and actual Agent market consumer.
+Required historical book coverage remains unavailable and blocks qualification.
+Schema coordination posted to PR237; experiment owner acknowledgment pending.
+Native exchange API/WS acceptance unverified under current egress policy.
+No full backend CI, deployment, paid activation, orders or operator-setting changes.
+Contract/results/next consumer step: docs/market_evidence_foundation.md.
+PR242 continuation: corrected required OI/funding acquisition timing with a fixed
+event/candle cutoff and independent final evaluation clock; actual receipt remains
+in collected_at and canonical receive_time. Stable v1 context schema and read-only
+experiment integration example: docs/market_evidence_context_contract.md.
+Four delayed OI/funding cases fail on d4b98087 and pass after correction;
+30 new assembler/provider timing regressions and 6 contract/example cases pass.
+Affected development selection: 433 passed, 11 disposable-PostgreSQL-gated skips;
+13 scoped strict source type checks and 15 frontend API tests pass. No full CI.
