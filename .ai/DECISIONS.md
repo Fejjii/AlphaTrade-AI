@@ -3087,3 +3087,15 @@ uses FOR NO KEY UPDATE so unrelated user foreign-key references remain available
 was accepted and integrated; live checks and the supervised consolidated gate remain separate.
 Implementation, fixture verification and presentation guide:
 `docs/alphatrade_workspace_redesign.md`.
+
+## AT-ADR-098 — Native activity facts remain separate from execution authority
+
+Date: 2026-10-10. AT-118 stores exact native completed orders/fills under
+organization/demo/authenticated UID; credential bindings are selectors, never
+account identities. Page facts and checkpoints commit atomically; incompatible
+replays stop without overwriting. Echoed native client order identity may link
+an existing BloFin demo command, but cannot create execution/strategy/Journal
+authority. Count individual native fills once and preserve partial coverage,
+unknown currency/funding and observed metadata provenance. The bounded runner
+is disarmed by default; no execution, frontend or runtime activation changes.
+See docs/blofin_native_activity.md.

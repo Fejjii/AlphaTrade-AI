@@ -43,6 +43,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.blofin_activity import (  # noqa: F401
+    BloFinActivityAccount,
+    BloFinActivityCursor,
+    BloFinActivityFact,
+)
 from app.db.canonical_candidates import (  # noqa: F401
     CanonicalCandidateCreationKeyRow,
     CanonicalCandidateRow,

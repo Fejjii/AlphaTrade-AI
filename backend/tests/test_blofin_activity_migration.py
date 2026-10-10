@@ -1,0 +1,59 @@
+"""Upgrade/downgrade the generated addition in a disposable migrated database."""
+
+import os
+from uuid import uuid4
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import make_url
+
+
+def test_additive_migration_and_rollback_preserve_existing_organization(monkeypatch):
+    url = os.environ.get("BLOFIN_ACTIVITY_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("Set BLOFIN_ACTIVITY_TEST_POSTGRES_URL to disposable PostgreSQL.")
+    admin = create_engine(url)
+    schema = "activity_migration_" + uuid4().hex
+    with admin.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    isolated_url = make_url(url).update_query_dict({"options": f"-csearch_path={schema}"})
+    monkeypatch.setenv("ALEMBIC_DATABASE_URL", isolated_url.render_as_string(hide_password=False))
+    config = Config("alembic.ini")
+    assert ScriptDirectory.from_config(config).get_heads() == ["a10blofinactivity001"]
+    engine = create_engine(isolated_url)
+    try:
+        _verify_roundtrip(config, engine)
+    finally:
+        engine.dispose()
+        with admin.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin.dispose()
+
+
+def _verify_roundtrip(config, engine):
+    command.upgrade(config, "head")
+    sentinel = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO organizations (id, name, created_at, updated_at) "
+                "VALUES (:id, 'Activity migration sentinel', now(), now())"
+            ),
+            {"id": sentinel},
+        )
+    added = {"blofin_activity_accounts", "blofin_activity_facts", "blofin_activity_cursors"}
+    assert added <= set(inspect(engine).get_table_names())
+    command.downgrade(config, "a9knowledgeoutbox001")
+    assert not added.intersection(inspect(engine).get_table_names())
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT name FROM organizations WHERE id=:id"), {"id": sentinel})
+            == "Activity migration sentinel"
+        )
+    command.upgrade(config, "a10blofinactivity001")
+    assert added <= set(inspect(engine).get_table_names())
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM organizations WHERE id=:id"), {"id": sentinel})
