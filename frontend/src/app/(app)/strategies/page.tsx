@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { RiskSettingsSummary } from "@/components/settings/RiskSettingsSummary";
+import { ExperimentsPanel } from "@/components/strategies/ExperimentsPanel";
 import { Button } from "@/components/ui/button";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
@@ -93,6 +94,8 @@ export default function StrategiesPage() {
         </>
       ) : (
         <>
+          <ExperimentsPanel />
+          <h2 className="text-lg font-semibold">Strategy library</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {families.map((f) => {
               const configs = data?.brain?.strategies.filter(

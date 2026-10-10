@@ -34,6 +34,14 @@ const pilots = [
   ["attention", "/dashboard/attention", "get"],
   ["dailyReview", "/dashboard/daily-review", "get"],
   ["blofinActivity", "/exchange/blofin/activity", "get"],
+  ["experiments", "/experiments", "get"],
+  ["experimentCreate", "/experiments", "post"],
+  ["experimentDetail", "/experiments/{experiment_id}", "get"],
+  ["experimentVersion", "/experiments/{experiment_id}/versions", "post"],
+  ["experimentTransition", "/experiments/{experiment_id}/versions/{version_id}/transition", "post"],
+  ["experimentApprove", "/experiments/{experiment_id}/versions/{version_id}/approve", "post"],
+  ["experimentPromote", "/experiments/{experiment_id}/versions/{version_id}/promote", "post"],
+  ["experimentSample", "/experiments/{experiment_id}/versions/{version_id}/samples", "post"],
 ];
 const schemas = schema.components.schemas;
 const used = new Set();
@@ -72,18 +80,21 @@ let client = '// Generated from local FastAPI OpenAPI. Run npm run api:generate.
   'import * as validators from "./validators";\n\n';
 for (const [name, route, method] of pilots) {
   const op = schema.paths[route][method];
-  const response = op.responses['200'].content['application/json'].schema.$ref.split('/').at(-1);
+  const success = Object.keys(op.responses).find(status => /^2\d\d$/.test(status) && op.responses[status].content?.['application/json']);
+  if (!success) throw new Error(`Missing JSON success contract: ${method} ${route}`);
+  const response = op.responses[success].content['application/json'].schema.$ref.split('/').at(-1);
   validatorRefs[name + 'Response'] = `http-contract#/$defs/${response}`;
   const errorValidators = [];
   for (const [status, error] of Object.entries(op.responses)) {
     const ref = error.content?.['application/json']?.schema?.$ref;
-    if (status !== '200' && ref) {
+    if (!/^2\d\d$/.test(status) && ref) {
       const errorName = name + 'Error' + status;
       validatorRefs[errorName] = `http-contract#/$defs/${ref.split('/').at(-1)}`;
       errorValidators.push(`${status}: validators.${errorName}`);
     }
   }
-  const param = route.match(/\{(.+?)\}/)?.[1];
+  const params = [...route.matchAll(/\{(.+?)\}/g)].map(match => match[1]);
+  const argument = param => params.length === 1 ? 'id' : param.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
   const hasBody = Boolean(op.requestBody);
   if (hasBody) {
     const body = op.requestBody.content['application/json'].schema.$ref.split('/').at(-1);
@@ -91,14 +102,14 @@ for (const [name, route, method] of pilots) {
   }
   const opType = `paths[${JSON.stringify(route)}][${JSON.stringify(method)}]`;
   const parameters = [
-    ...(param ? [`id: ${opType}["parameters"]["path"][${JSON.stringify(param)}]`] : []),
+    ...params.map(param => `${argument(param)}: ${opType}["parameters"]["path"][${JSON.stringify(param)}]`),
     ...(hasBody ? [`body: ${opType}["requestBody"]["content"]["application/json"]`] : []),
     ...(op.parameters?.some(p => p.in === 'query') ? [`query?: ${opType}["parameters"]["query"]`] : []),
     'options?: { signal?: AbortSignal; headers?: Record<string, string> }',
   ];
-  const routeExpr = param ? '`' + route.replace(`{${param}}`, '${encodeURIComponent(id)}') + '`' : JSON.stringify(route);
+  const routeExpr = params.length ? '`' + route.replace(/\{(.+?)\}/g, (_, param) => '${encodeURIComponent(' + argument(param) + ')}') + '`' : JSON.stringify(route);
   client += `export function ${name}(${parameters.join(', ')}) {\n` +
-    `  return validatedFetch<${opType}["responses"][200]["content"]["application/json"]>(${routeExpr}, {\n` +
+    `  return validatedFetch<${opType}["responses"][${success}]["content"]["application/json"]>(${routeExpr}, {\n` +
     `    method: "${method.toUpperCase()}", auth: true, signal: options?.signal, headers: options?.headers,\n` +
     (hasBody ? `    bodyValue: body, requestValidator: validators.${name}Request,\n` : '') +
     (op.parameters?.some(p => p.in === 'query') ? '    query,\n' : '') +

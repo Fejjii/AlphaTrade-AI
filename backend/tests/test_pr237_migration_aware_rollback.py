@@ -1,4 +1,4 @@
-"""Qualify retained a10 data with a migration-aware older application package.
+"""Qualify retained data with a migration-aware older application package.
 
 This creates isolated PostgreSQL schemas and archived source trees only. It never
 deploys, downgrades, starts a scanner or contacts an exchange/provider.
@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -27,8 +28,9 @@ from app.db.models import Organization, User
 
 BASELINE = "b165b92276346f0e0fe3ccdbd2bec3443dc75d40"
 ROLLBACK_BASE = "bda597c2fffbf1a49beadc64d757100808094ca2"
-MIGRATION = (
-    "src/app/db/migrations/versions/a10blofinactivity001_account_scoped_native_blofin_activity.py"
+MIGRATIONS = (
+    "src/app/db/migrations/versions/a10blofinactivity001_account_scoped_native_blofin_activity.py",
+    "src/app/db/migrations/versions/a11experiments001_generic_experiment_domain.py",
 )
 TABLES = (
     "alembic_version",
@@ -40,6 +42,10 @@ TABLES = (
     "blofin_activity_accounts",
     "blofin_activity_facts",
     "blofin_activity_cursors",
+    "experiments",
+    "experiment_versions",
+    "experiment_events",
+    "experiment_samples",
 )
 
 
@@ -171,6 +177,15 @@ def _seed(engine):
                 ),
                 {"org": org, "kind": kind, "cursor": f"retained-{kind}-cursor"},
             )
+    # Trusted synthetic source only: preserve immutable configuration, lifecycle and
+    # one setup sample as well as prior-release documents/jobs/native facts.
+    from tests.support.experiment_fixtures import World
+
+    with Session(engine, expire_on_commit=False) as session:
+        world = World(session)
+        version = world.running()
+        world.sample(version, reference="retained-synthetic-setup")
+        session.commit()
 
 
 BOOT_PROBE = """
@@ -198,7 +213,10 @@ with TestClient(create_app(settings)) as client:
     assert health.status_code == 200
     assert health.json()['real_trading_enabled'] is False
 with get_session_factory()() as session:
-    assert expected_migration_head() == read_migration_revision(session) == 'a10blofinactivity001'
+    assert (
+        expected_migration_head() == read_migration_revision(session)
+        == os.environ['ROLLBACK_EXPECTED_HEAD']
+    )
     docs = list(session.scalars(select(Document)))
     jobs = list(session.scalars(select(KnowledgeIndexingJob)))
     assert len(docs) == len(jobs) == 5
@@ -224,7 +242,9 @@ def forbidden_dependency(*args, **kwargs):
     raise AssertionError('disarmed rollback worker opened the database')
 app.db.session.get_session_factory = forbidden_dependency
 assert run_paper_worker_process(once=True) == 'disarmed'
-print(json.dumps({'api_health': 200, 'worker': 'disarmed', 'head': 'a10blofinactivity001'}))
+print(json.dumps({
+    'api_health': 200, 'worker': 'disarmed', 'head': os.environ['ROLLBACK_EXPECTED_HEAD'],
+}))
 """
 
 
@@ -246,6 +266,8 @@ def test_migration_aware_rollback_retains_documents_jobs_and_native_history(tmp_
     engine = create_engine(scoped)
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "src/app/db/migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert head == "a11experiments001"
     try:
         command.upgrade(config, "head")
         _seed(engine)
@@ -277,6 +299,7 @@ def test_migration_aware_rollback_retains_documents_jobs_and_native_history(tmp_
             "RATE_LIMIT_USE_REDIS": "false",
             "ACCESS_TOKEN_DENYLIST_USE_REDIS": "false",
             "MARKET_DATA_CACHE_USE_REDIS": "false",
+            "ROLLBACK_EXPECTED_HEAD": head,
         }
         for label, revision in (
             ("plain-b165", BASELINE),
@@ -285,7 +308,8 @@ def test_migration_aware_rollback_retains_documents_jobs_and_native_history(tmp_
         ):
             target = _archive(backend.parent, revision, tmp_path / label)
             if label == "rollback":
-                (target / MIGRATION).write_bytes((backend / MIGRATION).read_bytes())
+                for migration in MIGRATIONS:
+                    (target / migration).write_bytes((backend / migration).read_bytes())
             env["PYTHONPATH"] = str(target / "src")
             result = subprocess.run(
                 [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -297,7 +321,7 @@ def test_migration_aware_rollback_retains_documents_jobs_and_native_history(tmp_
             )
             if label.startswith("plain-"):
                 assert result.returncode != 0
-                assert "Can't locate revision identified by 'a10blofinactivity001'" in (
+                assert f"Can't locate revision identified by '{head}'" in (
                     result.stdout + result.stderr
                 )
             else:

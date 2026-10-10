@@ -220,6 +220,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing */
+        get: operations["listing_experiments_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_experiments__experiment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork */
+        post: operations["fork_experiments__experiment_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/versions/{version_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transition */
+        post: operations["transition_experiments__experiment_id__versions__version_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/versions/{version_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_experiments__experiment_id__versions__version_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/versions/{version_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Promote */
+        post: operations["promote_experiments__experiment_id__versions__version_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/versions/{version_id}/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sample */
+        post: operations["sample_experiments__experiment_id__versions__version_id__samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1132,6 +1252,443 @@ export interface components {
             price: components["schemas"]["SemanticAmount"];
             /** Quantity Fraction */
             quantity_fraction: string;
+        };
+        /** ExperimentAccount */
+        ExperimentAccount: {
+            /**
+             * Execution Account Id
+             * Format: uuid
+             */
+            execution_account_id: string;
+            /** Execution Identity Audit Id */
+            execution_identity_audit_id?: string | null;
+            /** Native Uid */
+            native_uid?: string | null;
+            source: components["schemas"]["ExperimentSource"];
+        };
+        /** ExperimentApproval */
+        ExperimentApproval: {
+            /**
+             * Authorized Until
+             * Format: date-time
+             */
+            authorized_until: string;
+            /** Configuration Hash */
+            configuration_hash: string;
+            /**
+             * Confirm
+             * @constant
+             */
+            confirm: "APPROVE_BOUNDED_EXPERIMENT";
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ExperimentConfiguration */
+        "ExperimentConfiguration-Input": {
+            account: components["schemas"]["ExperimentAccount"];
+            /**
+             * Contract Version
+             * @default experiment-config/v1
+             * @constant
+             */
+            contract_version?: "experiment-config/v1";
+            family: components["schemas"]["ExperimentFamily"];
+            mode: components["schemas"]["ExperimentMode"];
+            model_policy: components["schemas"]["ExperimentModelPolicy-Input"];
+            risk_limits: components["schemas"]["ExperimentRiskLimits-Input"];
+            sample_target: components["schemas"]["ExperimentSampleTarget"];
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Symbols */
+            symbols: string[];
+            /** Timeframes */
+            timeframes: components["schemas"]["Timeframe"][];
+            /** Variants */
+            variants: components["schemas"]["ExperimentVariant"][];
+        };
+        /** ExperimentConfiguration */
+        "ExperimentConfiguration-Output": {
+            account: components["schemas"]["ExperimentAccount"];
+            /**
+             * Contract Version
+             * @default experiment-config/v1
+             * @constant
+             */
+            contract_version?: "experiment-config/v1";
+            family: components["schemas"]["ExperimentFamily"];
+            mode: components["schemas"]["ExperimentMode"];
+            model_policy: components["schemas"]["ExperimentModelPolicy-Output"];
+            risk_limits: components["schemas"]["ExperimentRiskLimits-Output"];
+            sample_target: components["schemas"]["ExperimentSampleTarget"];
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Symbols */
+            symbols: string[];
+            /** Timeframes */
+            timeframes: components["schemas"]["Timeframe"][];
+            /** Variants */
+            variants: components["schemas"]["ExperimentVariant"][];
+        };
+        /** ExperimentCreate */
+        ExperimentCreate: {
+            configuration: components["schemas"]["ExperimentConfiguration-Input"];
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Name */
+            name: string;
+        };
+        /** ExperimentDetail */
+        ExperimentDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Versions */
+            versions: components["schemas"]["ExperimentVersion"][];
+        };
+        /**
+         * ExperimentFamily
+         * @enum {string}
+         */
+        ExperimentFamily: "operational_nested_continuation/v1" | "swing_failure_pattern/v1" | "trendpulse_1r/v1";
+        /**
+         * ExperimentMode
+         * @enum {string}
+         */
+        ExperimentMode: "exploration" | "validation";
+        /** ExperimentModelPolicy */
+        "ExperimentModelPolicy-Input": {
+            /**
+             * Max Calls
+             * @default 0
+             */
+            max_calls?: number;
+            /**
+             * Max Cost Usd
+             * @default 0
+             */
+            max_cost_usd?: number | string;
+            /**
+             * Max Tokens
+             * @default 0
+             */
+            max_tokens?: number;
+            /**
+             * Mode
+             * @default disabled
+             * @enum {string}
+             */
+            mode?: "disabled" | "advisory";
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+        };
+        /** ExperimentModelPolicy */
+        "ExperimentModelPolicy-Output": {
+            /**
+             * Max Calls
+             * @default 0
+             */
+            max_calls?: number;
+            /**
+             * Max Cost Usd
+             * @default 0
+             */
+            max_cost_usd?: string;
+            /**
+             * Max Tokens
+             * @default 0
+             */
+            max_tokens?: number;
+            /**
+             * Mode
+             * @default disabled
+             * @enum {string}
+             */
+            mode?: "disabled" | "advisory";
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+        };
+        /** ExperimentPage */
+        ExperimentPage: {
+            /** Items */
+            items: components["schemas"]["ExperimentDetail"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** ExperimentPromotion */
+        ExperimentPromotion: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Variant Key */
+            variant_key: string;
+        };
+        /** ExperimentRiskLimits */
+        "ExperimentRiskLimits-Input": {
+            /** Cost Allowance */
+            cost_allowance: number | string;
+            /** Max Daily Loss */
+            max_daily_loss: number | string;
+            /** Max Drawdown */
+            max_drawdown: number | string;
+            /** Max Leverage */
+            max_leverage: number | string;
+            /** Max Open Positions */
+            max_open_positions: number;
+            /** Max Position Notional */
+            max_position_notional: number | string;
+            /** Max Risk Per Trade */
+            max_risk_per_trade: number | string;
+            /** Max Total Exposure */
+            max_total_exposure: number | string;
+            /** Max Trades Per Day */
+            max_trades_per_day: number;
+            /** Max Trades Total */
+            max_trades_total: number;
+            /** Max Weekly Loss */
+            max_weekly_loss: number | string;
+            /**
+             * Quote Currency
+             * @default USDT
+             * @constant
+             */
+            quote_currency?: "USDT";
+        };
+        /** ExperimentRiskLimits */
+        "ExperimentRiskLimits-Output": {
+            /** Cost Allowance */
+            cost_allowance: string;
+            /** Max Daily Loss */
+            max_daily_loss: string;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Max Leverage */
+            max_leverage: string;
+            /** Max Open Positions */
+            max_open_positions: number;
+            /** Max Position Notional */
+            max_position_notional: string;
+            /** Max Risk Per Trade */
+            max_risk_per_trade: string;
+            /** Max Total Exposure */
+            max_total_exposure: string;
+            /** Max Trades Per Day */
+            max_trades_per_day: number;
+            /** Max Trades Total */
+            max_trades_total: number;
+            /** Max Weekly Loss */
+            max_weekly_loss: string;
+            /**
+             * Quote Currency
+             * @default USDT
+             * @constant
+             */
+            quote_currency?: "USDT";
+        };
+        /** ExperimentSample */
+        ExperimentSample: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Evidence Hash */
+            evidence_hash: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "closed_trade" | "setup_observation";
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /**
+             * Sample Group Id
+             * Format: uuid
+             */
+            sample_group_id: string;
+            source: components["schemas"]["ExperimentSource"];
+            /** Source Record Id */
+            source_record_id: string;
+            /** Variant Key */
+            variant_key: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /** ExperimentSampleCreate */
+        ExperimentSampleCreate: {
+            /** Source Record Id */
+            source_record_id: string;
+            /** Variant Key */
+            variant_key: string;
+        };
+        /** ExperimentSampleTarget */
+        ExperimentSampleTarget: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "closed_trade" | "setup_observation";
+            /** Maximum */
+            maximum: number;
+            /** Minimum */
+            minimum: number;
+        };
+        /**
+         * ExperimentSource
+         * @enum {string}
+         */
+        ExperimentSource: "blofin_demo" | "internal_simulation";
+        /**
+         * ExperimentState
+         * @enum {string}
+         */
+        ExperimentState: "draft" | "pending_approval" | "approved" | "running" | "paused" | "completed" | "promoted";
+        /** ExperimentTransition */
+        ExperimentTransition: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "submit" | "start" | "pause" | "complete";
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ExperimentVariant */
+        ExperimentVariant: {
+            /** Key */
+            key: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+        };
+        /** ExperimentVersion */
+        ExperimentVersion: {
+            /** Approved At */
+            approved_at: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /** Authorized Until */
+            authorized_until: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            configuration: components["schemas"]["ExperimentConfiguration-Output"];
+            /** Configuration Hash */
+            configuration_hash: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Parent Version Id */
+            parent_version_id: string | null;
+            /** Paused At */
+            paused_at: string | null;
+            /** Performance */
+            performance?: null;
+            /** Promoted At */
+            promoted_at: string | null;
+            /** Promotion Version Id */
+            promotion_version_id: string | null;
+            /** Revision */
+            revision: number;
+            /**
+             * Runtime Activated
+             * @default false
+             * @constant
+             */
+            runtime_activated?: false;
+            /** Sample Counts */
+            sample_counts: {
+                [key: string]: number;
+            };
+            /**
+             * Sample Group Id
+             * Format: uuid
+             */
+            sample_group_id: string;
+            /** Started At */
+            started_at: string | null;
+            state: components["schemas"]["ExperimentState"];
+            /** Strategy Content Hashes */
+            strategy_content_hashes: {
+                [key: string]: string;
+            };
+            /** Submitted At */
+            submitted_at: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Version */
+            version: number;
+        };
+        /** ExperimentVersionCreate */
+        ExperimentVersionCreate: {
+            configuration: components["schemas"]["ExperimentConfiguration-Input"];
+            /**
+             * Parent Version Id
+             * Format: uuid
+             */
+            parent_version_id: string;
         };
         /** FileProvenance */
         FileProvenance: {
@@ -4001,6 +4558,281 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listing_experiments_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_experiments__experiment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fork_experiments__experiment_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_experiments__experiment_id__versions__version_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentTransition"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_experiments__experiment_id__versions__version_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentApproval"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_experiments__experiment_id__versions__version_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentPromotion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sample_experiments__experiment_id__versions__version_id__samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentSampleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentSample"];
                 };
             };
             /** @description Validation Error */
