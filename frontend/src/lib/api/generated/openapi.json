@@ -13552,6 +13552,134 @@
         "title": "ExperimentApproval",
         "type": "object"
       },
+      "ExperimentBoundTrendPulse": {
+        "additionalProperties": false,
+        "properties": {
+          "account_verified_here": {
+            "const": false,
+            "default": false,
+            "title": "Account Verified Here",
+            "type": "boolean"
+          },
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "configuration_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Configuration Hash",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "trendpulse-experiment-research/v1",
+            "default": "trendpulse-experiment-research/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "declared_execution_account_id": {
+            "format": "uuid",
+            "title": "Declared Execution Account Id",
+            "type": "string"
+          },
+          "declared_execution_source": {
+            "$ref": "#/components/schemas/ExperimentSource"
+          },
+          "declared_native_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Native Uid"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "experiment_version_id": {
+            "format": "uuid",
+            "title": "Experiment Version Id",
+            "type": "string"
+          },
+          "native_execution": {
+            "const": false,
+            "default": false,
+            "title": "Native Execution",
+            "type": "boolean"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "null"
+          },
+          "runtime_activated": {
+            "const": false,
+            "default": false,
+            "title": "Runtime Activated",
+            "type": "boolean"
+          },
+          "sample_eligible": {
+            "const": false,
+            "default": false,
+            "title": "Sample Eligible",
+            "type": "boolean"
+          },
+          "sample_group_id": {
+            "format": "uuid",
+            "title": "Sample Group Id",
+            "type": "string"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/TrendPulseSignal"
+          },
+          "strategy_content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Strategy Content Hash",
+            "type": "string"
+          },
+          "strategy_id": {
+            "format": "uuid",
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          },
+          "variant_key": {
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "organization_id",
+          "experiment_id",
+          "experiment_version_id",
+          "configuration_hash",
+          "sample_group_id",
+          "variant_key",
+          "strategy_id",
+          "strategy_version_id",
+          "strategy_content_hash",
+          "declared_execution_source",
+          "declared_execution_account_id",
+          "declared_native_uid",
+          "signal"
+        ],
+        "title": "ExperimentBoundTrendPulse",
+        "type": "object"
+      },
       "ExperimentConfiguration-Input": {
         "additionalProperties": false,
         "properties": {
@@ -27922,7 +28050,7 @@
         "title": "ObservationType",
         "type": "string"
       },
-      "OhlcvBar": {
+      "OhlcvBar-Input": {
         "additionalProperties": false,
         "description": "One venue kline after normalization.",
         "properties": {
@@ -28034,6 +28162,132 @@
             ],
             "ge": 0,
             "title": "Quote Volume"
+          },
+          "revision": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_event_id": {
+            "maxLength": 80,
+            "minLength": 3,
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "source_time": {
+            "format": "date-time",
+            "title": "Source Time",
+            "type": "string"
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/Timeframe"
+          },
+          "trade_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "interval_start",
+          "interval_end",
+          "open",
+          "high",
+          "low",
+          "close",
+          "base_volume",
+          "quote_volume",
+          "source_event_id",
+          "provider_complete",
+          "finality",
+          "revision",
+          "source_time",
+          "adapter_version",
+          "content_hash"
+        ],
+        "title": "OhlcvBar",
+        "type": "object"
+      },
+      "OhlcvBar-Output": {
+        "additionalProperties": false,
+        "description": "One venue kline after normalization.",
+        "properties": {
+          "adapter_version": {
+            "maxLength": 80,
+            "minLength": 3,
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "base_volume": {
+            "ge": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Volume",
+            "type": "string"
+          },
+          "close": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "finality": {
+            "$ref": "#/components/schemas/Finality"
+          },
+          "high": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "High",
+            "type": "string"
+          },
+          "instrument": {
+            "$ref": "#/components/schemas/InstrumentIdentity-Output"
+          },
+          "interval_end": {
+            "format": "date-time",
+            "title": "Interval End",
+            "type": "string"
+          },
+          "interval_start": {
+            "format": "date-time",
+            "title": "Interval Start",
+            "type": "string"
+          },
+          "low": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Low",
+            "type": "string"
+          },
+          "open": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Open",
+            "type": "string"
+          },
+          "provider_complete": {
+            "title": "Provider Complete",
+            "type": "boolean"
+          },
+          "quote_volume": {
+            "ge": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quote Volume",
+            "type": "string"
           },
           "revision": {
             "maximum": 1000000.0,
@@ -38483,7 +38737,7 @@
         "title": "ProviderStatusResponse",
         "type": "object"
       },
-      "PublicMarketObservation": {
+      "PublicMarketObservation-Input": {
         "additionalProperties": false,
         "description": "Global public venue fact. No tenant owner.",
         "properties": {
@@ -38505,6 +38759,121 @@
           },
           "identity": {
             "$ref": "#/components/schemas/EvidenceMarketIdentity-Input"
+          },
+          "interval_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval End"
+          },
+          "interval_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Start"
+          },
+          "observation_id": {
+            "format": "uuid",
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "observation_type": {
+            "$ref": "#/components/schemas/ObservationType"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "payload_content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Payload Content Hash",
+            "type": "string"
+          },
+          "privacy_class": {
+            "$ref": "#/components/schemas/PrivacyClass",
+            "default": "public_market_data"
+          },
+          "receive_time": {
+            "format": "date-time",
+            "title": "Receive Time",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_event_id": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "source_time": {
+            "format": "date-time",
+            "title": "Source Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation_id",
+          "identity",
+          "observation_type",
+          "source_event_id",
+          "event_time",
+          "source_time",
+          "observed_at",
+          "receive_time",
+          "finality",
+          "revision",
+          "freshness_state",
+          "payload_content_hash",
+          "content_hash",
+          "recorded_at"
+        ],
+        "title": "PublicMarketObservation",
+        "type": "object"
+      },
+      "PublicMarketObservation-Output": {
+        "additionalProperties": false,
+        "description": "Global public venue fact. No tenant owner.",
+        "properties": {
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "event_time": {
+            "format": "date-time",
+            "title": "Event Time",
+            "type": "string"
+          },
+          "finality": {
+            "$ref": "#/components/schemas/Finality"
+          },
+          "freshness_state": {
+            "$ref": "#/components/schemas/FreshnessState"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/EvidenceMarketIdentity-Output"
           },
           "interval_end": {
             "anyOf": [
@@ -39469,10 +39838,10 @@
         "additionalProperties": false,
         "properties": {
           "bar": {
-            "$ref": "#/components/schemas/OhlcvBar"
+            "$ref": "#/components/schemas/OhlcvBar-Input"
           },
           "observation": {
-            "$ref": "#/components/schemas/PublicMarketObservation"
+            "$ref": "#/components/schemas/PublicMarketObservation-Input"
           }
         },
         "required": [
@@ -46344,7 +46713,7 @@
           },
           "basis_bars": {
             "items": {
-              "$ref": "#/components/schemas/OhlcvBar"
+              "$ref": "#/components/schemas/OhlcvBar-Input"
             },
             "minItems": 1,
             "title": "Basis Bars",
@@ -46352,7 +46721,7 @@
           },
           "basis_observations": {
             "items": {
-              "$ref": "#/components/schemas/PublicMarketObservation"
+              "$ref": "#/components/schemas/PublicMarketObservation-Input"
             },
             "minItems": 1,
             "title": "Basis Observations",
@@ -49529,6 +49898,740 @@
           "candidate_created"
         ],
         "title": "TradingViewSignalStatus",
+        "type": "string"
+      },
+      "TrendPulseEvidenceReference": {
+        "additionalProperties": false,
+        "properties": {
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "observation_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Observation Hash",
+            "type": "string"
+          },
+          "observation_id": {
+            "format": "uuid",
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "payload_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Payload Hash",
+            "type": "string"
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/Timeframe"
+          }
+        },
+        "required": [
+          "timeframe",
+          "observation_id",
+          "payload_hash",
+          "observation_hash",
+          "available_at"
+        ],
+        "title": "TrendPulseEvidenceReference",
+        "type": "object"
+      },
+      "TrendPulseScreeningCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "trigger_end": {
+            "format": "date-time",
+            "title": "Trigger End",
+            "type": "string"
+          },
+          "variant_key": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "variant_key",
+          "trigger_end"
+        ],
+        "title": "TrendPulseScreeningCreate",
+        "type": "object"
+      },
+      "TrendPulseScreeningDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_started_at": {
+            "format": "date-time",
+            "title": "Acquisition Started At",
+            "type": "string"
+          },
+          "configuration_hash": {
+            "title": "Configuration Hash",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "trendpulse-screening/v1",
+            "default": "trendpulse-screening/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "decision_at": {
+            "format": "date-time",
+            "title": "Decision At",
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "entry_receipts": {
+            "title": "Entry Receipts",
+            "type": "integer"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/TrendPulseScreeningEvidence"
+          },
+          "evidence_hash": {
+            "title": "Evidence Hash",
+            "type": "string"
+          },
+          "evidence_mode": {
+            "enum": [
+              "public_rest",
+              "replay"
+            ],
+            "title": "Evidence Mode",
+            "type": "string"
+          },
+          "execution_authorized": {
+            "const": false,
+            "default": false,
+            "title": "Execution Authorized",
+            "type": "boolean"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "experiment_version_id": {
+            "format": "uuid",
+            "title": "Experiment Version Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "management_authority": {
+            "const": false,
+            "default": false,
+            "title": "Management Authority",
+            "type": "boolean"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "null"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "receipt_provenance": {
+            "enum": [
+              "live_public_rest",
+              "recorded_public_receipts",
+              "synthetic_fixture"
+            ],
+            "title": "Receipt Provenance",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "sample_eligible": {
+            "const": false,
+            "default": false,
+            "title": "Sample Eligible",
+            "type": "boolean"
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExperimentBoundTrendPulse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrendPulseStatus"
+          },
+          "strategy_content_hash": {
+            "title": "Strategy Content Hash",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          },
+          "trend_receipts": {
+            "title": "Trend Receipts",
+            "type": "integer"
+          },
+          "trigger_end": {
+            "format": "date-time",
+            "title": "Trigger End",
+            "type": "string"
+          },
+          "variant_key": {
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "request_id",
+          "organization_id",
+          "experiment_id",
+          "experiment_version_id",
+          "configuration_hash",
+          "variant_key",
+          "strategy_version_id",
+          "strategy_content_hash",
+          "trigger_end",
+          "acquisition_started_at",
+          "decision_at",
+          "evidence_mode",
+          "receipt_provenance",
+          "status",
+          "reason",
+          "trend_receipts",
+          "entry_receipts",
+          "evidence_hash",
+          "evidence"
+        ],
+        "title": "TrendPulseScreeningDetail",
+        "type": "object"
+      },
+      "TrendPulseScreeningEvidence": {
+        "additionalProperties": false,
+        "description": "Original canonical receipts, including partial acquisition on failure.",
+        "properties": {
+          "entry_bars": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OhlcvBar-Output"
+            },
+            "maxItems": 62,
+            "title": "Entry Bars",
+            "type": "array"
+          },
+          "entry_observations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PublicMarketObservation-Output"
+            },
+            "maxItems": 62,
+            "title": "Entry Observations",
+            "type": "array"
+          },
+          "instrument_rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstrumentRules"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trend_bars": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OhlcvBar-Output"
+            },
+            "maxItems": 252,
+            "title": "Trend Bars",
+            "type": "array"
+          },
+          "trend_observations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PublicMarketObservation-Output"
+            },
+            "maxItems": 252,
+            "title": "Trend Observations",
+            "type": "array"
+          }
+        },
+        "title": "TrendPulseScreeningEvidence",
+        "type": "object"
+      },
+      "TrendPulseScreeningPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPulseScreeningRecord"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "TrendPulseScreeningPage",
+        "type": "object"
+      },
+      "TrendPulseScreeningRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_started_at": {
+            "format": "date-time",
+            "title": "Acquisition Started At",
+            "type": "string"
+          },
+          "configuration_hash": {
+            "title": "Configuration Hash",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "trendpulse-screening/v1",
+            "default": "trendpulse-screening/v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "decision_at": {
+            "format": "date-time",
+            "title": "Decision At",
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "entry_receipts": {
+            "title": "Entry Receipts",
+            "type": "integer"
+          },
+          "evidence_hash": {
+            "title": "Evidence Hash",
+            "type": "string"
+          },
+          "evidence_mode": {
+            "enum": [
+              "public_rest",
+              "replay"
+            ],
+            "title": "Evidence Mode",
+            "type": "string"
+          },
+          "execution_authorized": {
+            "const": false,
+            "default": false,
+            "title": "Execution Authorized",
+            "type": "boolean"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "experiment_version_id": {
+            "format": "uuid",
+            "title": "Experiment Version Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "management_authority": {
+            "const": false,
+            "default": false,
+            "title": "Management Authority",
+            "type": "boolean"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "null"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "receipt_provenance": {
+            "enum": [
+              "live_public_rest",
+              "recorded_public_receipts",
+              "synthetic_fixture"
+            ],
+            "title": "Receipt Provenance",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "sample_eligible": {
+            "const": false,
+            "default": false,
+            "title": "Sample Eligible",
+            "type": "boolean"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrendPulseStatus"
+          },
+          "strategy_content_hash": {
+            "title": "Strategy Content Hash",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "format": "uuid",
+            "title": "Strategy Version Id",
+            "type": "string"
+          },
+          "trend_receipts": {
+            "title": "Trend Receipts",
+            "type": "integer"
+          },
+          "trigger_end": {
+            "format": "date-time",
+            "title": "Trigger End",
+            "type": "string"
+          },
+          "variant_key": {
+            "title": "Variant Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "request_id",
+          "organization_id",
+          "experiment_id",
+          "experiment_version_id",
+          "configuration_hash",
+          "variant_key",
+          "strategy_version_id",
+          "strategy_content_hash",
+          "trigger_end",
+          "acquisition_started_at",
+          "decision_at",
+          "evidence_mode",
+          "receipt_provenance",
+          "status",
+          "reason",
+          "trend_receipts",
+          "entry_receipts",
+          "evidence_hash"
+        ],
+        "title": "TrendPulseScreeningRecord",
+        "type": "object"
+      },
+      "TrendPulseSignal": {
+        "additionalProperties": false,
+        "description": "Closed-candle research geometry, never a Candidate or executable TradePlan.",
+        "properties": {
+          "adapter_version": {
+            "const": "trendpulse-1r-research/v2",
+            "default": "trendpulse-1r-research/v2",
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "decision_at": {
+            "format": "date-time",
+            "title": "Decision At",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/TradeDirection"
+          },
+          "ema50_slope_ratio": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ema50 Slope Ratio",
+            "type": "string"
+          },
+          "entry": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Entry",
+            "type": "string"
+          },
+          "entry_ema20": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Entry Ema20",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPulseEvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "execution_authorized": {
+            "const": false,
+            "default": false,
+            "title": "Execution Authorized",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "gross_reward_risk": {
+            "const": 1,
+            "default": 1,
+            "title": "Gross Reward Risk",
+            "type": "integer"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/EvidenceMarketIdentity-Output"
+          },
+          "instrument_rules_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Instrument Rules Hash",
+            "type": "string"
+          },
+          "known_at": {
+            "format": "date-time",
+            "title": "Known At",
+            "type": "string"
+          },
+          "management_authority": {
+            "const": false,
+            "default": false,
+            "title": "Management Authority",
+            "type": "boolean"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "null"
+          },
+          "pullback_event_ids": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Pullback Event Ids",
+            "type": "array"
+          },
+          "runtime_activated": {
+            "const": false,
+            "default": false,
+            "title": "Runtime Activated",
+            "type": "boolean"
+          },
+          "signal_id": {
+            "format": "uuid",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "spec_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Spec Hash",
+            "type": "string"
+          },
+          "structural_extreme": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Structural Extreme",
+            "type": "string"
+          },
+          "structural_stop": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Structural Stop",
+            "type": "string"
+          },
+          "structure_anchor_ids": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Structure Anchor Ids",
+            "type": "array"
+          },
+          "target": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target",
+            "type": "string"
+          },
+          "trend_ema20": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Trend Ema20",
+            "type": "string"
+          },
+          "trend_ema50": {
+            "gt": 0,
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Trend Ema50",
+            "type": "string"
+          },
+          "trend_end": {
+            "format": "date-time",
+            "title": "Trend End",
+            "type": "string"
+          },
+          "trigger_end": {
+            "format": "date-time",
+            "title": "Trigger End",
+            "type": "string"
+          },
+          "trigger_event_id": {
+            "title": "Trigger Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "content_hash",
+          "spec_hash",
+          "instrument_rules_hash",
+          "identity",
+          "direction",
+          "trigger_event_id",
+          "trigger_end",
+          "known_at",
+          "decision_at",
+          "expires_at",
+          "trend_end",
+          "trend_ema20",
+          "trend_ema50",
+          "ema50_slope_ratio",
+          "structure_anchor_ids",
+          "entry_ema20",
+          "pullback_event_ids",
+          "structural_extreme",
+          "entry",
+          "structural_stop",
+          "target",
+          "evidence"
+        ],
+        "title": "TrendPulseSignal",
+        "type": "object"
+      },
+      "TrendPulseStatus": {
+        "enum": [
+          "unavailable",
+          "refused",
+          "no_setup",
+          "qualified_research_signal",
+          "duplicate"
+        ],
+        "title": "TrendPulseStatus",
         "type": "string"
       },
       "TriggeredRule": {
@@ -60706,6 +61809,170 @@
         "summary": "Transition",
         "tags": [
           "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings": {
+      "get": {
+        "operationId": "listing_experiments__experiment_id__versions__version_id__trendpulse_screenings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrendPulseStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendPulseScreeningPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Listing",
+        "tags": [
+          "trendpulse-screening"
+        ]
+      },
+      "post": {
+        "operationId": "screen_experiments__experiment_id__versions__version_id__trendpulse_screenings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrendPulseScreeningCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendPulseScreeningDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Screen",
+        "tags": [
+          "trendpulse-screening"
         ]
       }
     },
@@ -72602,6 +73869,54 @@
         "summary": "Create a paper-validation candidate from a validated TradingView signal",
         "tags": [
           "tradingview"
+        ]
+      }
+    },
+    "/trendpulse-screenings/{record_id}": {
+      "get": {
+        "operationId": "detail_trendpulse_screenings__record_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendPulseScreeningDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detail",
+        "tags": [
+          "trendpulse-screening"
         ]
       }
     },
