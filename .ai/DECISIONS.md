@@ -3122,3 +3122,30 @@ source resolver or runtime is installed. SFP remains observation-only and future
 TrendPulse1R needs explicit closed 15m trend/5m entry, structural stop and gross 1R
 compiler/evaluation contracts. One additive a11 migration follows a10 on the future
 feature branch, outside the release candidate. See docs/experiment_domain_contract.md.
+
+## AT-ADR-100 — TrendPulse1R is deterministic research geometry before runtime
+
+Date: 2026-10-10. AT-120 isolates the pure TrendPulse1R adapter from corrected PR241
+6ca6a76 and the current release candidate. Fixed provisional v1: causally known
+250 closed 15m bars for EMA20/50, three-bar ±0.1% slow EMA slope, strict confirmed
+HH/HL or LL/LH two-wing structure; 60 closed 5m bars, three-candle EMA20 pullback,
+closed extreme break and ≤0.1% opening gap. Structural stop is one tick outside
+pullback, rounded outward; conservative rounded entry determines one gross 1R
+full target. Decimal context/precision, missing receipts, conflicting revisions,
+expiry, duplicates and invalid risk fail closed. Immutable experiment variants may
+bind this research spec with both timeframes and setup observations only. Pure
+attribution tags cannot verify an account or create samples/performance/dispatch.
+Existing execution admission still refuses TrendPulse. Nested/SFP meanings remain
+unchanged. No compiler/runtime/worker/migration/activation is introduced.
+See docs/trendpulse_1r_adapter_contract.md.
+
+## AT-ADR-101 — TrendPulse receipts are eligible at the post-close decision
+
+The prior provisional adapter required historical receipts at trigger opening,
+which excluded the immediately preceding closed bar for any positive latency.
+Corrected adapter v2 selects the same explicit prior-trend/trigger candle windows
+but requires every original receipt to be known at the actual post-close decision.
+Later receipts cannot alter an earlier evaluation; new decisions expire at 60s.
+Decision time is recorded/hashed; the natural UUID includes the adapter version.
+Authored parameter v1, all thresholds, structural stops and rounded gross 1R remain
+unchanged. Publish this correction separately before any screening persistence.
