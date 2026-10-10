@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { clearRecoveryStorage, rejectedBeforeCommit } from "./request-recovery";
+import { rejectedBeforeCommit } from "./request-recovery";
 import { experimentCreate, paperAccount, strategyVersions } from "@/lib/api/generated/client";
 import { experimentCreateRequest } from "@/lib/api/generated/validators";
 import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
+import { recoverySessionId } from "@/lib/auth/recovery-session";
 
 type Version = Awaited<ReturnType<typeof strategyVersions>>["items"][number];
 type Body = Parameters<typeof experimentCreate>[0];
@@ -39,12 +40,13 @@ export function ExperimentDraftPanel({ strategyId, name }: { strategyId: string;
   const { user, organization } = useAuth();
   const [generation, setGeneration] = useState(sessionGeneration);
   useEffect(() => onSessionCleared(() => {
-    clearRecoveryStorage(prefix);
     setGeneration(sessionGeneration());
   }), []);
   if (!user || !organization) return null;
-  const scope = `${prefix}${JSON.stringify([organization.id, user.id, generation, strategyId])}`;
-  return <ScopedDraft key={scope} scope={scope} strategyId={strategyId} name={name} />;
+  const session = recoverySessionId(organization.id, user.id);
+  if (!session) return null;
+  const scope = `${prefix}${JSON.stringify([organization.id, user.id, session, strategyId])}`;
+  return <ScopedDraft key={`${scope}:${generation}`} scope={scope} strategyId={strategyId} name={name} />;
 }
 function ScopedDraft({ scope, strategyId, name }: { scope: string; strategyId: string; name: string }) {
   const [versions, setVersions] = useState<Version[]>([]);

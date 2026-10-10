@@ -5,10 +5,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
-import { clearRecoveryStorage, rejectedBeforeCommit } from "./request-recovery";
+import { rejectedBeforeCommit } from "./request-recovery";
 import { trendpulseScreen, trendpulseScreenings, trendpulseScreeningDetail } from "@/lib/api/generated/client";
 import { trendpulseScreenRequest } from "@/lib/api/generated/validators";
 import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
+import { recoverySessionId } from "@/lib/auth/recovery-session";
 import type { ExperimentVersion } from "@/lib/experiments";
 
 type Page = Awaited<ReturnType<typeof trendpulseScreenings>>;
@@ -26,12 +27,13 @@ export function ScreeningsPanel({ version }: { version: ExperimentVersion }) {
   const { user, organization } = useAuth();
   const [generation, setGeneration] = useState(sessionGeneration);
   useEffect(() => onSessionCleared(() => {
-    clearRecoveryStorage(prefix);
     setGeneration(sessionGeneration());
   }), []);
   if (!user || !organization) return null;
-  const scope = `${prefix}${JSON.stringify([organization.id, user.id, generation, version.id])}`;
-  return <ScopedScreenings key={scope} scope={scope} version={version} />;
+  const session = recoverySessionId(organization.id, user.id);
+  if (!session) return null;
+  const scope = `${prefix}${JSON.stringify([organization.id, user.id, session, version.id])}`;
+  return <ScopedScreenings key={`${scope}:${generation}`} scope={scope} version={version} />;
 }
 function ScopedScreenings({ scope, version }: { scope: string; version: ExperimentVersion }) {
   const [page, setPage] = useState<Page | null>(null);

@@ -15,7 +15,7 @@ describe("api client deployment config", () => {
   });
 
   it("registers paper identity with authentication and an empty body", async () => {
-    sessionStorage.setItem("alphatrade_access_token", "synthetic-owner-token");
+    (await import("@/lib/auth/session")).setTokens("synthetic-owner-token");
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
     vi.stubGlobal("fetch", fetchMock);
     const { api } = await import("@/lib/api");
@@ -31,7 +31,7 @@ describe("api client deployment config", () => {
   });
 
   it("lets the browser set multipart boundaries and keeps authentication", async () => {
-    sessionStorage.setItem("alphatrade_access_token", "synthetic-access");
+    (await import("@/lib/auth/session")).setTokens("synthetic-access");
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
     vi.stubGlobal("fetch", fetchMock);
     const { api } = await import("@/lib/api");
@@ -86,8 +86,7 @@ describe("api client deployment config", () => {
   });
 
   it("deduplicates concurrent token refreshes (single-flight)", async () => {
-    sessionStorage.setItem("alphatrade_access_token", "stale-token");
-    sessionStorage.setItem("alphatrade_refresh_token", "refresh-token");
+    (await import("@/lib/auth/session")).setTokens("stale-token", "refresh-token");
 
     let refreshCalls = 0;
     const fetchMock = vi.fn(async (url: string) => {
@@ -128,8 +127,7 @@ describe("api client deployment config", () => {
   });
   it("a new identity refresh has its own flight and a late old refresh cannot overwrite tokens", async () => {
     const completions: ((response: unknown) => void)[] = [];
-    sessionStorage.setItem("alphatrade_access_token", "old-stale");
-    sessionStorage.setItem("alphatrade_refresh_token", "old-refresh");
+    (await import("@/lib/auth/session")).setTokens("old-stale", "old-refresh");
     vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
       if (url.includes("/auth/refresh")) return new Promise(resolve => completions.push(resolve));
       if ((options.headers as Record<string, string>).Authorization === "Bearer new-fresh")

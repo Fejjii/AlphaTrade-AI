@@ -1,3 +1,5 @@
+import { invalidateRecoverySession } from "./recovery-session";
+
 let generation = 0;
 const listeners = new Set<() => void>();
 export const sessionGeneration = () => generation;
@@ -7,5 +9,8 @@ export function onSessionCleared(listener: () => void): () => void {
 }
 export function sessionCleared(): void {
   generation++;
-  for (const listener of listeners) listener();
+  invalidateRecoverySession();
+  for (const listener of listeners) {
+    try { listener(); } catch { /* Every identity owner must still be invalidated. */ }
+  }
 }

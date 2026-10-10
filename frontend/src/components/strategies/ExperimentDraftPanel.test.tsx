@@ -4,6 +4,7 @@ import { ExperimentDraftPanel } from "./ExperimentDraftPanel";
 import { experimentCreate, paperAccount, strategyVersions } from "@/lib/api/generated/client";
 import { experimentVersion } from "@/test/experiment-fixtures";
 import { ApiError } from "@/lib/api/client";
+import { bindRecoverySession } from "@/lib/auth/recovery-session";
 import { onSessionCleared, sessionCleared } from "@/lib/auth/session-events";
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ user: { id: "u" }, organization: { id: "o" } }) }));
 vi.mock("@/lib/api/generated/client", () => ({ experimentCreate: vi.fn(), paperAccount: vi.fn(), strategyVersions: vi.fn() }));
@@ -14,8 +15,9 @@ const authored: Awaited<ReturnType<typeof strategyVersions>>["items"][number] = 
   backtest_status: "not_run", paper_validation_status: "not_started",
   pattern_spec: { kind: "trendpulse_1r/v1", parameters: { fixed: "1" }, symbol: "BTCUSDT", trigger_timeframe: "5m", trend_timeframe: "15m" },
 };
+const pendingCount = () => Object.keys(sessionStorage).filter(key => key.startsWith("alphatrade:experiment-draft:") || key.startsWith("alphatrade:screening:")).length;
 beforeEach(() => {
-  sessionStorage.clear(); vi.mocked(experimentCreate).mockReset().mockResolvedValue(version);
+  sessionCleared(); sessionStorage.clear(); bindRecoverySession("o", "u"); vi.mocked(experimentCreate).mockReset().mockResolvedValue(version);
   vi.mocked(strategyVersions).mockReset().mockResolvedValue({ items: [authored], total: 1, limit: 100, offset: 0 });
   vi.mocked(paperAccount).mockReset().mockResolvedValue({ account: { id: version.configuration.account.execution_account_id, name: "Synthetic", execution_mode: "PAPER", account_mode: "NET", enabled: true }, can_register: false });
 });
@@ -31,12 +33,12 @@ it("creates a bounded baseline from the exact authored version without native/ac
   await screen.findByRole("link", { name: "Open experiment" }); const body = vi.mocked(experimentCreate).mock.calls[0][0];
   expect(body.configuration.mode).toBe("validation"); expect(body.configuration.variants).toEqual([{ key: "baseline", strategy_version_id: authored.id, parameters: authored.pattern_spec!.parameters }]);
   expect(body.configuration.timeframes).toEqual(["5m", "15m"]); expect(body.configuration.model_policy.mode).toBe("disabled"); expect(body.configuration.account.source).toBe("internal_simulation");
-  expect(sessionStorage.length).toBe(0);
+  expect(pendingCount()).toBe(0);
 });
 it("keeps invalid local bounds editable without a request or recovery lock", async () => {
   render(<ExperimentDraftPanel strategyId={version.configuration.strategy_id} name="TrendPulse" />); await fill();
   fireEvent.change(screen.getByLabelText("Risk per trade (USDT)"), { target: { value: "invalid" } }); fireEvent.click(screen.getByRole("button", { name: "Create experiment draft" }));
-  await screen.findByText("Correct the draft bounds before submitting."); expect(experimentCreate).not.toHaveBeenCalled(); expect(sessionStorage.length).toBe(0);
+  await screen.findByText("Correct the draft bounds before submitting."); expect(experimentCreate).not.toHaveBeenCalled(); expect(pendingCount()).toBe(0);
   fireEvent.change(screen.getByLabelText("Risk per trade (USDT)"), { target: { value: "10" } }); fireEvent.click(screen.getByRole("button", { name: "Create experiment draft" })); await screen.findByRole("link", { name: "Open experiment" });
 });
 it("recovers an ambiguous create across remount with the exact original key/configuration", async () => {
@@ -54,7 +56,7 @@ it("releases a proven account refusal and lets a corrected draft submit", async 
   vi.mocked(experimentCreate).mockRejectedValueOnce(new ApiError("account", 409, { error: { code: "experiment_account_invalid" } }));
   render(<ExperimentDraftPanel strategyId={version.configuration.strategy_id} name="TrendPulse" />); await fill();
   fireEvent.click(screen.getByRole("button", { name: "Create experiment draft" }));
-  await screen.findByText(/Draft rejected/); expect(sessionStorage.length).toBe(0);
+  await screen.findByText(/Draft rejected/); expect(pendingCount()).toBe(0);
   expect(screen.queryByRole("button", { name: "Recover draft" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Create experiment draft" })); await screen.findByRole("link", { name: "Open experiment" });
 });
@@ -65,7 +67,7 @@ it("invalidates the old view and continues session listeners when recovery stora
   const next = vi.fn(); const unsubscribe = onSessionCleared(next);
   try { act(sessionCleared); expect(next).toHaveBeenCalledOnce(); }
   finally { unsubscribe(); }
-  await waitFor(() => expect(strategyVersions).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(strategyVersions).toHaveBeenCalledOnce());
   expect(vi.mocked(strategyVersions).mock.calls[0][2]!.signal!.aborted).toBe(true);
 });
 it("keeps an ambiguous original when its explicit retry is forbidden", async () => {
@@ -78,7 +80,7 @@ it("keeps an ambiguous original when its explicit retry is forbidden", async () 
   fireEvent.click(screen.getByRole("button", { name: "Recover draft" }));
   await waitFor(() => expect(vi.mocked(experimentCreate).mock.calls).toHaveLength(2));
   await waitFor(() => expect(screen.getByRole("button", { name: "Recover draft" })).toBeEnabled());
-  expect(sessionStorage.length).toBe(1); expect(screen.queryByRole("button", { name: "Create experiment draft" })).not.toBeInTheDocument();
+  expect(pendingCount()).toBe(1); expect(screen.queryByRole("button", { name: "Create experiment draft" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Recover draft" })); await screen.findByRole("link", { name: "Open experiment" });
   expect(vi.mocked(experimentCreate).mock.calls.slice(1).map(call => call[0])).toEqual([original, original]);
 });

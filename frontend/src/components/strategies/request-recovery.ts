@@ -14,12 +14,3 @@ export function rejectedBeforeCommit(cause: unknown, endpoint: "draft" | "screen
   return (cause.status === 503 && ["screening_disabled", "screening_source_not_enabled"].includes(code))
     || (cause.status === 409 && ["screening_family_mismatch", "screening_strategy_mismatch", "screening_configuration_mismatch"].includes(code));
 }
-
-export function clearRecoveryStorage(prefix: string): void {
-  try {
-    for (let i = sessionStorage.length - 1; i >= 0; i--) {
-      const key = sessionStorage.key(i);
-      if (key?.startsWith(prefix)) sessionStorage.removeItem(key);
-    }
-  } catch { /* A denied storage operation must not interrupt identity cleanup. */ }
-}

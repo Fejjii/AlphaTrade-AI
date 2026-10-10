@@ -21,6 +21,17 @@ local authoring validation and request recovery issues; they grant no runtime au
 
 ## Connected product path
 
+The recovery lifecycle correction resumes reviewed `48ca2e68`. Its fixed acceptance
+denominator is six: L1 actual login establishes the recovery session; L2 both draft
+and screening retain requests after server commit with lost/malformed replies; L3
+reload retains the exact body/key; L4 explicit recovery resolves the original record
+without duplication or automatic retries; L5 logout off-panel and reauthentication/
+account change invalidate old pending state; L6 storage denial cannot prevent auth
+cleanup. **L1–L6: 6/6 accepted locally**, implemented and integrated; deployment and
+live acceptance remain unexecuted. The older injected-token browser evidence did not
+qualify L1/L3/L5; two actual-login browser regressions now close those gaps. This is
+overlapping repair acceptance, not six additional independent product features.
+
 The existing Agent/document capture is the authoring entry. A complete typed research
 spec can be captured as JSON or a fenced JSON block. Every binding and parameter must
 be explicit. Incomplete, conflicting or malformed recognized contracts remain invalid
@@ -52,9 +63,14 @@ interrupted connections, malformed successful responses and unresolved concurren
 conflicts retain exact original payloads and keys. Explicit recovery never automatically
 reissues transport. Rejection of a recovery attempt cannot prove the original did not
 commit, so it retains that identity. Pending state survives a tab reload and is scoped
-to organization/user/session/version; clearing a session aborts old reads and removes
-recovery records where storage permits. Storage denial cannot interrupt identity
-invalidation or subsequent session listeners. Foreign-tenant reads/writes return404.
+to organization/user/session/version. Authentication binds a non-secret persisted
+UUID only after login or verified `/auth/me`; reload restores it for the same identity,
+and token refresh preserves it. Fresh login, logout and confirmed account changes
+centrally invalidate both recovery namespaces even with no panel mounted. The memory
+generation remains exclusively a cancellation/remount fence. A recovery scope requires
+successful identity persistence; failure cannot permit an unrecoverable mutation.
+Storage denial or a failing listener cannot interrupt local token/marker/identity
+cleanup or subsequent listeners. Foreign-tenant reads/writes return404.
 
 Shared generation adds three screening operations plus authored versions/paper account
 to the existing pilot clients. Full combined OpenAPI SHA256:
@@ -149,6 +165,8 @@ Coordinated rollback sequence:
 | Research generated client |9 passed,0 skipped|Final combined client; final summary fixture removes extra fields|
 | Existing view/contracts/transport |28 passed,0 skipped|7 view +6 experiment +7 generated +8 transport cases; reuse valid unchanged-path evidence|
 | Actual Chromium API/browser |2 passed,0 skipped;24.8s +17.3s|Synthetic document→confirmation→bounded draft→malformed-success recovery; real API restart; history/reload/tenant404/sample503|
+| Auth-owned recovery correction |49 passed,0 skipped;7 files,9.72s|5 token,9 recovery-session,7 AuthContext,7 draft,13 screening and8 transport cases; new binding/panels supersede prior recovery coverage|
+| Actual-login Chromium recovery |2 passed,0 skipped;51.3s|Real `/login`; committed malformed draft/lost screening; reload exact byte-for-byte bodies/keys; explicit recovery keeps counts/DTOs; off-panel logout/same-account and other-account login; foreign reads404|
 
 These are focused results, not full backend acceptance. Initial PR244 CI38083209763
 had928 backend passes and one cache failure; PR246 CI38084766737 completed418 backend
@@ -191,6 +209,25 @@ these selected tests. Browser state restores once, so reload cannot resurrect a
 successfully resolved pending request. Screenshots contain synthetic content only.
 The existing lifecycle browser evidence on ba627 is retained for unchanged lifecycle
 operations; it is not current hosted or full-suite acceptance.
+
+For the recovery correction, reseed with the existing guarded seeder, then run only
+`ui-tests/auth-recovery-api.spec.ts` using those same loopback API/frontend URLs and
+`EXPERIMENT_BROWSER_AUTH_FILE`. It never injects tokens, cookies or recovery state.
+Authentication waits for protected-shell readiness before subsequent navigation.
+Both synthetic accounts start with persisted **blocked** safety rows; only newly
+created disposable tenants are initialized, with no operator row changed. During
+initial qualification, concurrent lazy `GET /risk/kill-switch` inserts for an empty
+synthetic organization caused a transaction-ID lock and blocked the local event loop.
+The fixture now represents existing initialized account settings; production risk
+code remains unchanged. Empty-tenant safety bootstrap is a separate observed issue,
+not qualified or repaired here. Verify the smoke tenant's existing persisted safety
+state through the authorized executor; never reset settings to manufacture a pass.
+The initial private-file writer error and one session-loading/blocked-API browser
+failure were diagnosed; the final selected run executes both cases with no skips.
+Frontend typecheck/changed ESLint, seeder Ruff/format and diff whitespace checks pass.
+Production backend, combined generated contracts and immutable migration tree are
+byte-identical to `48ca2e68`; their valid prior evidence is reused, not rerun or
+attributed as new full acceptance.
 
 ## Hosting receipt and one release access packet
 
