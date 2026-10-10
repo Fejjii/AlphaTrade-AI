@@ -2538,7 +2538,16 @@ changes, full backend CI or activation. Contract: docs/trendpulse_1r_adapter_con
 
 ## AT-121 — Receipt correction then bounded TrendPulse research screening
 
-Status: IN_PROGRESS. Continue PR243 bab0e9ce; publish the receipt eligibility
+Status: READY (separate receipt correction published; screening continuation
+locally verified for draft publication). Correction 8b9d1b8:140 local passes,
+automatic focused CI305 backend/no skips and12 frontend. Screening:36 new and329
+combined focused passes/no skips, shared drift, Ruff/format/strict typing and
+frontend generated-contract/lint/typecheck pass. Untuned four-regime synthetic
+replay192 decisions/zero signals; genuine original-arrival market replay remains
+unverified. One reserved a12 aftera11, coordination posted; integration merge
+sequencing acknowledgment remains a prerequisite. Exact continuation SHA/automatic
+focused CI in draft PR and docs/trendpulse_screening_verification.md.
+Continue PR243 bab0e9ce; publish the receipt eligibility
 correction first. Test positive delayed arrivals at all three 5m positions in a
 15m interval, both directions, missing/future evidence and expiration. Then a
 separate future feature branch owns bounded acquisition/detector invocation,
