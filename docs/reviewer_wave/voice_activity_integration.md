@@ -60,6 +60,39 @@ passes **49 cases**. This is a test-fixture correction, with no application sour
 change. The final handoff records its revision and subsequent focused results; the
 earlier run is not green acceptance of the corrected revision.
 
+### Migration-head correction after 7fc21db
+
+The subsequent published head `7fc21db00a0527ee018f3fd1c478da64bcc713c0`
+only adds the autonomous operating contract. Its automatic development run
+[38053185017](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38053185017)
+reported **785 passes and 15 failures** in seven modules whose current-head
+expectations still named a9. This correction changes those expectations to
+`a10blofinactivity001` and explicitly checks a10's a9 parent and a9's a8 parent.
+Historical revision checks, receipt/plan/document preservation, refusal assertions,
+and upgrade/downgrade/re-upgrade paths remain. No historical migration or production
+source changes. The staging smoke instructions remain unchanged.
+
+The corrected test files, committed with this section, executed on a fresh disposable
+loopback **PostgreSQL 17.11** cluster: **32 passed in 120.72 seconds; zero failures,
+skips or deselections**. This includes the previously failing 15 cases. All seven
+changed files pass Ruff and `ruff format --check`. The PR description and operational
+handoff record the exact publication SHA; test-file hashes are checked against it.
+
+```sh
+cd backend
+.venv/bin/pytest -q -o addopts='' -ra \
+  tests/test_journal_trades_alembic_empty_tenant.py \
+  tests/test_knowledge_file_migration.py tests/test_knowledge_indexing_migration.py \
+  tests/test_manual_demo_migration.py tests/test_phase2_4_alembic_postgres.py \
+  tests/test_phase8_learning_persistence.py tests/test_release_wave002_migrations.py
+```
+
+`PHASE1_POSTGRES_URL`, `AT028_POSTGRES_URL`, `KNOWLEDGE_POSTGRES_URL` and
+`INDEXING_MIGRATION_POSTGRES_URL` all pointed to that isolated `alphatrade_test`
+database. Counts by module in the command's order: **2, 2, 1, 4, 6, 15, 2**.
+The cluster was stopped after verification. This is focused repair evidence;
+it does not establish complete backend or hosted release acceptance.
+
 Standard generated full-schema SHA256:
 `250caeb28a2088d71e05269837f98f8ce864bc2811e577d793acaf4dac68fe4e`.
 The scoped PR239 contract hash matches
@@ -95,9 +128,11 @@ integrated focused backend result to the exact candidate revision.
 PR239's reported **371 distinct focused passes** were reconciled as 107 correction
 cases plus 264 existing regressions, with repeated cases not counted again. Local
 collection independently reports **371 cases**. This verifies the ledger inventory,
-not independent PostgreSQL execution. No disposable PostgreSQL is available here;
-Docker socket access is denied. Its identity/snapshot/migration database cases have
-not been rerun locally. CI supplies `BLOFIN_ACTIVITY_TEST_POSTGRES_URL` to the existing
+not independent PostgreSQL execution. During that earlier integration, no disposable
+PostgreSQL was available and Docker socket access was denied. The subsequent scoped
+migration repair uses a new locally extracted PostgreSQL cluster; it does not rerun
+the full 371-case identity/snapshot/activity inventory. CI supplies
+`BLOFIN_ACTIVITY_TEST_POSTGRES_URL` to the existing
 PostgreSQL fixture so those cases execute rather than silently skipping.
 
 Chromium fixtures exercise the actual Dashboard/Journal routes and actual Agent page
@@ -135,7 +170,9 @@ Static Alembic inspection: one base, 78 reachable revisions, one current head
 `a10blofinactivity001`, with continuation
 `a8agentcapture001 -> a9knowledgeoutbox001 -> a10blofinactivity001`.
 Historical migrations are unchanged; a10 adds three activity tables and no backfill.
-A real PostgreSQL upgrade/downgrade/re-upgrade is owner-reported evidence only here.
+The earlier activity-specific database evidence remains owner-reported. The scoped
+migration-head repair separately executes the seven affected regression modules on
+disposable PostgreSQL, including historical upgrades, downgrades and re-upgrades.
 
 Before staging, review this exact combined head and the consumer/worker corrections.
 In the approved coordinated window, drain old synchronous ingestion writers before
@@ -195,8 +232,12 @@ Missing hosted access:
 - GitHub Actions write/cancel API access; git transport and connector read access alone
   do not allow explicit cancellation.
 
-**Ready for supervising integration review; not release-ready.** The implementation
-blockers are resolved. Complete supervising review and authenticated aligned staging smoke, qualify rollback,
+**Not release-ready.** The published `7fc21db00a0527ee018f3fd1c478da64bcc713c0`
+development run [38053185017](https://github.com/Fejjii/AlphaTrade-AI/actions/runs/38053185017)
+reported **785 passes and 15 failures** from stale a9 current-head expectations.
+The corrective candidate's affected migration regressions pass locally. Inspect its
+own automatic focused CI; earlier results do not accept it. Complete supervising review
+and authenticated aligned staging smoke, qualify rollback,
 and obtain fresh required SFP diagnostics/evaluations. Only then explicitly dispatch
 one full acceptance run under [.ai/RELEASE.md](../../.ai/RELEASE.md) with
 `full_backend=true`, recording the exact run SHA and all executed/skipped results.
