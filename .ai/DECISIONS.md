@@ -3138,3 +3138,14 @@ attribution tags cannot verify an account or create samples/performance/dispatch
 Existing execution admission still refuses TrendPulse. Nested/SFP meanings remain
 unchanged. No compiler/runtime/worker/migration/activation is introduced.
 See docs/trendpulse_1r_adapter_contract.md.
+
+## AT-ADR-101 — TrendPulse receipts are eligible at the post-close decision
+
+The prior provisional adapter required historical receipts at trigger opening,
+which excluded the immediately preceding closed bar for any positive latency.
+Corrected adapter v2 selects the same explicit prior-trend/trigger candle windows
+but requires every original receipt to be known at the actual post-close decision.
+Later receipts cannot alter an earlier evaluation; new decisions expire at 60s.
+Decision time is recorded/hashed; the natural UUID includes the adapter version.
+Authored parameter v1, all thresholds, structural stops and rounded gross 1R remain
+unchanged. Publish this correction separately before any screening persistence.

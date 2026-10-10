@@ -6,10 +6,45 @@ are recorded in its description. Target is the corrected domain feature branch,
 not the current release candidate. PR241 remains at its correction SHA.
 
 [Adapter rules and interfaces](trendpulse_1r_adapter_contract.md).
-[Pure JSON Schema](contracts/trendpulse_1r.v1.schema.json), file SHA256
+[Pure JSON Schema](contracts/trendpulse_1r.v1.schema.json); corrected hash below.
+Original bab0e9ce artifact SHA256 was
 `de33e74c8e0fde1520df6b72450fd74325c0ec050aecf8cdf14549ed13ccb887`.
 
-## Focused evidence
+## Receipt correction evidence (PR243 continuation)
+
+The original `bab0e9ce646a948789ff606b8e4c81e68e1a3988` evaluator was loaded
+unchanged from `git show` and evaluated against independent positive-latency
+fixtures: **6/6** (long/short × trigger closes at :05/:10/:15) failed with
+`missing_causal_history`. Corrected adapter v2 admits the same candle windows
+using receipts known at the post-close decision; no arrival timestamp is changed.
+
+**140 passed in 15.65s, zero skips/warnings**, command from `backend/`:
+
+```sh
+.venv/bin/pytest -o addopts='' -q tests/test_trendpulse_1r_adapter.py \
+  tests/test_trendpulse_1r_experiment_contract.py
+.venv/bin/ruff check src/app/strategy_brain/trendpulse_1r tests/test_trendpulse_1r_adapter.py
+.venv/bin/ruff format --check src/app/strategy_brain/trendpulse_1r tests/test_trendpulse_1r_adapter.py
+.venv/bin/mypy --follow-imports=silent src/app/strategy_brain/trendpulse_1r
+```
+
+All fixture receipts now have observed/receive delays of 2/3 seconds; recorded
+arrival is +4s and decision +5s. Coverage includes all three positions/both
+orientations, both late receipt clocks, late prior/trigger arrivals, as-of repeat
+immutability, fresh later evaluation, inclusive receipt cutoff, expiry at 60s,
+missing history, same-close/future candles, unchanged structural 1R geometry,
+retry natural-ID stability and decision-time derivation hash.
+
+Scoped Ruff/format and strict typing pass (five source files). Shared `npm run
+api:check` passes on this worktree with the unchanged full OpenAPI schema hash
+`6f7f9ece7248442b53f9e3ebd84277053db284d1e52cf97a18a25ac5c4dcf0e3`.
+Pure schema regenerated; current file SHA256
+`a9355e359c6289754fef3d4452239503c586aee5cc5cd45a7db3df826f82ca31`.
+The exact correction SHA and automatic focused CI evidence are in PR243. No
+migration, screening runtime, execution, threshold tuning or activation is part
+of this correction. Screening continuation starts separately after publication.
+
+## Original pure adapter evidence (bab0e9ce)
 
 - **261 passed in 194.79s, zero skips/warnings/failures** in the combined selection
   below. This includes **80 new adapter/contract/domain cases** and existing

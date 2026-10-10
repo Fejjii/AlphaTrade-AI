@@ -67,17 +67,17 @@ def evidence(prices, timeframe, end, *, short=False, identity=None):
             close=c,
             base_volume=Decimal(100),
             quote_volume=c * 100,
-            evaluated_at=start + delta * (i + 1),
+            evaluated_at=start + delta * (i + 1) + timedelta(seconds=2),
             grace=timedelta(0),
             adapter_version=identity.source.adapter_version,
         )
         obs = observation_from_ohlcv(
             bar,
             identity=identity,
-            observed_at=bar.interval_end,
-            receive_time=bar.interval_end,
+            observed_at=bar.interval_end + timedelta(seconds=2),
+            receive_time=bar.interval_end + timedelta(seconds=3),
             freshness_state=FreshnessState.FRESH,
-        ).model_copy(update={"recorded_at": bar.interval_end})
+        ).model_copy(update={"recorded_at": bar.interval_end + timedelta(seconds=4)})
         pairs.append((bar, obs))
     return tuple(b for b, _ in pairs), tuple(o for _, o in pairs)
 
@@ -106,7 +106,7 @@ def path(short=False, end=END, *, trend_step="0.1", swings=True, entry_prices=No
         "entry_observations": eo,
         "instrument_rules": rules(),
         "trigger_end": end,
-        "evaluated_at": end,
+        "evaluated_at": end + timedelta(seconds=5),
     }
 
 
@@ -159,25 +159,48 @@ def test_long_and_exact_inverse_short_have_structural_stop_and_one_gross_r(short
 
 
 @pytest.mark.parametrize("minute,trend_minute", [(5, 0), (10, 0), (15, 0), (20, 15)])
-def test_causal_alignment_uses_context_known_before_entry_open(minute, trend_minute):
+@pytest.mark.parametrize("short", [False, True])
+def test_delayed_arrivals_use_fixed_boundaries_and_post_close_decision(minute, trend_minute, short):
     end = END.replace(minute=minute)
-    result = scan(path(end=end))
+    inputs = path(short, end=end)
+    original_arrivals = tuple(
+        (o.observed_at, o.receive_time)
+        for o in inputs["trend_observations"] + inputs["entry_observations"]
+    )
+    result = scan(inputs, short=short)
     assert result.status is TrendPulseStatus.QUALIFIED
     assert result.signal.trend_end == end.replace(minute=trend_minute)
+    assert result.signal.decision_at == end + timedelta(seconds=5)
+    assert result.signal.known_at == end + timedelta(seconds=3)
+    assert result.signal.evidence[-2].available_at > end - timedelta(minutes=5)
+    assert all(ref.available_at <= result.signal.decision_at for ref in result.signal.evidence)
     assert all(
-        ref.available_at <= end - timedelta(minutes=5)
-        for ref in result.signal.evidence
-        if ref.timeframe is Timeframe.M15
+        o.receive_time > b.interval_end
+        for b, o in zip(
+            inputs["trend_bars"] + inputs["entry_bars"],
+            inputs["trend_observations"] + inputs["entry_observations"],
+            strict=True,
+        )
     )
+    assert original_arrivals == tuple(
+        (o.observed_at, o.receive_time)
+        for o in inputs["trend_observations"] + inputs["entry_observations"]
+    )
+    if minute in {5, 20}:
+        assert result.signal.evidence[249].available_at > end - timedelta(minutes=5)
 
 
-def test_same_close_and_future_candles_cannot_change_an_earlier_decision():
-    inputs = path(end=END.replace(minute=15))
-    original = scan(inputs)
+@pytest.mark.parametrize("minute", [5, 10, 15])
+@pytest.mark.parametrize("short", [False, True])
+def test_same_close_and_future_candles_cannot_change_an_earlier_decision(minute, short):
+    end = END.replace(minute=minute)
+    inputs = path(short, end=end)
+    original = scan(inputs, short=short)
     future = evidence([(500, 510, 490, 505)], Timeframe.M15, END.replace(minute=15))
-    future_entry = evidence([(500, 510, 490, 505)], Timeframe.M5, END.replace(minute=20))
+    future_entry = evidence([(500, 510, 490, 505)], Timeframe.M5, end + timedelta(minutes=5))
     result = scan(
         inputs,
+        short=short,
         trend_bars=inputs["trend_bars"] + future[0],
         trend_observations=inputs["trend_observations"] + future[1],
         entry_bars=inputs["entry_bars"] + future_entry[0],
@@ -186,26 +209,43 @@ def test_same_close_and_future_candles_cannot_change_an_earlier_decision():
     assert result == original
 
 
-@pytest.mark.parametrize("stream,index", [("trend", -1), ("entry", -2)])
+@pytest.mark.parametrize("minute", [5, 10, 15])
+@pytest.mark.parametrize("short", [False, True])
+@pytest.mark.parametrize("stream,index", [("trend", -1), ("entry", -2), ("entry", -1)])
 @pytest.mark.parametrize("clock", ["observed_at", "receive_time"])
-def test_late_history_receipts_cannot_retroactively_confirm(stream, index, clock):
-    inputs = path()
+def test_receipts_after_decision_cannot_retroactively_confirm(minute, short, stream, index, clock):
+    end = END.replace(minute=minute)
+    inputs = path(short, end=end)
     observations = list(inputs[stream + "_observations"])
-    observations[index] = observations[index].model_copy(
-        update={clock: END - timedelta(minutes=4, seconds=59)}
-    )
-    result = scan(inputs, **{stream + "_observations": tuple(observations)})
+    observations[index] = observations[index].model_copy(update={clock: end + timedelta(seconds=6)})
+    inputs = {**inputs, stream + "_observations": tuple(observations)}
+    result = scan(inputs, short=short)
     assert result.status is TrendPulseStatus.UNAVAILABLE
     assert result.signal is None and result.reason == "missing_causal_history"
+    later = scan(inputs, short=short, evaluated_at=end + timedelta(seconds=7))
+    assert later.status is TrendPulseStatus.QUALIFIED
+    assert later.signal.known_at == end + timedelta(seconds=6)
+    assert later.signal.decision_at == end + timedelta(seconds=7)
+    assert scan(inputs, short=short) == result
+    assert (
+        scan(inputs, short=short, evaluated_at=end + timedelta(seconds=60)).reason
+        == "trigger_expired"
+    )
 
 
 @pytest.mark.parametrize("stream,index", [("trend", 0), ("trend", -1), ("entry", 3), ("entry", -1)])
-def test_missing_history_is_unavailable_instead_of_using_older_context(stream, index):
-    inputs = path()
+@pytest.mark.parametrize("minute", [5, 10, 15])
+@pytest.mark.parametrize("short", [False, True])
+def test_missing_history_is_unavailable_instead_of_using_older_context(
+    stream, index, minute, short
+):
+    inputs = path(short, end=END.replace(minute=minute))
     bars, observations = list(inputs[stream + "_bars"]), list(inputs[stream + "_observations"])
     del bars[index], observations[index]
     result = scan(
-        inputs, **{stream + "_bars": tuple(bars), stream + "_observations": tuple(observations)}
+        inputs,
+        short=short,
+        **{stream + "_bars": tuple(bars), stream + "_observations": tuple(observations)},
     )
     assert result.status is TrendPulseStatus.UNAVAILABLE
     assert result.reason == "missing_causal_history"
@@ -226,22 +266,48 @@ def test_forming_or_incomplete_trigger_never_confirms(change):
     assert result.reason == "closed_complete_candles_required"
 
 
-def test_trigger_receipt_must_be_known_and_expiry_is_bounded():
-    inputs = path()
+@pytest.mark.parametrize("minute", [5, 10, 15])
+@pytest.mark.parametrize("short", [False, True])
+def test_trigger_receipt_must_be_known_and_expiry_is_bounded(minute, short):
+    end = END.replace(minute=minute)
+    inputs = path(short, end=end)
     observations = list(inputs["entry_observations"])
     observations[-1] = observations[-1].model_copy(
-        update={"receive_time": END + timedelta(seconds=2)}
+        update={"receive_time": end + timedelta(seconds=6)}
     )
     assert (
-        scan(inputs, entry_observations=tuple(observations)).status is TrendPulseStatus.UNAVAILABLE
+        scan(inputs, short=short, entry_observations=tuple(observations)).status
+        is TrendPulseStatus.UNAVAILABLE
     )
     result = scan(
-        inputs, entry_observations=tuple(observations), evaluated_at=END + timedelta(seconds=2)
+        inputs,
+        short=short,
+        entry_observations=tuple(observations),
+        evaluated_at=end + timedelta(seconds=6),
     )
     assert result.status is TrendPulseStatus.QUALIFIED
-    assert result.signal.known_at == END + timedelta(seconds=2)
-    assert scan(inputs, evaluated_at=END + timedelta(seconds=60)).reason == "trigger_expired"
-    assert scan(inputs, evaluated_at=END - timedelta(microseconds=1)).reason == "trigger_not_closed"
+    assert result.signal.known_at == end + timedelta(seconds=6)
+    assert (
+        scan(inputs, short=short, evaluated_at=end + timedelta(seconds=60)).reason
+        == "trigger_expired"
+    )
+    assert (
+        scan(inputs, short=short, evaluated_at=end + timedelta(seconds=59)).status
+        is TrendPulseStatus.QUALIFIED
+    )
+    assert (
+        scan(inputs, short=short, evaluated_at=end - timedelta(microseconds=1)).reason
+        == "trigger_not_closed"
+    )
+
+
+def test_decision_time_is_hashed_but_retry_keeps_the_same_natural_signal_id():
+    first = scan()
+    retry = scan(evaluated_at=END + timedelta(seconds=7))
+    assert first.signal.adapter_version == "trendpulse-1r-research/v2"
+    assert first.signal.signal_id == retry.signal.signal_id
+    assert first.signal.content_hash != retry.signal.content_hash
+    assert first.signal.evidence == retry.signal.evidence
 
 
 @pytest.mark.parametrize("stream", ["trend", "entry"])

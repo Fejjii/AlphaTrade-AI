@@ -17,6 +17,7 @@ from app.schemas.trade_plan import ContractType, InstrumentRules
 from app.strategy_brain.sfp.contracts import available_at, validate_binding
 from app.strategy_brain.trendpulse_1r.contracts import (
     DECIMAL_PRECISION,
+    TRENDPULSE_ADAPTER_VERSION,
     TRENDPULSE_NAMESPACE,
     TrendPulseEvidenceReference,
     TrendPulseResult,
@@ -55,7 +56,6 @@ def _window(
     end: datetime,
     knowledge_cutoff: datetime,
     count: int,
-    prior_cutoff: datetime | None = None,
 ) -> tuple[Pair, ...]:
     if len(bars) != len(observations):
         raise _RefusalError("missing_observation_binding", missing=True)
@@ -65,11 +65,10 @@ def _window(
     by_event: dict[str, datetime] = {}
     start = end - interval_timedelta(timeframe) * count
     for bar, obs in zip(bars, observations, strict=True):
-        cutoff = prior_cutoff if prior_cutoff and bar.interval_end < end else knowledge_cutoff
         if (
             not start <= bar.interval_start < end
             or bar.interval_end > end
-            or available_at(obs) > cutoff
+            or available_at(obs) > knowledge_cutoff
         ):
             continue  # Future receipts/candles and unused history cannot influence a decision.
         if bar.timeframe is not timeframe:
@@ -274,7 +273,6 @@ def evaluate_trendpulse(
                 entry_observations,
                 instrument_rules,
                 trigger_end,
-                trigger_start,
                 trend_end,
                 evaluated_at,
                 expires_at,
@@ -295,7 +293,6 @@ def _evaluate(
     entry_observations: tuple[PublicMarketObservation, ...],
     rules: InstrumentRules,
     trigger_end: datetime,
-    trigger_start: datetime,
     trend_end: datetime,
     evaluated_at: datetime,
     expires_at: datetime,
@@ -307,7 +304,7 @@ def _evaluate(
         trend_observations,
         timeframe=Timeframe.M15,
         end=trend_end,
-        knowledge_cutoff=trigger_start,
+        knowledge_cutoff=evaluated_at,
         count=p.trend_history_bars,
     )
     entry = _window(
@@ -317,7 +314,6 @@ def _evaluate(
         end=trigger_end,
         knowledge_cutoff=evaluated_at,
         count=p.entry_history_bars,
-        prior_cutoff=trigger_start,
     )
     identity = trend[0][1].identity
     if identity.model_copy(update={"timeframe": Timeframe.M5}) != entry[0][1].identity:
@@ -382,6 +378,7 @@ def _evaluate(
         TRENDPULSE_NAMESPACE,
         exact_hash(
             {
+                "adapter_version": TRENDPULSE_ADAPTER_VERSION,
                 "spec_hash": spec_hash,
                 "instrument": identity.instrument.model_dump(),
                 "trigger_event_id": trigger.source_event_id,
@@ -414,6 +411,7 @@ def _evaluate(
         trigger_event_id=trigger.source_event_id,
         trigger_end=trigger_end,
         known_at=max(ref.available_at for ref in refs),
+        decision_at=evaluated_at,
         expires_at=expires_at,
         trend_end=trend_end,
         trend_ema20=fast[-1],

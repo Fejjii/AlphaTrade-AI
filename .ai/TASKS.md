@@ -2535,3 +2535,14 @@ stop and rounded gross 1R; pure experiment-config/v1 research attribution. Prese
 Nested/SFP. Focused synthetic/disposable PostgreSQL tests and schema/lint/typing.
 No replacement engine, execution/performance runtime, migration, operator setting
 changes, full backend CI or activation. Contract: docs/trendpulse_1r_adapter_contract.md.
+
+## AT-121 — Receipt correction then bounded TrendPulse research screening
+
+Status: IN_PROGRESS. Continue PR243 bab0e9ce; publish the receipt eligibility
+correction first. Test positive delayed arrivals at all three 5m positions in a
+15m interval, both directions, missing/future evidence and expiration. Then a
+separate future feature branch owns bounded acquisition/detector invocation,
+durable restart-safe dedupe/rejections and an authenticated application read
+consumer. Coordinate one additive migration with integration. Report honest
+representative replay coverage/counts without threshold tuning. No trade activation,
+orders, deployment, operator/credential changes or full CI.

@@ -1231,14 +1231,19 @@
       "description": "Closed-candle research geometry, never a Candidate or executable TradePlan.",
       "properties": {
         "adapter_version": {
-          "const": "trendpulse-1r-research/v1",
-          "default": "trendpulse-1r-research/v1",
+          "const": "trendpulse-1r-research/v2",
+          "default": "trendpulse-1r-research/v2",
           "title": "Adapter Version",
           "type": "string"
         },
         "content_hash": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Content Hash",
+          "type": "string"
+        },
+        "decision_at": {
+          "format": "date-time",
+          "title": "Decision At",
           "type": "string"
         },
         "direction": {
@@ -1473,6 +1478,7 @@
         "trigger_event_id",
         "trigger_end",
         "known_at",
+        "decision_at",
         "expires_at",
         "trend_end",
         "trend_ema20",

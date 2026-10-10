@@ -6,7 +6,8 @@ No migration, worker, settings, order dispatch, model caller or performance runt
 is added. Nested/SFP detectors, targets, compilers and execution meaning are preserved.
 
 Authoritative code: `app.strategy_brain.trendpulse_1r`. Authored family
-`trendpulse_1r/v1`, parameter/adapter version `trendpulse-1r-research/v1`, paper-only
+`trendpulse_1r/v1`, parameter version `trendpulse-1r-research/v1`, corrected adapter
+version `trendpulse-1r-research/v2`, paper-only
 and provisional. Rules are fixed; overriding a v1 threshold is rejected. A reviewed
 new rule version and immutable strategy version are required to change them.
 [Published JSON Schema](contracts/trendpulse_1r.v1.schema.json) describes the pure
@@ -25,8 +26,8 @@ this is not an implicit scan for the latest candle.
 - Trend: exactly the latest 250 contiguous FINAL, provider-complete UTC-aligned 15m
   candles ending at the last 15m boundary at/before the entry candle's **opening**.
 - Entry: exactly 60 contiguous FINAL, provider-complete aligned 5m candles including
-  the separate trigger candle. The previous 59 must have been available at/before
-  trigger opening. Trigger availability must be at/before the supplied evaluation.
+  the separate trigger candle. All 310 selected bars must have been available
+  at/before the actual supplied **post-close decision time**, `evaluated_at`.
 - Availability is `max(observed_at, receive_time)`. Every candle binds its existing
   canonical payload/envelope hash, identity, source, revision and observation UUID.
   Latest expected context missing/late, any hole, forming row or missing envelope
@@ -40,11 +41,28 @@ this is not an implicit scan for the latest candle.
   and explicitly identified replay fixtures. Replay is never claimed to be live.
 - Identical duplicate rows converge in any input order, choosing earliest available
   receipt. Conflicting same-interval/event revisions refuse implicit replay. A
-  qualified signal has a stable natural UUID bound to spec, instrument and trigger
+  qualified signal has a stable natural UUID bound to adapter version, spec, instrument and trigger
   event, plus a full derivation hash. Caller-supplied previously seen UUIDs produce
   duplicate with no new signal. Cross-process durable dedupe remains a runtime task.
 - Evaluation before trigger close is unavailable; at/after close + 60 seconds is
-  expired. Delayed historical receipts cannot retrospectively establish a setup.
+  expired. The output records `decision_at` and the maximum original receipt time
+  `known_at` separately. A later decision inside that 60-second envelope can use
+  newly arrived history; those receipts cannot change an earlier as-of evaluation.
+
+### Receipt timing correction (adapter v2)
+
+The provisional v1 adapter required prior receipts by trigger opening. That made
+the immediately preceding 5m bar unusable with any positive delivery delay; a 15m
+close at the same opening boundary failed too. V2 changes receipt eligibility to
+the decision after trigger close. Candle selection stays explicit: prior trend
+ends at/before trigger opening, entry ends at trigger close. This conservative
+prior-trend convention does not include a 15m close simultaneous with trigger close.
+Neither candle values nor observed/received/recorded arrival times are rewritten.
+Future receipts are excluded even if their candle is historical; future candle
+intervals remain excluded even if an envelope claims an early arrival. The stable
+signal UUID includes the corrected adapter version; decision time is in the full
+derivation hash, rather than the natural ID, so repeated evaluations deduplicate.
+Thresholds, authored parameter v1, structural stops and rounded gross 1R are unchanged.
 
 ## Fixed conservative v1 definitions
 

@@ -17,6 +17,7 @@ from app.schemas.trade_plan import InstrumentRules
 from app.services.canonical_serialization import canonical_sha256
 
 TRENDPULSE_KIND = "trendpulse_1r/v1"
+TRENDPULSE_ADAPTER_VERSION: Literal["trendpulse-1r-research/v2"] = "trendpulse-1r-research/v2"
 TRENDPULSE_NAMESPACE = UUID("edec0001-0000-4000-8000-000000000001")
 DECIMAL_PRECISION = 80
 
@@ -92,7 +93,7 @@ class TrendPulseEvidenceReference(CanonicalModel):
 class TrendPulseSignal(CanonicalModel):
     """Closed-candle research geometry, never a Candidate or executable TradePlan."""
 
-    adapter_version: Literal["trendpulse-1r-research/v1"] = "trendpulse-1r-research/v1"
+    adapter_version: Literal["trendpulse-1r-research/v2"] = TRENDPULSE_ADAPTER_VERSION
     signal_id: UUID
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     spec_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -102,6 +103,7 @@ class TrendPulseSignal(CanonicalModel):
     trigger_event_id: str
     trigger_end: AwareDatetime
     known_at: AwareDatetime
+    decision_at: AwareDatetime
     expires_at: AwareDatetime
     trend_end: AwareDatetime
     trend_ema20: PositiveCanonicalDecimal
