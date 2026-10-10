@@ -1,8 +1,12 @@
 """Existing worker wiring, isolation and cooperative shutdown without exchange IO."""
 
-from threading import Event
+from threading import Event, current_thread
+from threading import enumerate as enumerate_threads
 from uuid import uuid4
 
+import pytest
+
+from app.observability.process_memory import ProcessMemory
 from app.services.blofin_activity_config import BloFinActivitySettings
 from app.services.blofin_activity_service import ActivitySyncResult
 from app.workers.blofin_activity import BloFinActivityCycle
@@ -71,38 +75,77 @@ def test_explicit_configuration_wires_bounded_tick_and_safe_shutdown(monkeypatch
     assert len(calls) == 1
 
 
-def test_blocked_activity_does_not_delay_watcher_and_starts_only_one_thread():
-    entered, stopping, watcher_progress = Event(), Event(), Event()
-    scans = []
+@pytest.mark.parametrize("blocked_phase", ["cycle", "cleanup"])
+def test_blocked_activity_does_not_delay_watcher_and_starts_only_one_thread(
+    blocked_phase, monkeypatch
+):
+    blocked, release, activity_finished, watcher_progress = Event(), Event(), Event(), Event()
+    activity_calls, watcher_cleanups = [], []
 
     def watch():
-        scans.append(1)
-        if entered.is_set() and len(scans) > 2:
-            watcher_progress.set()
-        return CycleOutcome("running")
+        # Both observed watcher outcomes must occur while activity is blocked.
+        assert blocked.wait(5), "activity did not reach the blocking point"
+        return CycleOutcome("running", record_scan=True)
 
     def activity():
-        entered.set()
-        assert stopping.wait(2)
+        activity_calls.append(current_thread())
+        if blocked_phase == "cycle":
+            blocked.set()
+            assert release.wait(5), "blocked activity was not stopped"
         return CycleOutcome("interrupted")
 
+    def cleanup():
+        # Isolate thread coordination from full-process GC/allocator cost.
+        # Real cleanup on successful/failed cycles is exercised by the worker
+        # memory diagnostics tests. Also cover blocking in _step's finally.
+        name = current_thread().name
+        if name == "paper-worker-activity":
+            if blocked_phase == "cleanup":
+                blocked.set()
+                assert release.wait(5), "blocked activity cleanup was not stopped"
+            activity_finished.set()
+        elif name == "paper-worker-watcher":
+            watcher_cleanups.append(1)
+            if len(watcher_cleanups) == 2:
+                watcher_progress.set()
+        return ProcessMemory(rss_bytes=0, peak_rss_bytes=0)
+
+    monkeypatch.setattr("app.workers.paper_worker.release_allocator_memory", cleanup)
     worker = PaperWorkerSupervisor(
         watcher_cycle=watch, telegram_cycle=lambda: CycleOutcome("disarmed"), poll_seconds=0.01
     )
-    worker.attach_activity(activity, poll_seconds=60, request_stop=stopping.set)
+    worker.attach_activity(activity, poll_seconds=60, request_stop=release.set)
     try:
         worker.start()
+        assert blocked.wait(1), "activity did not block"
         first_thread = worker._activity.thread
         worker.start()
         assert worker._activity.thread is first_thread
-        assert entered.wait(1) and watcher_progress.wait(1)
+        assert watcher_progress.wait(1), (
+            "watcher did not complete two cycles while activity blocked"
+        )
+        health = worker.snapshot()
+        assert health.watcher.cycles_completed >= 2 and health.watcher.last_scan_at is not None
+        assert health.watcher.restart_count == 0
+        assert health.activity.cycles_completed == (0 if blocked_phase == "cycle" else 1)
+        assert not release.is_set() and not activity_finished.is_set()
+        assert first_thread.is_alive()
+        assert activity_calls == [first_thread]
+        assert [t for t in enumerate_threads() if t.name == "paper-worker-activity"] == [
+            first_thread
+        ]
     finally:
         worker.request_stop()
         worker.join()
         worker.close()
     health = worker.snapshot()
     assert health.activity.status == "stopped" and health.activity.cycles_completed == 1
-    assert not first_thread.is_alive()
+    assert health.activity.restart_count == 0 and health.activity.last_error == ""
+    assert activity_finished.is_set()
+    assert all(
+        component.thread is not None and not component.thread.is_alive()
+        for component in worker._components()
+    )
 
 
 def test_activity_exception_stays_local_and_stopped_cycle_opens_no_dependencies(monkeypatch):
