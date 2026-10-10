@@ -16,7 +16,7 @@ import * as browserVoice from "@/lib/voice/browser-voice-provider";
 import type { VoiceProvider } from "@/lib/voice/types";
 import { agentTurnFixture } from "@/test/pilot-fixtures";
 import { agentTurn } from "@/lib/api/generated/client";
-import { pendingFor } from "./turn-recovery";
+import { clearPendingTurns, pendingFor, terminalFor } from "./turn-recovery";
 
 const recoveryScope = "00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000002";
 
@@ -32,6 +32,7 @@ const apiMocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
   listMessages: vi.fn(),
   getConversation: vi.fn(),
+  createConversation: vi.fn(),
   agentTurn: vi.fn(),
   confirmProposal: vi.fn(),
   rejectProposal: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("@/lib/api", () => ({
       list: apiMocks.listConversations,
       listMessages: apiMocks.listMessages,
       get: apiMocks.getConversation,
+      create: apiMocks.createConversation,
     },
     chat: { message: vi.fn() },
     agent: {
@@ -75,7 +77,9 @@ vi.mock("@/contexts/AppContext", () => ({
 
 describe("Agent workspace", () => {
   beforeEach(() => {
+    clearPendingTurns();
     sessionStorage.clear();
+    apiMocks.createConversation.mockResolvedValue({ id: "11111111-1111-4111-8111-111111111111" });
     apiMocks.getConversation.mockResolvedValue({ strategy_id: null });
     testParams = new URLSearchParams();
     apiMocks.listConversations.mockResolvedValue({
@@ -168,6 +172,210 @@ describe("Agent workspace", () => {
     );
     return provider;
   }
+
+  function interactiveVoice() {
+    let input!: Parameters<VoiceProvider["listen"]>[0];
+    let output!: Parameters<VoiceProvider["speak"]>[1];
+    const cancelInput = vi.fn();
+    const cancelOutput = vi.fn();
+    const provider: VoiceProvider = {
+      capabilities: { input: true, output: true },
+      listen: vi.fn(events => { input = events; events.onState("listening"); return { stop: () => events.onState("transcribing"), cancel: cancelInput }; }),
+      speak: vi.fn((_text, events) => { output = events; events.onStart(); return { stop: cancelOutput, cancel: cancelOutput }; }),
+      dispose: vi.fn(),
+    };
+    vi.spyOn(browserVoice, "createBrowserVoiceProvider").mockReturnValue(provider);
+    return { provider, input: () => input, output: () => output, cancelInput, cancelOutput };
+  }
+
+  async function beginConversationVoice() {
+    fireEvent.click(screen.getByRole("checkbox", { name: "Conversation mode" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Start conversation" })));
+  }
+
+  it("runs two successive spoken turns from a new conversation through the shared pipeline", async () => {
+    const speech = interactiveVoice();
+    apiMocks.listMessages.mockResolvedValue({ items: [] });
+    apiMocks.agentTurn.mockResolvedValueOnce({ ...agentTurnFixture, reply: "First spoken reply" })
+      .mockResolvedValueOnce({ ...agentTurnFixture, user_message_id: "55555555-5555-4555-8555-555555555555", assistant_message_id: "66666666-6666-4666-8666-666666666666", reply: "Second spoken reply" });
+    render(<AgentWorkspace />);
+    expect(speech.provider.listen).not.toHaveBeenCalled();
+    await beginConversationVoice();
+    expect(apiMocks.createConversation).toHaveBeenCalledExactlyOnceWith({});
+    const first = speech.input();
+    act(() => { first.onTranscript("Partial"); first.onTranscript("Partial"); });
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    await act(async () => { first.onComplete("First spoken turn"); first.onComplete("First spoken turn"); });
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+    expect(speech.provider.speak).toHaveBeenCalledWith("First spoken reply", expect.any(Object));
+    expect(speech.provider.listen).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("First spoken reply")).toBeVisible();
+    act(() => speech.output().onEnd());
+    expect(speech.provider.listen).toHaveBeenCalledTimes(2);
+    await act(async () => speech.input().onComplete("Second spoken turn"));
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(2);
+    expect(speech.provider.speak).toHaveBeenCalledWith("Second spoken reply", expect.any(Object));
+    expect(screen.getByText("Second spoken reply")).toBeVisible();
+    const keys = apiMocks.agentTurn.mock.calls.map(call => call[1].headers["Idempotency-Key"]);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(terminalFor(recoveryScope, keys[0])).toMatchObject({ outcome: "acknowledged", origin: "voice" });
+    expect(apiMocks.agentTurn.mock.calls[0][0]).toEqual(expect.objectContaining({ message: "First spoken turn", conversation_id: agentTurnFixture.conversation_id }));
+    expect(apiMocks.agentTurn.mock.calls[0][0]).not.toHaveProperty("origin");
+    expect(apiMocks.confirmProposal).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("region", { name: "Voice conversation" })).toHaveLength(1);
+    expect(screen.queryByRole("region", { name: "Voice controls" })).toBeNull();
+  });
+
+  it("clears and replaces reviewed speech, preserving typed drafts and local voice provenance", async () => {
+    const speech = interactiveVoice();
+    let finish!: (result: unknown) => void;
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<AgentWorkspace />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Keep typed draft" } });
+    await beginConversationVoice();
+    act(() => speech.input().onComplete("Original speech"));
+    const editor = screen.getByLabelText("Voice transcript");
+    fireEvent.change(editor, { target: { value: "" } });
+    expect(screen.getByLabelText("Voice transcript")).toBe(editor);
+    expect(screen.getByRole("button", { name: "Send transcript" })).toBeDisabled();
+    fireEvent.change(editor, { target: { value: "Replacement speech" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send transcript" }));
+    const saved = pendingFor(recoveryScope, agentTurnFixture.conversation_id)!;
+    expect(saved.origin).toBe("voice");
+    expect(saved.voice).toMatchObject({ turnKey: saved.key, transcript: "Replacement speech", conversationId: agentTurnFixture.conversation_id });
+    expect(apiMocks.agentTurn.mock.calls[0][1].headers["Idempotency-Key"]).toBe(saved.key);
+    expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled();
+    await act(async () => finish(agentTurnFixture));
+    expect(screen.getByLabelText("Message")).toHaveValue("Keep typed draft");
+    expect(pendingFor(recoveryScope, agentTurnFixture.conversation_id)).toBeNull();
+  });
+
+  it("rejects an invalid spoken body locally without saving an ambiguous request", async () => {
+    const speech = interactiveVoice(); render(<AgentWorkspace />); await beginConversationVoice();
+    const transcript = "x".repeat(8001);
+    await act(async () => speech.input().onComplete(transcript));
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    expect(pendingFor(recoveryScope, agentTurnFixture.conversation_id)).toBeNull();
+    expect(screen.getByLabelText("Voice transcript")).toHaveValue(transcript);
+    expect(screen.getByRole("button", { name: "Send transcript" })).toBeEnabled();
+  });
+
+  it("shows an acknowledged reply with pending capture but retains the original voice request for recovery", async () => {
+    const speech = interactiveVoice();
+    apiMocks.agentTurn.mockResolvedValueOnce({ ...agentTurnFixture, capture_status: "unavailable", capture_error: "Capture pending; recover original turn" });
+    render(<AgentWorkspace />); await beginConversationVoice();
+    await act(async () => speech.input().onComplete("Capture this spoken note"));
+    expect(screen.getByText(agentTurnFixture.reply)).toBeVisible();
+    const saved = pendingFor(recoveryScope, agentTurnFixture.conversation_id)!;
+    expect(saved.state).toBe("turn_capture");
+    expect(terminalFor(recoveryScope, saved.key)).toBeNull();
+    expect(speech.provider.speak).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Recover original request" })));
+    expect(apiMocks.agentTurn.mock.calls[1][0]).toEqual(saved.body);
+    expect(apiMocks.agentTurn.mock.calls[1][1].headers["Idempotency-Key"]).toBe(saved.key);
+    expect(pendingFor(recoveryScope, agentTurnFixture.conversation_id)).toBeNull();
+    expect(speech.provider.listen).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: /Resume voice|Start conversation/ })).toBeEnabled();
+  });
+
+  it("recovers an uncertain voice request exactly once after navigation and remount with original attachment/body/key", async () => {
+    const speech = interactiveVoice();
+    testParams = new URLSearchParams(`conversation=${agentTurnFixture.conversation_id}`);
+    apiMocks.listMessages.mockResolvedValue({ items: [] });
+    apiMocks.previewFile.mockResolvedValue({ title: "rules", extracted_text: "Rules", warnings: [], preview_receipt: "receipt" });
+    apiMocks.importFile.mockResolvedValue({ document_id: "44444444-4444-4444-8444-444444444444" });
+    apiMocks.agentTurn.mockRejectedValueOnce(new Error("Response uncertain"));
+    const first = render(<AgentWorkspace />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Record" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Attach document" }));
+    fireEvent.change(screen.getByLabelText("Attach document"), { target: { files: [new File(["Rules"], "rules.txt")] } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview attachment" }));
+    await screen.findByLabelText("Attachment preview");
+    await beginConversationVoice();
+    await act(async () => speech.input().onComplete("Review rules"));
+    const original = apiMocks.agentTurn.mock.calls[0];
+    expect(original[0].source_document_id).toBe("44444444-4444-4444-8444-444444444444");
+    testParams = new URLSearchParams("conversation=77777777-7777-4777-8777-777777777777");
+    first.rerender(<AgentWorkspace />);
+    await waitFor(() => expect(screen.queryByTestId("agent-turn-recovery")).toBeNull());
+    first.unmount();
+    testParams = new URLSearchParams(`conversation=${agentTurnFixture.conversation_id}`);
+    render(<AgentWorkspace />);
+    await screen.findByRole("button", { name: "Recover original request" });
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Separate typed draft" } });
+    const recover = screen.getByRole("button", { name: "Recover original request" });
+    await act(async () => { fireEvent.click(recover); fireEvent.click(recover); });
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(2);
+    expect(apiMocks.agentTurn.mock.calls[1][0]).toEqual(original[0]);
+    expect(apiMocks.agentTurn.mock.calls[1][1].headers).toEqual(original[1].headers);
+    expect(apiMocks.importFile).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Message")).toHaveValue("Separate typed draft");
+    expect(screen.queryByTestId("agent-turn-recovery")).toBeNull();
+  });
+
+  it("a proven late acknowledgment for A clears the matching voice fence when returning from B", async () => {
+    const speech = interactiveVoice();
+    const id = agentTurnFixture.conversation_id;
+    testParams = new URLSearchParams(`conversation=${id}`);
+    apiMocks.listMessages.mockResolvedValue({ items: [] });
+    let finish!: (result: unknown) => void;
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const view = render(<AgentWorkspace />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Record" })).toBeEnabled());
+    await beginConversationVoice(); act(() => speech.input().onComplete("A spoken turn"));
+    const saved = pendingFor(recoveryScope, id)!;
+    testParams = new URLSearchParams("conversation=77777777-7777-4777-8777-777777777777");
+    view.rerender(<AgentWorkspace />);
+    await act(async () => finish({ ...agentTurnFixture, reply: "Acknowledged A" }));
+    expect(screen.queryByText("Acknowledged A")).toBeNull();
+    expect(terminalFor(recoveryScope, saved.key)).toMatchObject({ conversationId: id, outcome: "acknowledged" });
+    testParams = new URLSearchParams(`conversation=${id}`); view.rerender(<AgentWorkspace />);
+    await screen.findByText("Acknowledged A");
+    expect(screen.queryByRole("button", { name: "Recover original request" })).toBeNull();
+    const resume = screen.getByRole("button", { name: /Start conversation|Resume voice/ });
+    expect(resume).toBeEnabled(); fireEvent.click(resume);
+    expect(speech.provider.listen).toHaveBeenCalledTimes(2);
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the six-minute Agent budget and keeps exact ambiguous recovery when storage disappears", async () => {
+    const speech = interactiveVoice();
+    apiMocks.agentTurn.mockImplementationOnce(() => new Promise(() => {}));
+    render(<AgentWorkspace />); await beginConversationVoice();
+    vi.useFakeTimers(); act(() => speech.input().onComplete("Budgeted turn"));
+    const original = apiMocks.agentTurn.mock.calls[0];
+    await act(async () => vi.advanceTimersByTimeAsync(45_000));
+    expect(original[1].signal.aborted).toBe(false);
+    expect(screen.getByRole("region", { name: "Voice conversation" })).toHaveAttribute("data-state", "waiting");
+    sessionStorage.clear();
+    await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS - 45_000));
+    expect(original[1].signal.aborted).toBe(true);
+    expect(pendingFor(recoveryScope, agentTurnFixture.conversation_id)?.body).toEqual(original[0]);
+    expect(screen.getByRole("button", { name: "Recover original request" })).toBeEnabled();
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("typed submission shares admission and stops recognition without submitting a late voice callback", async () => {
+    const speech = interactiveVoice(); render(<AgentWorkspace />); await beginConversationVoice();
+    const late = speech.input();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Typed turn" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Send" })));
+    act(() => late.onComplete("Late voice"));
+    expect(speech.cancelInput).toHaveBeenCalled();
+    expect(apiMocks.agentTurn).toHaveBeenCalledTimes(1);
+    expect(apiMocks.agentTurn.mock.calls[0][0].message).toBe("Typed turn");
+  });
+
+  it("logout stops the only microphone and clears user-scoped pending provenance", async () => {
+    const speech = interactiveVoice(); render(<AgentWorkspace />); await beginConversationVoice();
+    const late = speech.input();
+    const { sessionCleared } = await import("@/lib/auth/session-events");
+    act(() => sessionCleared()); act(() => late.onComplete("Private speech"));
+    expect(speech.cancelInput).toHaveBeenCalled();
+    expect(speech.provider.dispose).toHaveBeenCalled();
+    expect(apiMocks.agentTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Record" })).toBeDisabled();
+  });
 
   it("collapses evidence in existing assistant transcripts and preserves user text", async () => {
     const marker = "\n\nRecorded facts (not a confirmation):\n";
@@ -325,11 +533,11 @@ describe("Agent workspace", () => {
       fireEvent.click(screen.getByRole("button", { name: "History" }));
       fireEvent.click(await screen.findByRole("button", { name: "BTC plan" }));
       await screen.findAllByTestId("agent-message");
-      fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
       fireEvent.change(screen.getByLabelText("Voice transcript"), {
         target: { value: text + " carefully" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+      fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
       expect(apiMocks.agentTurn).not.toHaveBeenCalled();
       expect(screen.getByLabelText("Message")).toHaveValue(text + " carefully");
       fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -352,8 +560,8 @@ describe("Agent workspace", () => {
     apiMocks.agentTurn.mockRejectedValueOnce(new Error("Turn unavailable"));
     apiMocks.listMessages.mockRejectedValue(new Error("History unavailable"));
     render(<AgentWorkspace />);
-    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
+    fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Turn unavailable",
@@ -505,10 +713,10 @@ describe("Agent workspace", () => {
     apiMocks.killSwitchActive = true;
     render(<AgentWorkspace />);
     expect(
-      screen.getByRole("button", { name: "Start recording" }),
+      screen.getByRole("button", { name: "Record" }),
     ).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
+    fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(apiMocks.agentTurn).toHaveBeenCalledOnce());
     expect(provider.listen).toHaveBeenCalledOnce();
@@ -528,8 +736,8 @@ describe("Agent workspace", () => {
     render(<AgentWorkspace />);
     await waitFor(() => expect(apiMocks.listConversations).toHaveBeenCalled());
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
+    fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -553,8 +761,8 @@ describe("Agent workspace", () => {
     render(<AgentWorkspace />);
     await waitFor(() => expect(apiMocks.listConversations).toHaveBeenCalled());
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
-    fireEvent.click(screen.getByRole("button", { name: "Use transcript" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Record" })));
+    fireEvent.click(screen.getByRole("button", { name: "Append to draft" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => vi.advanceTimersByTimeAsync(AGENT_TURN_TIMEOUT_MS));
     expect(screen.getByLabelText("Message")).toHaveValue("");
