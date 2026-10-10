@@ -9,7 +9,8 @@ revisions, preserved by merge commits:
 
 - PR238: `af672dffb4a20fa0a8783cf7b0870cc59f6e3fff`, reviewed with
   [its handoff](../voice_conversation_foundation.md).
-- PR239: `18e66dacfc0eb81f897c3f5a6eefbe0f4d29923f`, reviewed with
+- PR239: `769e78a46fbce888810060f8d09cbe4d93f81c31` (includes the preceding
+  `18e66dacfc0eb81f897c3f5a6eefbe0f4d29923f` account/snapshot/worker correction), reviewed with
   [its contract/rollout](../blofin_native_activity.md) and
   [revision verification ledger](../blofin_native_activity_verification.md).
 
@@ -40,8 +41,10 @@ review; conversation mode is opt-in. This integration does not activate a provid
 
 ## Focused evidence and limitations
 
-The 15-file frontend selection has **217 passing cases, no skips** (162 voice/shared
-Agent cases plus 55 client/presentation/account cases). Repository TypeScript checking,
+The frontend selection at `94833dab4037109b3cdf28428c74f0cd672799c6` has
+**232 passing cases in 16 files, no skips** (162 voice/shared Agent cases plus
+70 client/presentation/account/DailyReview cases). Its full frontend tree is unchanged
+by the subsequent worker test/documentation correction. Repository TypeScript checking,
 changed-file ESLint, standard API generation/drift checks and diff checks passed.
 Application and test content is committed before publication; the final handoff records
 its exact tested revision. No full frontend/backend suite or production build was run.
@@ -71,14 +74,23 @@ cd backend
   tests/test_blofin_activity_provider.py tests/test_blofin_activity_worker.py
 ```
 
-**70 passed, one failed**. CI policy has 28 cases and provider has 37; worker has five
-passes and one unresolved failure. The failed worker isolation assertion also fails in
-an isolated six-case run (**five passed, one failed**). It waits one second for watcher
-progress; an instrumented diagnostic measured 2.045 seconds in the watcher's existing
-allocator collection. No test is skipped, assertion weakened, or worker edited here.
-This remains a BloFin-owner qualification blocker, even though its earlier owner
-ledger reports success. Integrate any corrected owner revision only after focused
-verification; do not treat old green evidence as acceptance of that change.
+Historical `18e66dac` result: **70 passed, one failed**. An isolated six-case worker
+run also failed its watcher-progress assertion. The diagnostic measured 2.045 seconds
+inside the watcher allocator collection against a one-second wait; that earlier
+reported owner success did not accept the observed integration failure.
+
+The BloFin owner supplied `769e78a46fbce888810060f8d09cbe4d93f81c31` and
+[its correction handoff](../blofin_activity_worker_integration_handoff.md).
+Its test controls allocator cost while preserving one-second progress waits, checking
+two completed watcher cycles and one activity thread while both cycle/cleanup can
+remain blocked. Separate tests exercise real memory cleanup. No production worker
+source, poll interval or retry/shutdown behavior changes. Before integration, the
+31-case owner selection independently passed here, with two unrelated PostgreSQL lease
+cases explicitly deselected and no skips. An independent shared-lock negative control
+failed both variants at watcher_progress.wait(1), as expected; the correction does
+not accept serialized worker behavior. This resolves the timing-test blocker without
+skipping it or weakening its coordination assertions. The final handoff binds the
+integrated focused backend result to the exact candidate revision.
 
 PR239's reported **371 distinct focused passes** were reconciled as 107 correction
 cases plus 264 existing regressions, with repeated cases not counted again. Local
@@ -161,7 +173,7 @@ permission to omit the new a10 head.
 | --- | --- | --- | --- | --- |
 | CI cost controls | Yes | Yes | Policy/event tests | Published workflow only; no manual run |
 | Browser voice | Owner complete | Corrected af672dff | Focused components and simulated Chromium | No new deployment; native microphone unverified |
-| Native backend activity | Owner complete | Corrected 18e66dac | Provider/static contract; worker blocker; PostgreSQL inventory only | No new deployment or activity opt-in |
+| Native backend activity | Owner complete | Corrected 18e66dac | Provider/worker/static contract; PostgreSQL inventory only | No new deployment or activity opt-in |
 | Dashboard/Journal native views | Yes | Yes | Focused component/account/browser fixtures | No |
 | Generated client | Yes | Yes | Generation, drift, strict validation/type checks | No |
 | Release acceptance | Preparation only | Candidate assembled | Staging/full acceptance unexecuted | No |
@@ -183,8 +195,8 @@ Missing hosted access:
 - GitHub Actions write/cancel API access; git transport and connector read access alone
   do not allow explicit cancellation.
 
-**Not release-ready.** Resolve the worker blocker, review any corrected feature SHA,
-complete supervising review and authenticated aligned staging smoke, qualify rollback,
+**Ready for supervising integration review; not release-ready.** The implementation
+blockers are resolved. Complete supervising review and authenticated aligned staging smoke, qualify rollback,
 and obtain fresh required SFP diagnostics/evaluations. Only then explicitly dispatch
 one full acceptance run under [.ai/RELEASE.md](../../.ai/RELEASE.md) with
 `full_backend=true`, recording the exact run SHA and all executed/skipped results.
