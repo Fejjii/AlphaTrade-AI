@@ -1,8 +1,11 @@
 {
-  "openapi_sha256": "4a16b9f08311ba7b39eb02da19ddcc193932b366066c167960e691099db2ed4f",
-  "pilot_sha256": "2acd8a8b5b213dba799c08c7867857622ffc76e93aabd4b348ea92c787e7194f",
+  "openapi_sha256": "250caeb28a2088d71e05269837f98f8ce864bc2811e577d793acaf4dac68fe4e",
+  "pilot_sha256": "d283d9e5cfadaae7cb6963db17bea34d28b61f08ee4faad7ec8acdaebd8c9854",
   "schemas": {
     "ActionRequest": "3f1f59fc3e48b3482b6d6ab4166719d64a93ec682a89555b139463942fba145a",
+    "ActivityCoverage": "593db271bff1b8543b9910846b4237056b30bd7c7b4dc69adb233ca74c50e36b",
+    "ActivityItem": "f67ec23035abc145251713cd62ef0c6595c0e0ea87c8867c5b6fcb120258631f",
+    "ActivityPage": "5f3cad452c75f793d0f68376c96d6196edbcfbb4c98be214690111a9313a8c28",
     "AgentCapability": "e14ba868fc94e16fa353a8a8cb1356ed9f283ae30be3024372530ca90e03e758",
     "AgentMessageResponse": "a97dd43466983d5bfd3d0d9a5b633ae9574fb422901b6c2bc5cf451a23c48fa5",
     "AgentPaperResult": "44e39667634c68b184bd2f056378ab9076a69ac76873e0f7fd1a15d4754300ae",

@@ -35,3 +35,5 @@ export const strategyPatchRequest: ValidateFunction<components["schemas"]["UserS
 export const attentionResponse: ValidateFunction<components["schemas"]["AttentionQueue"]>;
 export const dailyReviewResponse: ValidateFunction<components["schemas"]["DailyReview"]>;
 export const dailyReviewError422: ValidateFunction<components["schemas"]["HTTPValidationError"]>;
+export const blofinActivityResponse: ValidateFunction<components["schemas"]["ActivityPage"]>;
+export const blofinActivityError422: ValidateFunction<components["schemas"]["HTTPValidationError"]>;

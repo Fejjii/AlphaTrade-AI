@@ -203,6 +203,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exchange/blofin/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Activity */
+        get: operations["activity_exchange_blofin_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -215,6 +232,183 @@ export interface components {
             };
             /** Name */
             name: string;
+        };
+        /** ActivityCoverage */
+        ActivityCoverage: {
+            /** Covered Begin Ms */
+            covered_begin_ms?: string | null;
+            /** Covered End Ms */
+            covered_end_ms?: string | null;
+            /**
+             * Gap Detected
+             * @default false
+             */
+            gap_detected?: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "order" | "fill";
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Last Successful Sync */
+            last_successful_sync?: string | null;
+            /** Native Cursor */
+            native_cursor?: string | null;
+            /** Next Retry At */
+            next_retry_at?: string | null;
+            /**
+             * Selection
+             * @enum {string}
+             */
+            selection: "cursor_sweep" | "time_window";
+            /** Window Begin Ms */
+            window_begin_ms?: string | null;
+            /**
+             * Window Complete
+             * @default false
+             */
+            window_complete?: boolean;
+            /** Window End Ms */
+            window_end_ms?: string | null;
+        };
+        /** ActivityItem */
+        ActivityItem: {
+            /** Average Price */
+            average_price?: string | null;
+            /** Base Currency */
+            base_currency?: string | null;
+            /** Client Order Id */
+            client_order_id?: string | null;
+            /** Command Id */
+            command_id?: string | null;
+            /** Contract Multiplier */
+            contract_multiplier?: string | null;
+            /** Contract Type */
+            contract_type?: string | null;
+            /** Created At Ms */
+            created_at_ms?: string | null;
+            /** Fee */
+            fee?: string | null;
+            /** Fee Currency */
+            fee_currency?: string | null;
+            /** Filled Quantity */
+            filled_quantity?: string | null;
+            /** Funding */
+            funding?: null;
+            /** Instrument */
+            instrument: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "order" | "fill";
+            /** Metadata Observed At */
+            metadata_observed_at?: string | null;
+            /** Native Id */
+            native_id: string;
+            /** Occurred At Ms */
+            occurred_at_ms: string;
+            /** Order Id */
+            order_id: string;
+            /** Order Type */
+            order_type?: string | null;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "native" | "alphatrade_matched";
+            /** Position Side */
+            position_side: string;
+            /** Price */
+            price?: string | null;
+            /** Quantity */
+            quantity: string;
+            /**
+             * Quantity Unit
+             * @default contracts
+             * @constant
+             */
+            quantity_unit?: "contracts";
+            /** Realized Pnl */
+            realized_pnl?: string | null;
+            /** Reduce Only */
+            reduce_only?: string | null;
+            /** Settlement Currency */
+            settlement_currency?: string | null;
+            /** Side */
+            side: string;
+            /** State */
+            state?: string | null;
+            /** Strategy Id */
+            strategy_id?: string | null;
+            /** Trade Id */
+            trade_id?: string | null;
+            /** Updated At Ms */
+            updated_at_ms?: string | null;
+        };
+        /** ActivityPage */
+        ActivityPage: {
+            /** Account Uid */
+            account_uid: string;
+            /** Coverage */
+            coverage: components["schemas"]["ActivityCoverage"][];
+            /**
+             * Environment
+             * @default demo
+             * @constant
+             */
+            environment?: "demo";
+            /**
+             * Freshness
+             * @enum {string}
+             */
+            freshness: "fresh" | "stale" | "never_synced" | "unverified";
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Identity Error Code */
+            identity_error_code?: string | null;
+            /**
+             * Identity Status
+             * @enum {string}
+             */
+            identity_status: "verified" | "unverified";
+            /** Identity Verified At */
+            identity_verified_at?: string | null;
+            /** Items */
+            items: components["schemas"]["ActivityItem"][];
+            /** Limitations */
+            limitations: string[];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Partial Coverage
+             * @default true
+             * @constant
+             */
+            partial_coverage?: true;
+            /**
+             * Schema Version
+             * @default BloFinActivityV1
+             * @constant
+             */
+            schema_version?: "BloFinActivityV1";
+            /**
+             * Venue
+             * @default BLOFIN
+             * @constant
+             */
+            venue?: "BLOFIN";
         };
         /**
          * AgentCapability
@@ -3281,6 +3475,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DailyReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_exchange_blofin_activity_get: {
+        parameters: {
+            query?: {
+                kind?: "order" | "fill";
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPage"];
                 };
             };
             /** @description Validation Error */

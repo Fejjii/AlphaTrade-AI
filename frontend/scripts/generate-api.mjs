@@ -33,6 +33,7 @@ const pilots = [
   ["strategyPatch", "/strategies/{strategy_id}", "patch"],
   ["attention", "/dashboard/attention", "get"],
   ["dailyReview", "/dashboard/daily-review", "get"],
+  ["blofinActivity", "/exchange/blofin/activity", "get"],
 ];
 const schemas = schema.components.schemas;
 const used = new Set();

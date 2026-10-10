@@ -107,3 +107,12 @@ export function dailyReview(query?: paths["/dashboard/daily-review"]["get"]["par
     responseValidator: validators.dailyReviewResponse,
   });
 }
+
+export function blofinActivity(query?: paths["/exchange/blofin/activity"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/exchange/blofin/activity"]["get"]["responses"][200]["content"]["application/json"]>("/exchange/blofin/activity", {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.blofinActivityError422 },
+    responseValidator: validators.blofinActivityResponse,
+  });
+}

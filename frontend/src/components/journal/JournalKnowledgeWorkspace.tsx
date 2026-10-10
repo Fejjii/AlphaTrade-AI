@@ -19,6 +19,8 @@ import {
 } from "@/lib/api/saved-entries";
 import { formatDateTime } from "@/lib/format";
 import { isAlphaTradeBloFinExecution } from "@/lib/journal-activity";
+import { NativeActivity } from "@/components/activity/NativeActivity";
+import { onSessionCleared, sessionGeneration } from "@/lib/auth/session-events";
 
 export function SavedEntryDetail({
   entry,
@@ -150,6 +152,13 @@ export function SavedEntryDetail({
 }
 
 export function JournalKnowledgeWorkspace() {
+  const { user, organization } = useAuth();
+  const [session, setSession] = useState(sessionGeneration);
+  useEffect(() => onSessionCleared(() => setSession(sessionGeneration())), []);
+  return <JournalWorkspaceContent key={JSON.stringify([organization?.id, user?.id, session])} />;
+}
+
+function JournalWorkspaceContent() {
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -346,6 +355,7 @@ export function JournalKnowledgeWorkspace() {
           Knowledge
         </Link>
       </nav>
+      {!knowledge && !savedId && !documentId ? <NativeActivity /> : null}
       {knowledge ? <Button variant="outline" onClick={() => { readinessDeadline.current = 0; void reload(); }}>Refresh search readiness</Button> : null}
       <div className="flex flex-wrap items-center gap-3">
         <Input
@@ -381,6 +391,7 @@ export function JournalKnowledgeWorkspace() {
         <p role="status">Loading entries…</p>
       ) : (
         <>
+          {!knowledge && !savedId && !documentId ? <h2 className="text-base font-semibold">Saved notes &amp; recorded trade reviews</h2> : null}
           {savedId ? (
             data?.linked ? (
               <SavedEntryDetail
@@ -483,7 +494,7 @@ export function JournalKnowledgeWorkspace() {
                       {t.symbol} · {t.direction}
                     </h2>
                     <p className="text-sm text-text-muted">
-                      BloFin · {t.status} · {formatDateTime(t.entry_time)}
+                      Recorded trade review · {t.status} · {formatDateTime(t.entry_time)}
                       {t.source === "manual_demo_test"
                         ? " · Connectivity test"
                         : ""}
@@ -513,7 +524,7 @@ export function JournalKnowledgeWorkspace() {
                   ? documents?.length === 0
                   : visibleTrades?.length === 0) && (
                   <p className="text-sm text-text-muted">
-                    No matching entries.
+                    {knowledge ? "No matching entries." : "No matching saved notes or recorded reviews."}
                   </p>
                 )}
             </div>
@@ -526,7 +537,7 @@ export function JournalKnowledgeWorkspace() {
                   "source_page",
                   sourcePage,
                   data.sourceTotal,
-                  knowledge ? "Documents" : "Activity records",
+                  knowledge ? "Documents" : "Recorded reviews",
                 ],
               ].map(([key, index, total, label]) => (
                 <nav
