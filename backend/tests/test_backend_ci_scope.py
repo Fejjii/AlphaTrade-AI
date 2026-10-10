@@ -73,6 +73,22 @@ def test_commit_diff_uses_fixed_arguments_and_includes_deleted_or_merge_changes(
         assert "-m" in command and "--root" in command
 
 
+def test_manual_development_selection_covers_branch_changes_not_only_last_evidence_commit(
+    monkeypatch,
+):
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    with patch.object(
+        scope.subprocess,
+        "check_output",
+        side_effect=["b" * 40 + "\n", "frontend/src/components/activity/NativeActivity.tsx\n"],
+    ) as git:
+        assert scope.changed_paths(ROOT, "", "a" * 40) == [
+            "frontend/src/components/activity/NativeActivity.tsx"
+        ]
+    assert git.call_args_list[0].args[0] == ["git", "merge-base", "origin/main", "a" * 40]
+    assert git.call_args_list[1].args[0][4:6] == ["b" * 40, "a" * 40]
+
+
 def test_focused_command_preserves_pytest_failure_and_reports_incomplete_acceptance(
     monkeypatch, tmp_path, capsys
 ):
@@ -136,9 +152,14 @@ def test_workflow_keeps_quality_checks_and_explicit_combined_release_gates():
         == "${{ github.event_name == 'pull_request' }}"
     )
     assert "github.event.pull_request.number || github.ref" in workflow["concurrency"]["group"]
+    assert (
+        "github.event_name == 'workflow_dispatch' && github.run_id"
+        in workflow["concurrency"]["group"]
+    )
     for name, job in jobs.items():
         assert "continue-on-error" not in job
-        assert int(job["timeout-minutes"]) <= 20
+        if name != "backend":
+            assert int(job["timeout-minutes"]) <= 20
         if name in {"backend", "frontend", "deployment-safety"}:
             assert "if" not in job
         else:
@@ -149,14 +170,18 @@ def test_workflow_keeps_quality_checks_and_explicit_combined_release_gates():
         assert all("continue-on-error" not in step for step in job["steps"])
 
 
-def evaluate_event_condition(expression, event, combined, full):
+def evaluate_event_value(expression, event, combined, full):
     expression = expression.replace("${{", "").replace("}}", "")
     expression = expression.replace("github.event_name", repr(event))
     expression = expression.replace("inputs.combined_validation", str(combined))
     expression = expression.replace("inputs.full_backend", str(full))
     expression = expression.replace("&&", " and ").replace("||", " or ")
     expression = re.sub(r"!(?!=)", "not ", expression)
-    return bool(eval(expression.strip(), {"__builtins__": {}}, {}))
+    return eval(expression.strip(), {"__builtins__": {}}, {})
+
+
+def evaluate_event_condition(expression, event, combined, full):
+    return bool(evaluate_event_value(expression, event, combined, full))
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch"])
@@ -170,6 +195,9 @@ def test_actual_event_conditions_never_start_expensive_or_full_checks_implicitly
     jobs = workflow["jobs"]
     is_combined = event == "workflow_dispatch" and (combined or full)
     is_full = event == "workflow_dispatch" and full
+    assert evaluate_event_value(jobs["backend"]["timeout-minutes"], event, combined, full) == (
+        60 if is_full else 20
+    )
     for name in ["evaluation", "docker-build", "e2e-smoke"]:
         assert evaluate_event_condition(jobs[name]["if"], event, combined, full) == is_combined
     backend = {step.get("name"): step for step in jobs["backend"]["steps"]}
@@ -217,6 +245,21 @@ def test_frontend_selection_covers_changes_and_account_contract_boundaries():
     selected = frontend.select_tests(["frontend/src/app/(app)/journal/page.tsx"], ROOT / "frontend")
     assert "src/app/(app)/journal/page.switch.test.tsx" in selected
     assert "src/app/(app)/watcher/page.test.tsx" not in selected
+
+
+def test_native_activity_scope_and_postgres_checks_are_not_silently_omitted():
+    selected = scope.select_tests(
+        ["frontend/src/components/activity/NativeActivity.tsx"], ROOT / "backend"
+    )
+    assert "tests/test_blofin_provider.py" in selected
+    assert "tests/test_dashboard_demo_account.py" in selected
+    for node in scope.ACTIVITY_BOUNDARY_TESTS:
+        if (ROOT / "backend" / node).exists():
+            assert node in selected
+    workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
+    assert workflow["jobs"]["backend"]["env"]["BLOFIN_ACTIVITY_TEST_POSTGRES_URL"] == (
+        "postgresql+psycopg://alphatrade:alphatrade@localhost:5432/alphatrade_test"
+    )
 
 
 @pytest.mark.parametrize(

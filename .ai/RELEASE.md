@@ -31,6 +31,9 @@ explicit SFP/receipt/logging regression group for those paths. This is a develop
 selection, not exhaustive dependency analysis. For other cross-module changes,
 include their focused tests explicitly in the PR; the complete gate below remains
 required. A successful focused run is **not complete backend acceptance**.
+Native activity/schema/client changes include scoped provider, account and migration
+regressions. `BLOFIN_ACTIVITY_TEST_POSTGRES_URL` uses the existing disposable CI
+PostgreSQL service so the activity durability/migration cases actually execute.
 
 The frontend keeps generated drift, lint and type checks, then runs
 `scripts/run_frontend_focused.py`: contract/cache baselines, changed tests and
@@ -50,6 +53,8 @@ gh workflow run ci.yml --ref <reviewed-ref> -f combined_validation=true -f full_
 ```
 
 This still uses the focused backend selection and is not the full release gate.
+Manual development selection compares the branch to its `origin/main` merge base,
+so a final evidence-only commit cannot omit the accumulated feature changes.
 Do not repeat green runs merely to show progress. Record the exact tested SHA,
 selected tests, failures and skips; batch related fixes before pushing. Cancel older
 active PR runs where authorized access permits. Never cancel the current release
