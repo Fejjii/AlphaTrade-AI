@@ -432,3 +432,145 @@ transaction, external message, credential/operator mutation or full CI dispatch.
 Final full backend gate remains after supervising review, staging and fresh SFP
 prerequisites under .ai/RELEASE.md. Native attestations/execution are not authorized
 by this milestone. No new paid model/resource, no new management system.
+
+## Parallel delivery supplement — 11 October 2026
+
+Stabilization PR244 stays at `ba47a228c426da5d2fe8ab38e5a15cba2aa54620`;
+its19 local and1072 backend/399 frontend focused CI passes remain evidence for that
+revision. Frozen PR237 remains3600ec89. New features live on the separate
+`codex/agent-knowledge-ui-integration` branch; no deployment authority is added.
+No existing Agent/compact UI assignment is active in the available worker/thread
+snapshot. Two isolated workers begin from the shared contract commit below.
+
+Ownership before edits: A owns AgentWorkspace, Agent/voice components and supporting
+Agent/capture services and tests. B owns navigation, Dashboard, Strategies,
+Journal/Knowledge and Settings routes/components/tests, excluding A's files.
+Owner owns shared generated API artifacts, shared primitives, migration sequencing,
+real API/browser integration, publication and this checkpoint. Worker branches are
+`codex/agent-voice-records` and `codex/compact-workspace`; only the owner integrates
+reviewed commits. Workers do not edit shared checkpoints, migrations, workflows,
+operator configuration or each other's components.
+
+Agreed existing contracts: `/agent/turns` remains the shared coordinated turn path;
+use existing model routing and explicit approval/recovery behavior. Saved records use
+`/agent/saved` and the existing journal/rules/strategies/news_analysis/lessons categories,
+revision checks, private source ancestry and mixed-content bounds. No new parallel
+persistence system, provider activation or automatic ambiguous retry. Journal links
+use `/journal?saved=<id>`; other categories use
+`/journal?tab=knowledge&category=<category>&saved=<id>`. These are stable links to
+owned persisted records, not proof of strategy approval. Strategies may show captured
+strategy notes but must keep authored configuration/experiment approval separate.
+Lessons stay within Knowledge; technical evidence belongs in expandable details.
+Browser speech controls are browser-dependent and must offer actual errors/text
+fallback; do not relabel backend contract-only audio endpoints as transcription.
+BloFin native facts and internal simulation remain separate with truthful freshness,
+units and unavailable monetary/performance values.
+
+Fixed supplement acceptance (scope explicitly added by the current user request):
+
+- **Agent/voice A1–A5 (5):** A1 compact text/upload/voice controls use one composer;
+  A2 acknowledged replies render immediately and persist across reload; A3 actual
+  transcription errors and unavailable speech allow text fallback; A4 mixed content
+  creates durable category summaries and truthful saved-record links; A5 ownership,
+  exact ambiguous recovery/deduplication and existing routing/approval bounds hold.
+- **Compact UI B1–B5 (5):** B1 page width, compact controls, one heading and parent
+  navigation without nested scrolling/visible IDs; B2 statistics stay on Dashboard,
+  native activity separate from simulation; B3 strategy/risk configuration belongs in
+  Strategies; B4 Settings contains monitoring/notifications/account/system and
+  preserves values; B5 Journal/Knowledge share navigation while retaining categories,
+  Lessons inside Knowledge and expandable details with clear Back navigation.
+- **Owner integration I1–I4 (4):** I1 stabilization and feature branches remain
+  separate; I2 existing shared contracts and immutable migration ancestry align;
+  I3 focused reachable browser/API/persistence journeys cover changed paths; I4
+  reviewed contribution references/exact integration SHA/checkpoint are published.
+
+Supplement implementation and integrated local acceptance: **A 5/5, B 5/5,
+I 4/4**. The unchanged original milestone remains 2/2, 6/6, 4/4, 4/4; these are
+separate fixed checklists, not added claims of hosted acceptance. Deployment and
+live acceptance are **unexecuted**. The feature candidate is ready for source review,
+not release-ready. Existing access receipts are reused without repeating failed probes.
+
+Reviewed contributions (collected directly by the owner):
+
+- A: `codex/agent-voice-records`, `545253841c098516f22d17071f6800ed87cb15a7`,
+  integrated as `185f7ff`. Compact Agent thread/composer and durable category
+  receipts; summary/link first, corrections inside details. Existing upload,
+  browser recognition, immediate reply, routing and recovery behavior is reused.
+- B: `codex/compact-workspace`, `de9c6857a892cf15c5b0a528b89a46b84aa37077`,
+  integrated as `6b9deec`. Captured strategy notes are separate from configuration
+  and approval; category links and parent navigation are consistent. Strategies,
+  Settings and Risk remount their local data on account/session invalidation.
+  Dashboard statistics and native/simulation separation remain intact.
+
+Focused evidence, with no unexpected skips:
+
+| Scope | Executed result | Revision/source covered |
+|---|---|---|
+| A Agent/voice/receipt components | 140 distinct passing cases | `5452538`; 139 initial passes plus one new lifecycle case, final targeted 3 passes with 45 intentionally filtered |
+| A capture persistence | 18 distinct passing cases | `5452538`; 17 unchanged cases plus one corrected real PostgreSQL HTTP journey |
+| B routes/navigation/native activity | 77 passing cases | `de9c685`; 75 route/navigation/native cases plus 2 document-card cases |
+| Actual login and committed ambiguous turn | 1 passing Chromium case | Combined application at `20ba4e5` |
+| Real API process restart and category routes | 1 passing Chromium case | Combined application at `20ba4e5` |
+| Loaded desktop/mobile views and account change | 1 passing Chromium case | Same application, final browser/artifact-only follow-up |
+
+The first browser fixture run omitted the login redirect wait and failed before
+the Agent journey. It was corrected to await the actual route transition, without
+increasing product timeouts. Initial screenshot capture caught loading placeholders;
+the final dedicated case awaits persisted records before capture. Capture-test fixture
+corrections supplied real membership rows, a required StrategyDraft and the existing
+private reservation marker; production validation/deduplication assertions remain.
+
+The browser uses actual login forms, application routes, generated turn client and
+PostgreSQL. It does not inject authentication tokens into the browser. Only the
+guarded loopback harness supplies deterministic model completions; production
+CaptureModel, ModelRouter, validation and turn/persistence services still run.
+The first turn saves three categories before its reply is deliberately malformed;
+reload makes no POST, explicit recovery retains the exact body/key, and the second
+turn saves the other two categories. A real API process restart preserves all five
+summaries; private reads return404, explicit replay creates no extra record, category
+details have Back links, and actual logout/login finishes with the other account's
+empty strategy-note history. PostgreSQL HTTP coverage additionally proves document
+ancestry, same-tenant different-user privacy, versioned changes and zero orders.
+
+Browser reproduction uses the existing disposable seed/harness, ports8013/3013,
+`SYNTHETIC_CAPTURE_BROWSER=true`, disarmed local/mock settings and a mode0600
+synthetic auth file. Select only these phases in order, restarting the API between
+the first two (same database):
+
+```sh
+PLAYWRIGHT_SKIP_WEBSERVER=true \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+PLAYWRIGHT_API_URL=http://127.0.0.1:8013 \
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3013 \
+EXPERIMENT_BROWSER_AUTH_FILE=/tmp/alphatrade-next-postgres/delivery-auth.json \
+npx playwright test ui-tests/agent-knowledge-api.spec.ts \
+  --project=chromium --workers=1 --grep '<selected phase>'
+```
+
+Phase selectors: `actual login saves`, then `fresh API process`, then
+`compact screenshots`. All three exit0. Physical microphone/live ASR and live paid
+classification remain unexecuted; deterministic adapter errors/transcripts prove
+software fallback, not external speech service performance. Synthetic experiment
+samples do not establish strategy returns. Screenshots in
+`docs/screenshots/experiments/delivery-{knowledge,strategies,strategies-mobile}.png`
+show synthetic data only, explicit unavailable performance and preserved paper pause.
+
+Combined typecheck, changed-file ESLint/Ruff/format and diff checks pass. The API
+generator drift check regenerates the combined contract in memory and finds no
+change: full OpenAPI SHA256
+`1955b672b6ed3099a3043f4fe4d23419182880b5bd3d19e70b848de9cff279bb`.
+One head remains `a12trendpulsescreen001`. Production backend and immutable migration
+files are byte-identical to frozen ba47; retained-schema rollback evidence is reused
+for those unchanged paths. Qualified rollback API images must still retain the safety
+bootstrap correction. No old-image compatibility or hosted deployment is inferred.
+
+CI policy is unchanged: required focused backend/frontend/deployment-safety checks;
+superseded PR cancellation; expensive combined checks and full backend are manual
+only. No manual dispatch or green job repeat. Frozen ba47's CI is not acceptance of
+this new feature candidate; any automatic result must name its exact head.
+The operation-specific Render/Vercel/synthetic-tenant access packet and coordinated
+API→worker→frontend sequence above still apply. Frontend current target/revision/API
+binding remains UNKNOWN. PR237 smoke instructions, operator settings and trading
+boundaries are preserved. Next: review the published integration revision, bind that
+single existing access packet, then qualify authorized staging and fresh SFP before
+the single explicitly requested full backend release gate.
