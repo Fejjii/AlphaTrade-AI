@@ -574,3 +574,369 @@ binding remains UNKNOWN. PR237 smoke instructions, operator settings and trading
 boundaries are preserved. Next: review the published integration revision, bind that
 single existing access packet, then qualify authorized staging and fresh SFP before
 the single explicitly requested full backend release gate.
+
+## Agent quality, native outcomes and viewport completion — 11 October 2026
+
+This bounded next batch starts at reviewed PR247 `0d3c79ed90c00ce57da4e0e74bbfeb298e5408b9`
+(on accepted PR244 `ba47a228`). Both reviewed branches remain fixed; work is isolated
+on `codex/agent-outcomes-integration`. Existing passing evidence is reused.
+
+Ownership agreed before edits: owner owns frontend AgentWorkspace, its viewport
+helper/tests, mobile experiment cards and Journal/Knowledge filters, shared API
+artifacts, migration sequencing, integration browser checks and existing checkpoint.
+Worker A owns backend Agent/capture services, routing/classification evaluations and
+related backend tests; no owner frontend, native outcome, shared migrations or
+checkpoint files. Worker B owns native outcome producer/resolver/reader, related
+backend HTTP integration and tests; no Agent/frontends, shared migrations or checkpoint.
+Workers propose any shared schema/migration needs before edits; owner serializes them.
+
+Existing shared contracts remain authoritative: five saved categories and at most
+three independent capture entries; natural language evaluation has no category tags;
+existing configurable ModelRouter, validation and usage accounting are reused.
+Synthetic or oracle completions are not measured model quality. No invented model ID,
+paid-provider activation, new spending budget or silent fallback quality claim.
+Native evidence must derive from verified UID/account, canonical server command/plan
+and immutable strategy/experiment bindings, complete position/order/fill ancestry and
+verified monetary semantics. Echoed client IDs, retrospectively assigned experiment
+ownership or caller-supplied truth flags never qualify evidence. Unknown/incomplete
+facts remain unavailable; native facts/samples deduplicate separately from simulation.
+Producer implementation does not activate trading. Existing reader contracts should
+be reused; owner regenerates combined public contracts. Historical migrations are
+immutable; a12 remains head unless a justified additive migration is coordinated.
+
+Fixed next-batch acceptance (prior checklists remain unchanged):
+
+- **Owner UI U1–U3 (3):** U1 long desktop/mobile conversations follow latest while
+  pinned, preserve intentional older reading, offer clear Latest navigation and a
+  reachable composer; U2 mobile experiment cards remain compact without hiding
+  lifecycle/source/unavailable performance; U3 Knowledge filters are compact and
+  irrelevant pagination is hidden without losing paged data access.
+- **Agent quality Q1–Q4 (4):** Q1 realistic untagged journal/strategy/rule/news/
+  analysis/lesson/mixed/ambiguous evaluation corpus and existing pipeline; Q2
+  demonstrated capture gaps corrected with faithful source/uncertainty validation;
+  Q3 routing, usage, ownership and durable mixed records preserve existing bounds;
+  Q4 measured configured approved-provider classification results under existing
+  spending limits (unavailable measurement remains an explicit unmet criterion).
+- **Native outcomes N1–N5 (5):** N1 server-owned verified account/command/plan/
+  immutable strategy binding; N2 complete opening/exit/position ancestry, partial
+  fills and verified fee/PnL semantics; N3 existing reader consumes qualified evidence
+  and incomplete/missing facts remain unavailable; N4 PostgreSQL durability,
+  tenant isolation and restart/concurrency deduplication; N5 no client-ID ownership
+  inference, simulation mixing or execution/operator activation.
+- **Integration/release I1–I3 (3):** I1 reviewed worker refs integrate separately from
+  stabilization with aligned contracts and one migration head; I2 affected real
+  browser/API/persistence checks and exact revision evidence; I3 checkpoint/batched
+  publication and one precise release setup packet, advancing only executable access.
+
+Current local acceptance is **13/15**: U3/3, Q3/4, N4/5, I3/3.
+The4e5 baseline was12/15; N1 is now locally qualified by the reviewed coordinator
+continuation below. Q4 and N2 remain unmet.
+Implemented, integrated, deployed and live acceptance are distinct. No full backend CI during iteration; no main merge,
+deployment workaround, exchange order, Telegram message, provider activation or
+operator-setting change. Existing inaccessible hosting operations are not re-probed.
+
+
+### Collected contributions and focused acceptance
+
+Both workers were collected directly, reviewed and integrated on the isolated branch:
+
+- Agent quality `95fb5ec9ff8772a5c92cd6d2996025420e2af01e` on
+  `codex/agent-natural-quality` → `dae7c66`. Fourteen realistic untagged oracle inputs
+  use the actual CaptureModel/ModelRouter, source checks and durable capture pipeline.
+  Duplicate suggestions and repeated revisions to one target now fail before writes;
+  independent mixed entries still save. **37 distinct focused passes**, zero unexpected
+  skips: 17 quality cases, 19 unchanged affected persistence passes and the corrected
+  one-case HTTP telemetry/usage replay proof. The initial two behavioral failures
+  reproduced the defects; one later test-field lookup error was repaired and its case
+  passed. `/tmp/agent-quality-{before,after,persistence,persistence-repair,strategy-source}.xml`
+  records exact runs. Q1–Q3 locally accepted; **Q4 unmet**. Human-authored oracle
+  completions establish no measured LLM classification accuracy. Mock local settings
+  have no securely bound approved route credential. Routine measurement within the
+  existing approved test budget is authorized; a verified balance/price/context receipt
+  is still required before transport.
+- Native outcomes `adfaf69b1946fcf3b80faa64ebd0d95241fa14c4` on
+  `codex/blofin-trusted-outcomes` → `84b2f96`. Guarded server-only services register a
+  canonical plan origin before commands and capture signed verified UID, account-wide
+  flat inventory and matching contract metadata before dispatch. Explicit caller-owned
+  transactions, independent committed-origin reads, immutable strategy/plan hashes,
+  original timestamps and PostgreSQL locks preserve restart/concurrency identity.
+  **119 distinct focused passes**, zero skips: earlier affected selection116 (87
+  unchanged resolver +29 producer), final selection32 (31 producer +1 HTTP auth/admission).
+  Source review corrected wall-clock timestamp ownership; an advancing-clock PG case
+  proves the repair. Full commands and initial fixture/mapping repairs are in
+  `docs/blofin_experiment_outcomes_verification.md`. **At adfaf69b: N3–N5 accepted; N1 partial,
+  N2 unmet**. At that baseline there was no experiment coordinator callsite, complete direct
+  protected exit ancestry or independently verified fee/PnL basis. Reader GETs are
+  wired; newly producer-owned results clear eligible proof and money. Native HTTP
+  admission stays503. No autonomous executor, producer schedule or exchange is activated.
+- Owner `9edae66` plus shared-contract/viewport completion: page-level tail following,
+  explicit Latest and Earlier navigation; messages beyond the first100 now load at
+  the current tail. Deliberate older reading and earlier-page anchors survive replies.
+  Saved receipts stay beside their own messages. Parent/composer observation accounts
+  for status/recovery layout; queued scrolling checks current reading intent, including
+  wheel, touch and keyboard input. Compact mobile experiment cards keep mode, lifecycle,
+  source and unavailable performance. Knowledge search/category/refresh uses two compact
+  rows; zero/single-page controls hide, but stale page and independent source access remain.
+  **74 affected component passes** and **17 distinct generated-boundary passes**.
+  After the mobile DOM-commit repair, three affected Agent history/cancellation cases
+  passed again (46 intentionally filtered); these repeats do not increase the74 count.
+  Client selection initially16passed/1fixture assertion failed; the repaired query-object
+  assertion passed alone with3 intentionally filtered cases. No unexpected skips.
+  Generator conditional guards preserve core availability fields, proof/lineage, exact
+  decimals and unknown totals. Semantic identity, timing and count equality remain server
+  checks; synthetic Pydantic-valid fixtures establish transport interoperability only.
+
+Focused real Chromium checks use loopback PostgreSQL, real password login and persisted
+130+ message history. Four distinct journeys are locally accepted: desktop/mobile
+current tail, in-flight composer geometry, delayed committed acknowledgment while
+reading older messages, Latest return, pinned reply and Earlier anchor; compact mobile
+cards/Knowledge filters; and combined API readers with actual login, foreign-tenant404,
+anonymous401 and simulation409. The final combined API process is checked by its
+`X-Synthetic-Fixture-Process` identity. Initial browser assertions incorrectly expected
+Send enabled after clearing the draft, matched full multiline text instead of a stable
+message identity, and missed the Sending… label. Those test errors were corrected;
+no timeout or behavior assertions were weakened. The final mobile case exposed an
+Earlier-page restoration frame preceding React DOM commit; restoration now runs in
+a layout effect after the prepended messages commit, with conversation/generation guards. An old local API process initially
+prevented rebinding and returned404 for new routes; it was stopped and the combined
+process explicitly verified. This is synthetic local acceptance, not model quality,
+physical microphone/ASR or live exchange performance. Mock model-unavailable replies
+and capture-unavailable status remain truthful in conversation screenshots.
+
+Browser commands from frontend, using private loopback-only auth:
+
+```sh
+PLAYWRIGHT_SKIP_WEBSERVER=true \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+PLAYWRIGHT_API_URL=http://127.0.0.1:8014 \
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3014 \
+EXPECTED_SYNTHETIC_API_PROCESS=<verified-current-process> \
+EXPERIMENT_BROWSER_AUTH_FILE=/tmp/alphatrade-next-postgres/viewport-auth.json \
+npx playwright test ui-tests/conversation-viewport-api.spec.ts \
+  --project=chromium --workers=1 --grep '<selected affected cases>'
+```
+
+Evidence receipts: `/tmp/alphatrade-next-postgres/viewport-browser-final.log` (earlier
+long-thread qualification), `combined-browser-corrected.log` (new reader case accepted),
+`combined-browser-viewport.log` (desktop passed; mobile exposed the anchor defect),
+`combined-browser-anchor.log` (both corrected viewport cases passed,46.0s);
+`/tmp/quality-outcomes-agent-final.log` (three affected component rechecks passed).
+The compact case terminal receipt
+records1passed. Screenshots: `conversation-{desktop,mobile}.png`,
+`compact-experiments-mobile.png`, `compact-knowledge-mobile.png` in existing screenshot
+folder. Backend scoped OpenAPI test1pass; client XML `/tmp/quality-outcomes-client*.xml`;
+contract XML `/tmp/quality-outcomes-contract.xml`. Generated full API SHA256 is
+`56b2cbea880a93b6e5397fa9a077e9e9846cf07854e357d20af580204497a77b`.
+Typecheck, changed-file ESLint/Ruff/format and generated drift check pass.
+
+### Release boundary and the one setup action
+
+**Not release-ready.** U/Q/N/I local counts do not include deployment or live acceptance.
+Q4 and N2 remain as named gaps; N1 is now locally qualified below. Prior PR24714/14 and stabilization/bootstrap evidence
+remain unchanged, overlapping evidence. Frozen PR244ba47, PR2470d3 and PR2373600 are
+not moved. The current candidate/automatic focused CI receipt is recorded in the PR and
+existing operational checkpoint; older green CI does not accept this revision.
+
+Migration modules, database model tables, deployment/workflow configuration and operator
+settings are byte-identical to reviewed0d3. One immutable head remains
+`a12trendpulsescreen001`, ancestrya8→a9→a10→a11→a12. New origin/pre-entry/diagnostic receipts
+use existing opaque AuditLog JSON and the existing audit action, with no new writer or
+consumer installed. Retained-schema evidence above is reused for unchanged migrations;
+it is not newly built image acceptance. Qualified rollback API must retain the safety
+bootstrap fix and all a12 metadata; never downgrade/stamp populateda12 or start plainb165.
+
+No access change was supplied; unchanged failed hosting probes are not repeated.
+**One setup action:** provision the existing secure release/evaluation executor with
+this complete scoped packet, without placing secrets in chat:
+
+1. Exact-commit Render API/CLI plus HTTPS for workspace`tea-d7hn0fvavr4c73f62c70`,
+   API`srv-d8fvbcd7vvec739mc060` and worker`srv-daqej7o473hc73fsc1k0`; preserve existing
+   service settings. The existing connector cannot select a commit. Last verified
+  10October API/worker revision is`b165b92276346f0e0fe3ccdbd2bec3443dc75d40`.
+2. Existing container/database binding inspection, write hold/drain, restorable snapshot
+   and backup/restore permissions for DB`dpg-d8fuok57vvec739lm0u0-a`; last observed heada8
+   does not verify the services' actual secret connection. No hosted migration executed.
+3. Reauthenticate Vercel scope`alphatrade-ai`, team`team_LNgcEGBkqntUnTrktNjFzh7a` /
+   project`prj_y7vFqwbFvdpHvf2nMaDkKQauBhZQ`, with protected HTTPS access to establish
+   the existing frontend target, source revision and API binding. Current staging frontend
+   is **UNKNOWN**; historical alias/preview metadata is a lead, not alignment evidence.
+4. Scoped synthetic staging identity and authorized read-only fresh SFP diagnostics;
+   existing approved model route credential/entitlement and verified remaining-budget/
+   price/context receipt for Q4; routine work within that budget is already authorized. No new provider or spending activation is implied.
+
+After source review and executable access: freeze selected exact candidate and qualified
+rollback images→capture existing operator values/DB binding/snapshot/write hold→drain
+old API/ingestion writers and worker→same-SHA API upgradea8→a12/paper health→same-SHA worker
+with compatible consumers and preserved flags→verified existing same-SHA frontend/API
+binding→preserved PR237 smoke plus changed journeys→fresh natural SFP→the single explicitly
+requested `full_backend=true` release gate. Failure uses coordinated qualified API/worker/
+frontend rollback while retaininga12 and all documents/jobs/native facts/receipt metadata.
+No main merge, replacement infrastructure, exchange orders, Telegram tests, paid-provider
+activation or operator changes. The manual BloFin incident remains undiagnosed.
+
+### PR248 completion continuation — fixed checklist, 11 October 2026
+
+Continue from `4e5dc16782c8f8a30891179de0a886a44c3f0f37` on the same PR248 integration
+branch. Its CI38136849882 passed364 backend/379 frontend and deployment-safety, with
+zero test skips; evaluation/Docker/e2e were manual-policy skipped. Reuse unchanged
+evidence. Reviewed PR244ba47, PR2470d3 and PR2373600 remain frozen. The U/Q/N/I
+denominator stays15. Routine Q4 evaluation within the existing approved test budget is
+authorized; missing credentials are a separate blocker, not another approval loop.
+
+Ownership is isolated before edits: owner has Agent history/loading and browser tests,
+shared artifacts/migrations and existing checkpoints. Worker A has private actual-provider
+evaluation/corpus/accounting and Agent routing support, base4e5 on
+`codex/agent-provider-quality`. Worker B has the canonical governed coordinator, explicit
+server-origin context, native evidence and affected tests, base4e5 on
+`codex/blofin-coordinator-evidence`. Neither worker edits owner UI, public generated
+artifacts, migrations or operational checkpoints. Contributions are collected directly.
+
+Owner request ownership: one history-loading token identifies generation and request
+kind. Reconciliation replaces/aborts earlier paging; only the owning completion releases
+the current indicator. Every response checks conversation, account, session and generation.
+Account changes clear retained history/cursors/anchors before paint; superseded completions
+cannot release a new request or restore private content. The initial negative control
+reproduced the permanently busy earlier button. Three new overlap/conversation/account
+cases passed, plus six affected history/logout/unmount cases. Initial positive fixtures
+exceeded the existing five-second per-case limit and used an exact text locator against
+a prefixed error; reducing the fixture to130 (still more than one page) and matching the
+actual error resolved the test issues. No assertions/timeouts were weakened.
+Receipts: `/tmp/quality-overlap-{before,after,repair,neighbors}.log`;49 and46 intentional
+filters are separate from executed passes. Desktop/mobile actual-login/API overlap journeys
+passed2/2 in2.1m, including delayed committed turn, aborted earlier read, completed
+reconciliation, successful repaging, uniqueness and reading-anchor delta below8px.
+Receipt: `/tmp/alphatrade-next-postgres/overlap-browser.log`.
+A third actual-login browser journey passed1/1 in1.2m: delayed earlier history survives
+same-page conversation switching without stale content; navigation away then actual
+logout/other-account login excludes both prior transcripts and loading state, with a
+real foreign-tenant404. Receipt:`overlap-identity-browser.log` in the same folder.
+These three new journeys supplement the unchanged four, rather than rerunning them.
+Changed-file ESLint, frontend typecheck and diff check pass.
+
+Executable release metadata was refreshed through the previously working Render connector,
+with no failed HTTPS/auth probes repeated. On11October the exact API/worker deploys remain
+live at `b165b92276346f0e0fe3ccdbd2bec3443dc75d40`: API receipt
+`dep-db4gdkeq1p3s73a395u0`, worker receipt`dep-db4gdkeq1p3s73a3975g`. No current candidate
+was deployed. Frontend target/revision and actual hosted database binding remain unknown.
+
+The single concrete access setup action now has an exact destination: update the existing
+managed environment configuration
+`d8e448e9-266c-4462-9846-dc4819fb0132~cecfg_6abe152de4548195ae254bdd52afc138`
+(bound environment
+`ccarenv_b64_Y2NhcmVudl80MThhNjYxNDk2ZDg4MTkxYWY1ODVjZWUyMmM2NGIzOA`).
+Safe status reports current spec57, no secret or outbound-identity bindings, and enforced
+package-manager-only HTTP policy. Bind `OPENAI_API_KEY` for the existing approved route,
+`RENDER_API_KEY` scoped to the two named staging services and existing DB snapshot/restore
+operations, scoped `VERCEL_TOKEN` for the existing team/project, and existing synthetic
+smoke identity (`SMOKE_ACCESS_TOKEN`/private real-login credential file). Permit
+`api.openai.com`, `api.render.com`, official `docs.blofin.com`, the existing staging API and the verified existing
+Vercel frontend/protection endpoints through the supported configuration workflow. No
+policy bypass, new infrastructure, application-provider activation or operator reset.
+This refines the earlier target-specific packet; it does not start another access checklist.
+Q4's finite price-verified cap/usage runner and native supported-evidence receipt are
+recorded below when collected; absent provider lineage/money declarations remain unavailable.
+
+
+Worker A's reviewed completion contribution is
+`e28d4fb5bfd667d027962da345ea0630fc028de0` on `codex/agent-provider-quality`
+(base4e5), integrated as `f74fbe3`. The standalone runner reuses CaptureModel/ModelRouter
+and the durable capture/usage pipeline with a private optional provider wrapper; runtime
+routing defaults are unchanged. Sixteen untagged cases cover journal, strategies, rules, news/analysis and lessons,
+mixed topics, ambiguity, correction against an existing record, questions, confirmations,
+execution requests and explicit do-not-save content. Reports distinguish actual provider
+transport from deterministic fixtures and accounting-only refusals. Category results,
+false captures, exact-source quotes, qualifiers, correction targets, provider/end-to-end
+latency, reported usage, failures and unexecuted cases are retained privately. Semantic
+faithfulness still needs reference review; metrics are not automatically acceptance.
+
+**34 distinct new runner/accounting checks passed, zero skips.** Exact XML union verified
+by the owner: first25passed/3fixture failures (output ceiling1000 below Settings minimum1024),
+corrected3 PostgreSQL passes/25 filtered, next8passes/25 filtered, final5passes/29 filtered.
+Receipts:`/tmp/agent-provider-evaluation-{first,postgres,final-new,review}.{log,xml}`.
+Real disposable PostgreSQL proves durable ModelCallAttempt/UsageEvent matching, one
+existing retry, no timeout retry, cap exhaustion and no same-report/schema automatic
+repeat. Mypy two source files, Ruff/format four files and diff check pass. This runner
+verification adds no measured quality and does not rerun Q1–Q3. **Q4 stays0/16 measured**;
+quality, latency and usage are null. No provider calls or runtime settings changed.
+
+The runnable measured command, from the integrated backend, is:
+
+```sh
+PYTHONPATH=src:. .venv/bin/python scripts/evaluate_agent_provider.py \
+  --limits-file /workspace/agent-quality-approved-limits.json \
+  --spend-cap-usd 1.00 \
+  --database-url-env AGENT_EVAL_DATABASE_URL \
+  --run-id 397c0587-a64a-44b2-a013-27451e1476a2 \
+  --output /workspace/agent-quality-q4-report.json
+```
+
+Use the existing approved provider configuration in this evaluation process, not mock.
+The one missing provider credential binding is `OPENAI_API_KEY`; supported HTTPS egress
+to `api.openai.com` is also required in the exact managed configuration above.
+`AGENT_EVAL_DATABASE_URL` selects disposable PostgreSQL, not hosted application data.
+The receipt must name the actual existing budget reference/remaining balance, exact
+configured model, verified HTTPS price source and expiry, input/output prices, and
+provider-enforced input context ceiling. Placeholder repository prices establish none
+of these facts. USD1.00 is only the chosen job ceiling and is refused above the actual
+approved remaining balance. Each case reserves two worst-case attempts before any
+transport; unused retry allowance is released only after completion. Ambiguous attempts
+retain their reservation and private receipt. A cap-stopped corpus lists unexecuted
+cases and cannot pass Q4. Existing receipt/schema IDs must be inspected, never retried
+automatically. No new model identifier, budget approval loop or provider activation.
+
+
+Worker B's reviewed completion contribution is
+`b2c6d90468d673664ac30ddafe97761b69d3661f` on `codex/blofin-coordinator-evidence`
+(base4e5), integrated as `7051567`. The existing governed coordinator has an explicit
+internal experiment entry: commit original server origin → existing governed approval/
+ALLOW command → signed UID/flat-position/contract evidence and committed entry binding →
+existing lease, authorization and final dispatch fences. Root/version locks, immutable
+strategy/configuration/plan bindings and scoped current membership prevent inference
+from similar strategies or client IDs. Domain start does not invoke this entry; no
+scheduler, HTTP execution path or activation is added. Native admission stays closed.
+
+**58 distinct focused cases passed, zero skips:**17 new PostgreSQL cases and41 existing
+compatibility cases. New module15passed83.20s after the locked-effect correction; existing
+claim/protocol38passed14.96s and ordinary governed success/kill/fence3passed22.57s.
+Independent source review then found cached membership could authorize durable origin/
+command work after a committed role downgrade, although final POST revalidation blocked
+the order. The correction remains inside the new context/dispatch boundary:2 retained-
+cache entry/dispatch downgrade cases passed13.01s, and the armed permitted-role real
+entry passed again5.06s. That repeat adds no distinct case. Earlier compatible source
+results are reused with their exact revision scope, not presented as a new full run.
+
+The initial concurrency proof failed12passed/1failed: a locked read reused stale ORM
+effect state and allowed two submit entries for one command. Refreshing under that
+lock repaired the defect without weakening the one-send assertion; the original race
+and an independent cached-effect regression passed. The armed explicit entry uses the
+real FirstSliceEvidenceAssembler, persisted Candidate/canonical plan, original
+continue_confirmed_setup and claim, and independently visible receipts before the real
+final fence. The new positive path makes zero POSTs. Signed reads stay in MockTransport;
+restart/duplicates retain the original command/key and do not recollect or resend.
+Fresh quote/multiplier fixture corrections and the initially omitted loopback permission
+are recorded in `docs/blofin_experiment_outcomes_verification.md`; gates/timeouts were
+not weakened and the cluster was not reset. Ruff/format seven Python files, mypy five
+source files and diff check pass. Independent read-only review confirmed the membership
+finding resolved on exact b2c6d90. No runtime/operator setting changes.
+
+**N1/N3–N5 locally accepted4/5; N2 unmet.** Official protected entry → protection →
+generated closing-order lineage and historical fee currency/sign and fillPnl fee/funding
+basis remain absent. The pinned Anonymous-fe mirror and CCXT adapter are corroborating
+leads, not venue-owned attestations or live monetary proof. Exact source hashes and
+missing declarations are in the existing outcome contract. No unsupported native money
+mapping, eligible sample, closing proof or portfolio performance is invented.
+
+Combined shared-contract qualification: generated API drift check passed with full
+schema SHA256 `56b2cbea880a93b6e5397fa9a077e9e9846cf07854e357d20af580204497a77b`;
+one offline deterministic OpenAPI export test passed with zero skips. Receipts:
+`/tmp/pr248-combined-{generated,contract}.log` and `contract.xml`. No public schema or
+migration changed; all five Agent contribution and nine native contribution blobs are
+compared with the integrated candidate before publication. One actual immutable chain is
+`a8agentcapture001` → `a9knowledgeoutbox001` → `a10blofinactivity001` →
+`a11experiments001` → sole head`a12trendpulsescreen001`. Table/migration/workflow/deployment
+files remain unchanged against reviewed0d3. Existing retained-schema rollback evidence
+is reused for that unchanged shape; built rollback images and hosted acceptance remain
+unexecuted. Product/worker publication is batched; the exact candidate and current
+automatic focused CI are recorded in PR248 and the existing operational checkpoint.
+The green4e5 run covers4e5 only. Full release acceptance remains gated by review,
+qualified rollback images, aligned authenticated staging and fresh natural SFP evidence.

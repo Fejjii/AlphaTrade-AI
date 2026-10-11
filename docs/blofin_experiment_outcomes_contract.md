@@ -60,8 +60,12 @@ untrusted actors, future observations and malformed hashes fail closed. Hashes d
 corruption; they are not signatures or a substitute for the trusted server producer.
 No HTTP or imported activity path writes these attestations.
 
-**This task supplies no executor or attestation writer.** Before integration enables
-native ingestion, Agent 1 and the execution owner must establish that its server-only
+The reviewed PR245 foundation supplied no executor or attestation writer. The bounded
+11 October supplement adds a server-only **origin and pre-entry receipt producer**,
+described below. The subsequent coordinator correction connects explicit server-owned
+context to the existing governed loop; it adds no autonomous selector or qualified exit writer.
+Before integration enables native ingestion, the integration and execution owners must
+establish that the server-only
 producer verifies original execution UID, canonical strategy/plan/dispatch authority,
 and each exit's experiment command or protected parent lineage. It cannot attest an
 ordinary manual entry/exit by instrument, time, quantity or client-order similarity.
@@ -76,8 +80,10 @@ reduceOnly exits, zero reported entry PnL or flat current positions. The reviewe
 must establish actual native pre-entry inventory and complete position/fill ancestry for
 the same UID/instrument, withholding attribution if unrelated/manual fills, preexisting
 inventory, average-cost mixing or unverified contract/PnL allocation could contaminate
-the outcome. No producer is installed here; synthetic fixtures explicitly assert these
-claims only to exercise the resolver. They do not prove native position attribution.
+the outcome. The new producer verifies original flat inventory through restricted
+native GET requests; no complete closing-position producer is installed. Existing
+synthetic resolver fixtures assert closing claims only to exercise the resolver.
+They do not prove native position attribution or live performance.
 
 The resolver independently verifies stored current UID/account identity using the
 existing account proof, immutable strategy content hash, full canonical plan hash,
@@ -173,12 +179,131 @@ pure module contract, not a new endpoint. Reproduce or check from backend:
 PYTHONPATH=src python scripts/export_blofin_experiment_outcomes.py --check
 ```
 
-Agent 1 should wire the existing sample dependency to this resolver for verified BloFin
-source, expose the facade's outcome/performance reads under existing Reader tenant
-RBAC, and regenerate shared API/client artifacts once on the combined candidate.
-Keep the default sample route unavailable until its trusted producer exists. Preserve
+The HTTP facade now exposes outcome/performance reads under existing Reader tenant
+RBAC. The integration owner regenerates shared API/client artifacts once on the combined
+candidate. Keep the default sample route unavailable until the complete trusted
+producer and its execution coordinator are reviewed and qualified. Preserve
 PR242's accepted acquisition/evaluation clock correction when consolidating. No new
 migration is needed. The internal simulator must use an independent source resolver.
 Native connectivity/permissions/fee semantics/retention/protected parent lineage have
 not been exercised against an actual account; fixtures demonstrate code, not native
 performance or activation readiness. Enforced exchange egress is unavailable here.
+
+## Bounded server producer supplement — 11 October 2026
+
+`BloFinNativeOutcomeProducer.register_plan` persists an explicit experiment/version/
+variant origin for a persisted canonical plan before any command exists. It checks the
+frozen experiment, approved running interval, immutable strategy and semantic/envelope
+hashes. Canonical Candidate instrument identity supplies the provider symbol used by
+the authored experiment universe; instrument IDs are never parsed from client order IDs.
+An existing command or another experiment/version cannot be retrospectively assigned.
+
+`bind_entry` requires that origin to be visible in a separate committed session, the
+exact ALLOW command and consumed authorization, and an undispatched CREATED effect.
+The restricted GET transport must match the current read-only credential selector.
+Signed UID verification brackets the account-wide position and instrument reads.
+Malformed/truncated, hedged or nonzero inventory refuses a receipt. Native contract
+value/type/currencies must match the immutable plan. The receipt owns one explicit
+observation timestamp, even with an advancing clock. Caller-supplied truth flags are
+not method inputs. Hashes detect corruption; they do not replace verified source IO.
+
+The caller owns all transactions: commit origin before command creation, and commit
+entry/position receipts before dispatch. Advisory locks and deterministic receipt IDs
+converge on the original origin/binding/diagnostic across restart and concurrent calls.
+Replays never contact the venue or replace the original snapshot after plan expiry.
+The existing governed coordinator now calls these services through the explicit internal
+`continue_experiment_setup` entry described below. No autonomous experiment selector,
+Watcher experiment matching, scheduler or HTTP execution entry is installed. Domain
+start alone never invokes this entry. Existing approval and operator boundaries apply.
+
+`reconcile` persists scoped diagnostics without admitting a sample or inventing an exit.
+The current governed lifecycle resolution retains an isolated closing-fill sequence,
+but its stored protection IDs do not establish direct native parent/child ancestry.
+Its documented `fillPnl` is not independently declared gross or net of fees/funding;
+native history fee currency/sign may also be unavailable. Producer-owned commands
+therefore remain unavailable, even if legacy true-valued exit flags are present.
+The reader clears sample proof and monetary totals for these unqualified commands.
+The missing sources are complete native protected parent/child or canonical exit
+authority and independently verified fee/PnL methodology.
+
+Installed read-only HTTP contracts:
+
+- `GET /experiments/{experiment_id}/versions/{version_id}/outcomes/{source_record_id}`
+  returns `NativeOutcome`; `variant_key` defaults to `baseline`.
+- `GET /experiments/{experiment_id}/versions/{version_id}/performance` returns
+  `ExperimentPerformance` with the same variant selector.
+
+Both reads use stored tenant/user-scoped data. They perform no provider IO, write,
+retry, order submission or activation. POST samples remains adapter-unavailable (503).
+Internal simulation remains a separate source; unavailable results are never portfolio
+returns or measured native strategy performance. No migration is added; a12 remains head.
+
+## Explicit existing-coordinator connection — 11 October 2026
+
+`GovernedBloFinDemoLoop.continue_experiment_setup` is a server-only entry into the
+existing `continue_confirmed_setup` pipeline. Its explicit tenant, experiment, version
+and variant must match scoped persisted membership, running approval interval, native
+execution UID, immutable strategy/configuration and canonical plan. No similar running
+experiment is selected. The frozen experiment risk/cost envelope also bounds that plan.
+Current membership is refreshed at entry and registered-dispatch boundaries; a cached
+Owner/Trader row cannot survive another-session downgrade as execution authority.
+It preserves the ordinary unowned Watcher/demo path and all existing posture, risk,
+approval, lease, safety, TTL, reconciliation and execution fences.
+
+The transaction order in `_execute_existing` is:
+
+1. Validate and lock the exact root/version; register and **commit** original plan origin.
+2. Revalidate that version, then create the existing governed approval/ALLOW command.
+   Newly created ALLOW command timestamps use the same injected claim clock. Historical
+   and refused command timestamps are unchanged.
+3. Capture signed UID-bracketed flat-position and exact native contract receipts, then
+   **commit** the position and entry binding before dispatch leasing.
+4. Revalidate the locked version and independently committed receipts at lease and
+   dispatch authorization. After provider preflight, revalidate once more through the
+   existing final send fence. Lifecycle locks use root → version → account epoch order.
+5. Keep the original ambiguous command/key for read-only recovery. Reconciliation
+   persists unavailable diagnostics; it cannot manufacture closing or money proof.
+
+The new guards also apply to registered commands reaching the existing dispatcher
+directly. Independent receipt probes use a separate Engine connection, including when
+the caller Session is Connection-bound. Locked effect reads refresh cached state: a
+worker cannot reuse stale CREATED/authorized state after another consumes the send.
+No DB transaction is held over the existing venue send. Existing pause/expiry or a
+changed dispatch fence after committed receipts still refuses the final send. An identity
+that later becomes stale preserves the already committed uncertain command/key and
+unavailable result, rather than creating a new request or replacing its receipts.
+
+This is implemented coordinator wiring, locally tested with PostgreSQL and mocked
+transport. It does not activate or schedule experiment execution. All qualification
+orders remain inside fixtures; the new positive cases deliberately perform zero POSTs.
+Native HTTP sample admission stays closed because N2 remains unqualified.
+
+### Exact remaining native source requirements
+
+`VerifiedDemoExit.facts()` retains entry/fill IDs, protection IDs and closing fill IDs.
+`reconcile_demo_exit` checks an effective TPSL's client echo, trigger, size and account,
+but the stored evidence does not identify its generated closing child order directly.
+`demo_lifecycle_resolution` deliberately stores `venue_reported_fill_pnl` with gross,
+net and funding unknown. Neither client echoes nor matching prices/quantities establishes
+the missing native parent/child edge or full flat-to-open-to-flat attribution.
+
+Two accessible source leads were reviewed without an exchange connection:
+
+- [Pinned Anonymous-fe documentation mirror](https://github.com/Anonymous-fe/blofin-api-docs/blob/167da57aec7751207d6b53248d002435a397b234/index.md)
+  (SHA256 `062d8b291c64e286cc9143a6e9a269368ac4b6f9aa1315a4a17ad61b1dd23048`)
+  lists TPSL IDs and order/trade IDs, but declares no entry/protection/generated-child
+  edge. It labels `fillPnl` closing profit/loss and `fee` fee, without explicit fee
+  currency, sign, or fee/funding inclusion rules.
+- [CCXT BloFin adapter](https://github.com/ccxt/ccxt/blob/master/python/ccxt/blofin.py)
+  (retrieved SHA256 `df2ab5731e9d7128b88f497585ca0831978893195d57ea5b307d916cd4119f4b`)
+  maps native fees and uses market settlement currency when omitted. This is third-party
+  behavior, not an independently verified venue-owned monetary declaration.
+
+These are corroborating source leads, not authoritative attestations or live acceptance.
+The direct official documentation request returned HTTP 403 under the current enforced
+network policy; it was not bypassed or repeatedly retried. N2 needs a venue-confirmed
+contract/receipt for entry → protection → generated closing order and complete fills,
+plus explicit historical fee currency/sign and `fillPnl` fee/funding basis for the exact
+verified account. Only then can a bounded producer qualify complete position lineage
+and write an exit attestation. Existing documented raw IDs, contract units and original
+native money fields remain preserved; no unsupported mapping or true flag is added.
