@@ -122,6 +122,13 @@ from app.db.watcher_orchestration import (  # noqa: F401
     WatcherWorkerLeaseRow,
 )
 from app.db.watcher_watchlist import WatcherSymbolStatusRow, WatcherWatchlistRow  # noqa: F401
+from app.experiments import guards as _experiment_guards  # noqa: F401
+from app.experiments.models import (  # noqa: F401
+    ExperimentEventRow,
+    ExperimentRow,
+    ExperimentSampleRow,
+    ExperimentVersionRow,
+)
 from app.schemas.common import (
     ActorType,
     AlertDeliveryChannel,
@@ -212,6 +219,7 @@ from app.schemas.trade_plan import (
 from app.schemas.trade_plan import (
     ExecutionMode as PlanExecutionMode,
 )
+from app.strategy_brain.trendpulse_screening.models import TrendPulseScreeningRow  # noqa: F401
 
 _MONEY = Numeric(20, 8)
 _ENUM_LEN = 40

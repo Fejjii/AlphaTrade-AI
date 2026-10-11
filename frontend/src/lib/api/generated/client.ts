@@ -116,3 +116,116 @@ export function blofinActivity(query?: paths["/exchange/blofin/activity"]["get"]
     responseValidator: validators.blofinActivityResponse,
   });
 }
+
+export function experiments(query?: paths["/experiments"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments"]["get"]["responses"][200]["content"]["application/json"]>("/experiments", {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.experimentsError422 },
+    responseValidator: validators.experimentsResponse,
+  });
+}
+
+export function experimentCreate(body: paths["/experiments"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments"]["post"]["responses"][201]["content"]["application/json"]>("/experiments", {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentCreateRequest,
+    errorValidators: { 422: validators.experimentCreateError422 },
+    responseValidator: validators.experimentCreateResponse,
+  });
+}
+
+export function experimentDetail(id: paths["/experiments/{experiment_id}"]["get"]["parameters"]["path"]["experiment_id"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}"]["get"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(id)}`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    errorValidators: { 422: validators.experimentDetailError422 },
+    responseValidator: validators.experimentDetailResponse,
+  });
+}
+
+export function experimentVersion(id: paths["/experiments/{experiment_id}/versions"]["post"]["parameters"]["path"]["experiment_id"], body: paths["/experiments/{experiment_id}/versions"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions"]["post"]["responses"][201]["content"]["application/json"]>(`/experiments/${encodeURIComponent(id)}/versions`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentVersionRequest,
+    errorValidators: { 422: validators.experimentVersionError422 },
+    responseValidator: validators.experimentVersionResponse,
+  });
+}
+
+export function experimentTransition(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/transition"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/transition"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/transition"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/transition"]["post"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/transition`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentTransitionRequest,
+    errorValidators: { 422: validators.experimentTransitionError422 },
+    responseValidator: validators.experimentTransitionResponse,
+  });
+}
+
+export function experimentApprove(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/approve"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/approve"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/approve"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/approve"]["post"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/approve`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentApproveRequest,
+    errorValidators: { 422: validators.experimentApproveError422 },
+    responseValidator: validators.experimentApproveResponse,
+  });
+}
+
+export function experimentPromote(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/promote"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/promote"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/promote"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/promote"]["post"]["responses"][201]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/promote`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentPromoteRequest,
+    errorValidators: { 422: validators.experimentPromoteError422 },
+    responseValidator: validators.experimentPromoteResponse,
+  });
+}
+
+export function experimentSample(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/samples"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/samples"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/samples"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/samples"]["post"]["responses"][201]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/samples`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.experimentSampleRequest,
+    errorValidators: { 422: validators.experimentSampleError422 },
+    responseValidator: validators.experimentSampleResponse,
+  });
+}
+
+export function trendpulseScreen(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["parameters"]["path"]["version_id"], body: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["requestBody"]["content"]["application/json"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["post"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/trendpulse-screenings`, {
+    method: "POST", auth: true, signal: options?.signal, headers: options?.headers,
+    bodyValue: body, requestValidator: validators.trendpulseScreenRequest,
+    errorValidators: { 422: validators.trendpulseScreenError422 },
+    responseValidator: validators.trendpulseScreenResponse,
+  });
+}
+
+export function trendpulseScreenings(experimentId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["path"]["experiment_id"], versionId: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["path"]["version_id"], query?: paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/experiments/{experiment_id}/versions/{version_id}/trendpulse-screenings"]["get"]["responses"][200]["content"]["application/json"]>(`/experiments/${encodeURIComponent(experimentId)}/versions/${encodeURIComponent(versionId)}/trendpulse-screenings`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.trendpulseScreeningsError422 },
+    responseValidator: validators.trendpulseScreeningsResponse,
+  });
+}
+
+export function trendpulseScreeningDetail(id: paths["/trendpulse-screenings/{record_id}"]["get"]["parameters"]["path"]["record_id"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/trendpulse-screenings/{record_id}"]["get"]["responses"][200]["content"]["application/json"]>(`/trendpulse-screenings/${encodeURIComponent(id)}`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    errorValidators: { 422: validators.trendpulseScreeningDetailError422 },
+    responseValidator: validators.trendpulseScreeningDetailResponse,
+  });
+}
+
+export function strategyVersions(id: paths["/strategies/{strategy_id}/versions"]["get"]["parameters"]["path"]["strategy_id"], query?: paths["/strategies/{strategy_id}/versions"]["get"]["parameters"]["query"], options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/strategies/{strategy_id}/versions"]["get"]["responses"][200]["content"]["application/json"]>(`/strategies/${encodeURIComponent(id)}/versions`, {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    query,
+    errorValidators: { 422: validators.strategyVersionsError422 },
+    responseValidator: validators.strategyVersionsResponse,
+  });
+}
+
+export function paperAccount(options?: { signal?: AbortSignal; headers?: Record<string, string> }) {
+  return validatedFetch<paths["/execution/accounts/paper"]["get"]["responses"][200]["content"]["application/json"]>("/execution/accounts/paper", {
+    method: "GET", auth: true, signal: options?.signal, headers: options?.headers,
+    responseValidator: validators.paperAccountResponse,
+  });
+}

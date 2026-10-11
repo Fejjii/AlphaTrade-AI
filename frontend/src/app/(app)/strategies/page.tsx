@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { RiskSettingsSummary } from "@/components/settings/RiskSettingsSummary";
+import { ExperimentsPanel } from "@/components/strategies/ExperimentsPanel";
 import { Button } from "@/components/ui/button";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { api } from "@/lib/api";
@@ -93,6 +94,8 @@ export default function StrategiesPage() {
         </>
       ) : (
         <>
+          <ExperimentsPanel initialExperiment={params.get("experiment")} />
+          <h2 className="text-lg font-semibold">Strategy library</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {families.map((f) => {
               const configs = data?.brain?.strategies.filter(
@@ -159,7 +162,7 @@ export default function StrategiesPage() {
                   className="flex flex-wrap justify-between gap-3 rounded-card border border-border-subtle p-4"
                 >
                   <Link href={`/strategy-lab/${s.id}`} className="text-accent">
-                    {s.name}
+                    {s.latest_card?.strategy_name || s.name}
                   </Link>
                   <span className="text-sm">{strategyStatusFor(s).label}</span>
                 </article>

@@ -3105,3 +3105,65 @@ fills retain bounded incremental windows. Existing snapshots require current-bin
 verification and UID selection; historical unverified rows are retained but withheld.
 Execution authority, frontend and runtime activation remain unchanged.
 See docs/blofin_native_activity.md.
+
+## AT-ADR-099 — Experiments approve bounded configurations, not execution authority
+
+Date: 2026-10-10. AT-119 provides generic Exploration/Validation lifecycle over
+immutable strategy versions. Each immutable experiment version binds organization,
+owner, verified account/source, exact strategy hashes, configuration and independent
+sample identity. Owner approval seals the hash with finite budgets and an expiry of
+at most 30 days. Running is domain state only. Promotion creates an unapproved
+Validation version with no carried samples; records cannot be reused across versions.
+Internal simulation and native BloFin have separate identities and provenance.
+Manual native exposure consumes capacity without granting management authority.
+Trusted adapters, existing canonical strategy/risk/dispatch authorities and fresh
+execution UID verification remain prerequisites for future runtime adoption. No
+source resolver or runtime is installed. SFP remains observation-only and future
+TrendPulse1R needs explicit closed 15m trend/5m entry, structural stop and gross 1R
+compiler/evaluation contracts. One additive a11 migration follows a10 on the future
+feature branch, outside the release candidate. See docs/experiment_domain_contract.md.
+
+## AT-ADR-100 — TrendPulse1R is deterministic research geometry before runtime
+
+Date: 2026-10-10. AT-120 isolates the pure TrendPulse1R adapter from corrected PR241
+6ca6a76 and the current release candidate. Fixed provisional v1: causally known
+250 closed 15m bars for EMA20/50, three-bar ±0.1% slow EMA slope, strict confirmed
+HH/HL or LL/LH two-wing structure; 60 closed 5m bars, three-candle EMA20 pullback,
+closed extreme break and ≤0.1% opening gap. Structural stop is one tick outside
+pullback, rounded outward; conservative rounded entry determines one gross 1R
+full target. Decimal context/precision, missing receipts, conflicting revisions,
+expiry, duplicates and invalid risk fail closed. Immutable experiment variants may
+bind this research spec with both timeframes and setup observations only. Pure
+attribution tags cannot verify an account or create samples/performance/dispatch.
+Existing execution admission still refuses TrendPulse. Nested/SFP meanings remain
+unchanged. No compiler/runtime/worker/migration/activation is introduced.
+See docs/trendpulse_1r_adapter_contract.md.
+
+## AT-ADR-101 — TrendPulse receipts are eligible at the post-close decision
+
+The prior provisional adapter required historical receipts at trigger opening,
+which excluded the immediately preceding closed bar for any positive latency.
+Corrected adapter v2 selects the same explicit prior-trend/trigger candle windows
+but requires every original receipt to be known at the actual post-close decision.
+Later receipts cannot alter an earlier evaluation; new decisions expire at 60s.
+Decision time is recorded/hashed; the natural UUID includes the adapter version.
+Authored parameter v1, all thresholds, structural stops and rounded gross 1R remain
+unchanged. Publish this correction separately before any screening persistence.
+
+## AT-ADR-102 — One-trigger screening persists evidence without execution authority
+
+AT-121 continues from the separately published receipt correction 8b9d1b8 on a
+future feature branch. One on-demand authenticated producer acquires at most five
+GET-only public requests, evaluates at the actual post-close server decision,
+and appends original receipts plus qualified/no-setup/refused/unavailable outcomes.
+Nonblocking PG single-flight and process capacity protect the existing worker;
+database uniqueness and immutable guards preserve dedupe across restarts. Explicit
+public/recorded/synthetic provenance cannot grant native execution/sample authority.
+Authenticated bounded GET summaries/detail consume durable records. One reserved
+a12 follows a11; reviewed PR24662a20bb is now adopted by next-batch PR244 with
+one immutable migration head and retained-schema rollback proof. It remains outside
+frozen PR237 and is neither deployed nor full-release accepted.
+Synthetic untuned four-regime replay yields192 no-setups/zero signals; genuine
+original-arrival market replay remains unverified. Disabled defaults, gross1R,
+structural stops, no runner, no quantity/sample/performance or operator changes.
+See docs/trendpulse_screening_contract.md and verification handoff.

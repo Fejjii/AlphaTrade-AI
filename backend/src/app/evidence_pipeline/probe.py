@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -21,6 +22,7 @@ from app.market_contracts.adapters.bybit_usdt_perpetual import BybitUsdtPerpetua
 from app.market_contracts.adapters.protocol import PerpetualMarketSource
 from app.market_contracts.catalog import default_perpetual_catalog, instrument_for_source
 from app.market_contracts.derivatives import DerivativeMetric
+from app.market_contracts.errors import MarketContractError
 from app.market_contracts.evidence_diagnostics import (
     DiagnosticStatus,
     EvidenceComponent,
@@ -64,6 +66,8 @@ def probe_exchange(
     canonical_complete = False
     try:
         assembled = assembler.assemble(organization_id=_PROBE_ORG)
+        if assembled.cvd is None or assembled.signed_flow is None:
+            raise MarketContractError("Canonical probe requires CVD and signed flow.")
         canonical_complete = True
         proof.update(
             evidence_window_hash=assembled.evidence_window_hash,
@@ -94,7 +98,8 @@ def probe_exchange(
         with suppress(Exception):
             diagnostics.run(
                 component,
-                lambda timeframe=timeframe, minimum=minimum: source.fetch_closed_ohlcv(
+                partial(
+                    source.fetch_closed_ohlcv,
                     identity=identity.model_copy(update={"timeframe": timeframe}),
                     instrument=instrument,
                     timeframe=timeframe,
@@ -124,12 +129,14 @@ def probe_exchange(
         try:
             item = diagnostics.run(
                 EvidenceComponent(metric.value),
-                lambda metric=metric: _required_derivative(
+                partial(
+                    _required_derivative,
                     source,
                     metric=metric,
                     identity=identity,
                     instrument=instrument,
                     observed_at=diagnostics.evaluated_at,
+                    acquisition_clock=clock,
                 ),
             )
             proof[metric.value] = {

@@ -2503,3 +2503,88 @@ linkage, snapshot selection, long-lived order reconciliation, existing worker wi
 with disabled defaults and current migration-guard assertions.
 No execution authority, frontend, Agent turn, CI, deployment or runtime activation changes.
 See docs/blofin_native_activity.md for contract, milestones and integration.
+
+## AT-119 — Generic Exploration and Validation experiment domain
+
+Status: INTEGRATED in next-batch PR244 at reviewed PR2416ca6a762; not deployed.
+The frozen PR237 candidate remains separate. Current next-batch migration head is
+a12trendpulsescreen001, preserving immutable a11 and its ancestry. Domain approval
+and lifecycle remain distinct from execution; current milestone evidence and
+accepted/total criteria are in docs/experiments_market_integration.md.
+Integration correction from bed8994: a11 roundtrip expectation and preserved ancestry,
+shared OpenAPI/hash regeneration, existing disposable CI PostgreSQL URL. Local
+affected selection 75 passed/no skips; CI policy 28 passed; frontend generated
+contracts 7 passed; drift/lint/typing pass. Exact final SHA and automatic focused
+CI evidence in PR241 and docs/experiment_domain_verification.md.
+Future feature branch based on PR237 619c15f; excluded from
+the current release candidate. Own backend, one additive a11 migration and API
+contract; publish the interface early. Preserve Nested/SFP and document the future
+deterministic TrendPulse1R adapter. Finite approved envelopes, immutable running
+configuration, tenant/verified account/source fences and independent promotion
+samples. Focused disposable-fixture verification only. No runtime activation,
+replacement engine, external orders, credential changes, deployment or full CI.
+Contract: docs/experiment_domain_contract.md.
+
+## AT-MARKET-EVIDENCE — Urgent public market evidence foundation
+
+Status: READY (implementation and focused development verification; draft integration review).
+Baseline: PR237 7fc21db00a0527ee018f3fd1c478da64bcc713c0, refreshed through
+619c15fe63ffc23288c2866781e08f9cb44a2ab9 (migration test/docs correction only).
+Branch: codex/market-evidence-foundation. Own provider adapters, normalization,
+coverage and evidence contracts; reuse canonical OI and executed-flow/CVD.
+Add resting depth snapshots, causal process caches and actual Agent market consumer.
+Required historical book coverage remains unavailable and blocks qualification.
+Schema coordination completed by the accountable next-batch owner: reviewed PR242
+88ce82ff is integrated in PR244 with shared generation. PR237 remains frozen.
+Native exchange API/WS acceptance unverified under current egress policy.
+No full backend CI, deployment, paid activation, orders or operator-setting changes.
+Contract/results/next consumer step: docs/market_evidence_foundation.md.
+PR242 continuation: corrected required OI/funding acquisition timing with a fixed
+event/candle cutoff and independent final evaluation clock; actual receipt remains
+in collected_at and canonical receive_time. Stable v1 context schema and read-only
+experiment integration example: docs/market_evidence_context_contract.md.
+Four delayed OI/funding cases fail on d4b98087 and pass after correction;
+30 new assembler/provider timing regressions and 6 contract/example cases pass.
+Affected development selection: 433 passed, 11 disposable-PostgreSQL-gated skips;
+13 scoped strict source type checks and 15 frontend API tests pass. No full CI.
+## AT-120 — Pure deterministic TrendPulse1R research adapter
+
+Status: READY (separate draft feature branch codex/trendpulse-1r-adapter).
+Focused combined selection: 261 passed/no skips; 80 new adapter/contract/domain
+cases; scoped Ruff/format/mypy(6 source files), shared api:check and schema guard
+pass. Exact final SHA/automatic focused evidence in draft PR and
+docs/trendpulse_1r_verification.md.
+Dependency: PR241 correction 6ca6a76201547524275266dfa22fdf12f5932b14; automatic
+focused CI run38066879849 passed (472 backend/no skips,143 frontend). Implement
+closed causal 15m trend/5m entry, fixed conservative authored v1 rules, structural
+stop and rounded gross 1R; pure experiment-config/v1 research attribution. Preserve
+Nested/SFP. Focused synthetic/disposable PostgreSQL tests and schema/lint/typing.
+No replacement engine, execution/performance runtime, migration, operator setting
+changes, full backend CI or activation. Contract: docs/trendpulse_1r_adapter_contract.md.
+
+## AT-121 — Receipt correction then bounded TrendPulse research screening
+
+Status: INTEGRATED in next-batch PR244 at reviewed PR24662a20bb; not deployed.
+The real Strategies consumer now shows persisted screening/rejection history;
+Agent/document confirmation seeds a bounded draft. HTTP native sample admission
+stays closed, models stay disabled, and unavailable performance remains explicit.
+Current focused evidence/acceptance and hosted blockers are in the existing
+docs/experiments_market_integration.md checkpoint. Historical builder evidence:
+Correction 8b9d1b8:140 local passes,
+automatic focused CI305 backend/no skips and12 frontend. Screening:36 new and329
+combined focused passes/no skips, shared drift, Ruff/format/strict typing and
+frontend generated-contract/lint/typecheck pass. Untuned four-regime synthetic
+replay192 decisions/zero signals; genuine original-arrival market replay remains
+unverified. Migration compatibility follow-up33 passes/no skips, all legacy
+current-head guards updated with history/merge assertions preserved. One reserved
+a12 aftera11; sequencing is adopted in PR244 with immutable ancestry and retained
+schema rollback through the actual a12 head. Exact continuation SHA/automatic
+focused CI in draft PR and docs/trendpulse_screening_verification.md.
+Continue PR243 bab0e9ce; publish the receipt eligibility
+correction first. Test positive delayed arrivals at all three 5m positions in a
+15m interval, both directions, missing/future evidence and expiration. Then a
+separate future feature branch owns bounded acquisition/detector invocation,
+durable restart-safe dedupe/rejections and an authenticated application read
+consumer. Coordinate one additive migration with integration. Report honest
+representative replay coverage/counts without threshold tuning. No trade activation,
+orders, deployment, operator/credential changes or full CI.

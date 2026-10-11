@@ -270,6 +270,9 @@ def evaluate_setup(
                 if isinstance(exc, StaleEvidenceError)
                 else "missing_required_evidence",
             )
+    if EvidenceRole.ORDER_BOOK in policy.required_roles:
+        # A current depth snapshot cannot prove liquidity at a historical trigger.
+        rules["complete_warmup"] = _rule("complete_warmup", False, "missing_required_evidence")
     quality_ok = all(rules[rule_id].passed for rule_id in QUALITY_RULE_IDS)
     all_passed = all(rules[rule_id].passed for rule_id in FIRST_SLICE_RULE_IDS)
     state, reason_codes = _resolve_state(

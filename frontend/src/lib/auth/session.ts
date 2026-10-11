@@ -14,6 +14,7 @@ import { SESSION_MARKER_COOKIE, SESSION_MARKER_VALUE } from "@/lib/auth/boundary
 
 const ACCESS_KEY = "alphatrade_access_token";
 const REFRESH_KEY = "alphatrade_refresh_token";
+let locallyCleared = false;
 
 export function usesCookieRefresh(): boolean {
   if (typeof window === "undefined") {
@@ -38,14 +39,14 @@ function clearSessionMarker(): void {
 }
 
 export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(ACCESS_KEY);
+  if (locallyCleared || typeof window === "undefined") return null;
+  try { return sessionStorage.getItem(ACCESS_KEY) || null; } catch { return null; }
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
+  if (locallyCleared || typeof window === "undefined") return null;
   if (usesCookieRefresh()) return null;
-  return sessionStorage.getItem(REFRESH_KEY);
+  try { return sessionStorage.getItem(REFRESH_KEY) || null; } catch { return null; }
 }
 
 export function setTokens(accessToken: string, refreshToken?: string): void {
@@ -53,14 +54,19 @@ export function setTokens(accessToken: string, refreshToken?: string): void {
   if (!usesCookieRefresh() && refreshToken) {
     sessionStorage.setItem(REFRESH_KEY, refreshToken);
   }
+  locallyCleared = false;
   setSessionMarker();
 }
 
 export function clearTokens(): void {
+  locallyCleared = true;
   sessionCleared();
-  sessionStorage.removeItem(ACCESS_KEY);
-  if (!usesCookieRefresh()) {
-    sessionStorage.removeItem(REFRESH_KEY);
+  for (const key of [ACCESS_KEY, REFRESH_KEY]) {
+    try { sessionStorage.removeItem(key); }
+    catch {
+      // If removal alone is denied, erase the value without abandoning cleanup.
+      try { sessionStorage.setItem(key, ""); } catch { /* Local identity is already fenced. */ }
+    }
   }
   clearSessionMarker();
 }
