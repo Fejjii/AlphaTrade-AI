@@ -940,3 +940,207 @@ unexecuted. Product/worker publication is batched; the exact candidate and curre
 automatic focused CI are recorded in PR248 and the existing operational checkpoint.
 The green4e5 run covers4e5 only. Full release acceptance remains gated by review,
 qualified rollback images, aligned authenticated staging and fresh natural SFP evidence.
+# Interactive voice and coin assignments — fixed feature acceptance
+
+PR249 bounded review correction (fixed before edits): R1 preserves unrelated
+legacy monitoring when the first explicit assignment is saved, with durable
+disable/removal, tenant fences and no new trading authority. R2 gives voice the
+same scoped knowledge reader and authorized fallback policy as text, reserving
+any embedding spend and stating missing access/receipts explicitly. Both criteria
+now pass (R2/2, 100%); V2 and M2/M3 were reopened and accepted against the correction
+proof below. The fixed 13-criterion feature denominator and external V5 prerequisite
+remain unchanged.
+
+This separate feature batch starts at reviewed PR248
+`a7a843f7c27e8bdcea5f89c802c808472477a969`. PR248 and its release evidence stay
+frozen. The existing operational release packet remains authoritative; spec60
+still has no secret/outbound bindings and package-manager-only egress. No failed
+hosting or provider probe is repeated. Dedicated news, calendar, sentiment and
+heatmap integrations are deferred. D Line awaits examples and exact rules.
+
+The checklist below is fixed before implementation. Each criterion needs its own
+evidence; implementation, local integration, deployment and live acceptance are
+reported separately. Legacy audio recording and browser speech are not interactive
+voice acceptance.
+
+| Criterion | Required evidence |
+| --- | --- |
+| V1 | Supported OpenAI realtime transport, consecutive spoken turns and interruption; deterministic protocol tests clearly separated from actual provider/microphone evidence. |
+| V2 | Voice/text use the shared scoped turn pipeline, durable history, retrieval and explicit confirmation/recovery; continued dialogue retains context. |
+| V3 | Grounded tools read current market, native BloFin activity, saved strategies/rules/journal; replies retain source age, contradictions and unavailable facts. |
+| V4 | Server-held credentials, scoped authorization, bounded usage/cost accounting, cancellation and typed fallback; no operator/provider activation. |
+| V5 | Actual provider plus microphone journey: consecutive spoken turns, interruption, a grounded tool request and retained context. Simulations cannot satisfy V5. |
+| M1 | Multiple saved-version assignments per coin with explicit timeframes/parameters survive authenticated save/reload and tenant isolation. |
+| M2 | Worker consumes exactly the authoritative configuration shared by UI and Agent actions. |
+| M3 | Independent monitoring toggles preserve trading/confirmation/execution boundaries and other assignments. |
+| M4 | Enabled but unscannable assignments show precise reasons; trace the five-enabled/four-no_strategy gap without changing hosted operator state. |
+| M5 | Nested expiry/developing and SFP outcomes are traced through mock notification delivery, preserving qualification and deduplication. |
+| I1 | Combined contracts regenerated, one immutable migration head, exercised retained-schema rollback preserving existing data. |
+| I2 | Focused combined authentication/API/persistence/browser journeys pass with exact source revisions and no unexplained skips. |
+| I3 | Contributions collected directly, frozen refs preserved, checkpoint and existing access packet updated; deployment status remains truthful. |
+
+Ownership: worker A owns Agent/voice backend and components/services, excluding
+shared generated artifacts, migrations and checkpoints. Worker B owns watcher
+assignment configuration/worker/compact monitoring UI and their tests, with the
+same exclusions. Owner serializes shared generation, migration sequencing and
+integration. Both workers propose their public interfaces before edits. Monitoring
+configuration is the single authority; Agent writes use the same service through
+an explicit proposal/confirmation boundary. No new free-form execution authority.
+
+## Collected feature qualification — 11 October 2026
+
+The feature branch is `codex/interactive-voice-monitoring`, stacked on frozen
+PR248/a7a843f7. PR237 remains 3600ec89. The final candidate SHA is recorded in
+the feature PR and existing operational HANDOFF; no earlier CI accepts this batch.
+
+Worker A returned `220efc78`, `b14dfc7e`, `fb48d458`, `d21366eb` directly. These
+implement a server-held official OpenAI SDK3.28 realtime WebSocket connection,
+PCM audio, interruption, canonical text/voice turn delegation, scoped SQL
+grounding, durable capture/history, exact pending recovery and explicit confirmed
+monitoring proposals. Effective provider session caps must be acknowledged before
+readiness. Reservations end at the earliest session/budget/price receipt expiry.
+The feature is off by default; model/rate/context/budget identifiers come from a
+verified private receipt, not an invented model or activated provider.
+
+Voice knowledge uses the same `AgentVectorAdapter`, `RagService`, SQL ownership
+verification and `provider_fail_closed` fallback policy as text. The private
+realtime receipt may contain `embedding`: `model`, HTTPS price `source`, dated
+`valid_until`, `maximum_input_tokens` and verified `input_usd_per_million`.
+Its model must match the existing configured `EMBEDDINGS_MODEL`. One query per
+original canonical turn is reserved in the same session money/token hold before
+transport; the embedding receipt also bounds the session deadline. Provider
+usage is recorded once using the verified rate; missing or invalid usage retains
+the full hold. The voice route requires raw provider model and usage evidence;
+normalization cannot turn missing metadata into verified usage. Recovery never
+creates another embedding identity. The embedding event shares its canonical
+turn admission, adding no request admission. Existing reply/capture suffix events
+retain the same conservative admission count as text; that accounting policy is
+unchanged.
+
+Without the verified embedding receipt or provider credential, no embedding
+request starts and the reply states the limitation. Local policy can still read
+owned/shared SQL knowledge; staging and production keep their existing refusal
+of degraded fallback. This implementation does not prove live vector retrieval,
+provider access, microphone acceptance or measured model quality. Vector selection
+is verified at the shared adapter; the passage builder still truthfully labels
+the returned SQL-rebuilt evidence `lexical_store`.
+
+Worker B returned `fa24b212`, `95bb51aa`, `9849e4b2`, `15739087` directly. Multiple assignments
+pin owned immutable versions, their authored coin, timeframes and complete
+parameter snapshots. Mobile title/status use the card width with controls beneath;
+an older bound version outside the bounded picker remains confirmable without
+rebinding it. UI, confirmed Agent actions and worker use one configuration
+service. Monitoring never enters the assigned target's paper execution loop.
+Explicit coverage is scoped to actor/strategy/coin; unrelated inferred targets
+remain available after the first save. Removed managed bindings stay removed,
+including after an empty replacement and restart. The four `no_strategy` coins lacked matching
+approved compiled authored versions; no assignments or notification eligibility
+are fabricated. Nested developing/expired observations remain intentionally
+suppressed by existing delivery policy; qualifying Nested/SFP outbox delivery and
+restart deduplication use fake transport only.
+
+| Fixed milestone | Locally accepted | Implemented/integrated | Hosted/live acceptance |
+| --- | --- | --- | --- |
+| V1–V5 interactive Agent | V1–V4: 4/5 (80%) | Supported connection and grounding integrated | V5: 0/1; actual provider/microphone unexecuted |
+| M1–M5 monitoring | 5/5 (100%) | Configuration/UI/Agent/worker integrated | No installed feature worker or live notification acceptance |
+| I1–I3 integration | 3/3 (100%) | Contracts, migration, rollback, browser proof and checkpoint | No deployment or full release gate |
+
+Overall local acceptance is 12/13 (92.3%). Recording/browser speech playback is
+not counted as interactive voice. Deterministic transcripts/CapturePlan are not
+measured model reasoning quality. Legacy Q4 actual evaluation remains 0/16 and
+native N2 money/protected-exit proof remains unavailable, independently of this
+feature's staging qualification. Simulation and native performance stay separate.
+
+Focused evidence is accumulated by source scope, not a new full suite:
+
+- Voice: 23 protocol, 16 disposable-PostgreSQL and 76 frontend distinct passing
+  cases; the two shared voice/text capture cases now persist one faithful scoped
+  note, survive a fresh session and replay without another capture/provider call.
+- Assignments: 26 new PostgreSQL cases, eight confirmed Agent cases and six
+  existing compatibility cases; 14 component and nine generated-adapter cases.
+- Owner: 19 quota and 13 authentication/recovery cases; 37 affected migration
+  cases, one populated retained-schema rollback, three actual authenticated
+  WebSocket/SQL composition cases using a synthetic SDK, one offline OpenAPI
+  export case, and four real-login API/PostgreSQL browser journeys. Desktop/mobile
+  save/reload/toggle, committed malformed-response exact recovery, off-panel
+  logout/foreign account isolation and immediate typed reply/reload all pass.
+- Generated drift passes: full schema SHA256
+  `875f63d09a9d84d7895d07591445cb768aa2088ada789b15b48d286bc9cbd9f9`.
+  Changed-file Ruff/format, scoped ESLint, TypeScript and relevant strict mypy pass.
+
+These groups overlap (controller, confirmed Agent and adapter checks); do not sum
+them as a distinct grand total. Initial failed cases remain in local XML receipts.
+The genuine assignment publication deadlock and restored-recovery readiness race
+were repaired. Other repairs corrected fixture database allowlisting, private
+schema search path, system reservation counts and real StrategyCard fixture
+construction. Typed UI intentionally keeps recorded evidence in details; the
+browser verifies both the visible reply and exact complete persisted API content.
+Zero unexpected skips occurred; targeted Vitest exclusions are deliberate filters.
+Automatic CI38157112271 on 763c01c passed 417 frontend cases, but deployment
+safety exposed two additional activation-test current-head assertions still at
+a12. Both now expect a13; two affected local cases pass. Historical revision and
+fail-closed reader assertions remain unchanged. Corrected baseline e7b51dce passed
+automatic focused CI38157745427: 499 backend, 417 frontend and deployment-safety.
+Full backend, full frontend unit/build and the three combined jobs were intentionally
+skipped by policy. That result covers e7 only; the two bounded PR249 review repairs
+require their own focused evidence and automatic result.
+The bounded correction has reviewed, source-hash-matched evidence:
+
+| Selection | Actual focused result | Scope |
+| --- | --- | --- |
+| Monitoring transition | 28 distinct passing, zero skips | 19 new cases, one adjusted historical removal case and eight existing compatibility cases; first save, unrelated coverage, independent disable/removal, restart and configuration/tenant fences |
+| Voice knowledge | 43 distinct correction cases plus five affected prior voice checks passing, zero skips | Authorized vector/SQL reads, explicit missing receipt/key, text fallback policy, prepaid usage, raw provider metadata, timeout and exact restart recovery |
+| Owner combined regression | 12 passed, zero skipped, 14.61s | Three existing vector checks, eight shared-turn policy checks and one new actual authenticated WS/PostgreSQL knowledge case; SDK/model synthetic |
+
+Both behaviors failed on the original source before repair. One unchanged Binance
+composition compatibility case initially failed and passed its isolated retry;
+the cause is not established. Initial fixture/accounting assertion failures and
+their focused repairs remain in the worker receipts; no assertions were weakened
+or cases skipped. The combined run emitted two Qdrant compatibility warnings;
+it does not verify hosted vector readiness. Changed-file Ruff/format and relevant
+source mypy pass. These are accumulated, scoped checks with targeted reruns after
+related changes, not a newly executed full suite.
+
+Direct correction contributions: worker B `c9e3be59` (integrated `5213c94f`);
+worker A `e6aacf07` and `2b4f4fd8` (integrated `8a85bd4` and `c58c937`). Owner
+added the authenticated WS regression and reconciled these existing documents.
+Exact published candidate and its automatic focused status are recorded in PR249
+and the operational handoff; no older CI result accepts it. Correction manifests:
+`/tmp/pr249-correction-evidence.json`,
+`/tmp/alphatrade-assignment-transition-final-manifest.json`,
+`/tmp/agent-voice-r2-evidence.json`; combined receipt
+`/tmp/pr249-owner-integration.xml`.
+
+Prior unchanged receipts are `/tmp/agent-realtime-worker-evidence.json`,
+`/tmp/alphatrade-assignments-*.xml` and `/tmp/voice-monitoring-*.{log,xml}`.
+
+The sole additive head is `a13voicemonitor001`, retaining a8→a9→a10→a11→a12→a13.
+It adds assignment rows, replacement receipts and bounded voice holds only;
+historical migrations and existing operator rows are unchanged. Populated a13
+downgrade refuses before any drop. The exercised retained-schema rollback preserves
+documents/chunks/jobs/tombstones, native activity, research, assignments, receipts,
+unknown usage holds and custom safety/configuration state across API/disarmed-worker
+restart and forward restart. Snapshot SHA256:
+`89351695ab06122cdf8487f301e16bc5f02b84b2df66521bd279970e144829d5`.
+This is a local migration-aware source package, not a qualified new deployable image.
+Plain b165/bda/a7 images are refused at a13. An old worker lacks the assignment
+consumer and must stay drained until a compatible consumer/image and captured
+runtime composition are qualified. Never downgrade or stamp retained populated data.
+
+Release access is unchanged: current spec60 has no secret/outbound bindings;
+the existing operational secure setup packet remains the only setup action. Bind
+server `OPENAI_API_KEY`, HTTPS/WSS api.openai.com and a verified realtime receipt at
+`/workspace/agent-realtime-approved-limits.json` for V5; receipt prices/model/context
+and finite ceiling must fit existing approved remaining budget. Vector knowledge
+also needs the receipt's verified `embedding` section and the existing authorized
+Qdrant binding/readiness; missing inputs remain explicit and no fallback policy is
+relaxed. Future separately authorized activation must verify
+`AGENT_REALTIME_ENABLED`, the approved live provider mode,
+`AGENT_REALTIME_LIMITS_FILE`, the matching `EMBEDDINGS_MODEL` and existing
+`QDRANT_URL`/`QDRANT_API_KEY`; this correction changes none of them. Microphone
+browser acceptance is separate. Hosting needs existing scoped Render/Vercel/synthetic login
+bindings, actual service DB/backup verification and the verified frontend identity.
+No unchanged failed hosted probe, full CI, main merge, deployment, order, Telegram
+test, paid activation or operator mutation occurred. The preserved staging smoke
+instructions and final reviewed/aligned-staging/fresh-SFP release gate still apply.
+

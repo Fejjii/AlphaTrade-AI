@@ -409,6 +409,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/trendpulse-screenings/{record_id}/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Canonical Candidate */
+        post: operations["canonical_candidate_trendpulse_screenings__record_id__candidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/research/tick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Research Tick */
+        post: operations["research_tick_experiments_research_tick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/strategies/{strategy_id}/versions": {
         parameters: {
             query?: never;
@@ -435,6 +469,41 @@ export interface paths {
         };
         /** Paper Account Status */
         get: operations["paper_account_status_execution_accounts_paper_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watcher/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Watcher Assignments */
+        get: operations["read_watcher_assignments_watcher_assignments_get"];
+        /** Replace Watcher Assignments */
+        put: operations["replace_watcher_assignments_watcher_assignments_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/voice/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Voice Config */
+        get: operations["voice_config_agent_voice_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1013,6 +1082,77 @@ export interface components {
             /** Unit */
             unit: string;
         };
+        /**
+         * Candidate
+         * @description Organization-owned confirmed-setup candidate. Initial state is ACTIVE.
+         */
+        Candidate: {
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Correlation Id
+             * Format: uuid
+             */
+            correlation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            direction: components["schemas"]["TradeDirection"];
+            evidence_identity: components["schemas"]["EvidenceMarketIdentity-Output"];
+            /** Evidence Instrument */
+            evidence_instrument: string;
+            evidence_market: components["schemas"]["app__market_contracts__enums__MarketType"];
+            evidence_venue: components["schemas"]["VenueId"];
+            /** Evidence Window Hash */
+            evidence_window_hash: string;
+            executable_setup: components["schemas"]["ExecutableSetupRef"];
+            /** Fusion Policy Version */
+            fusion_policy_version: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Schema Version
+             * @default Candidate/v1
+             */
+            schema_version?: string;
+            state: components["schemas"]["CandidateState"];
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            timeframe: components["schemas"]["Timeframe"];
+            /** Transition Version */
+            transition_version: number;
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+        };
+        /**
+         * CandidateState
+         * @description Canonical candidate lifecycle after CONFIRMED_SETUP.
+         * @enum {string}
+         */
+        CandidateState: "active" | "plan_created" | "rejected" | "skipped" | "expired" | "invalidated";
         /** CaptureRetry */
         CaptureRetry: {
             /**
@@ -1328,6 +1468,20 @@ export interface components {
             source: components["schemas"]["SourceIdentity"];
             timeframe?: components["schemas"]["Timeframe"] | null;
             venue: components["schemas"]["VenueId"];
+        };
+        /**
+         * ExecutableSetupRef
+         * @description Tenant-owned CompiledSetupDefinition. Legacy global templates are illegal here.
+         */
+        ExecutableSetupRef: {
+            /** Content Hash */
+            content_hash: string;
+            kind: components["schemas"]["SetupIdentityKind"];
+            /**
+             * Setup Definition Id
+             * Format: uuid
+             */
+            setup_definition_id: string;
         };
         /**
          * ExitRuleBlock
@@ -1726,6 +1880,23 @@ export interface components {
             expected_revision: number;
             /** Variant Key */
             variant_key: string;
+        };
+        /** ExperimentResearchTick */
+        ExperimentResearchTick: {
+            /**
+             * Execution Requested
+             * @default false
+             * @constant
+             */
+            execution_requested?: false;
+            /**
+             * Samples Admitted
+             * @default 0
+             * @constant
+             */
+            samples_admitted?: 0;
+            /** Screenings */
+            screenings: components["schemas"]["TrendPulseScreeningRecord"][];
         };
         /** ExperimentRiskLimits */
         "ExperimentRiskLimits-Input": {
@@ -3656,6 +3827,12 @@ export interface components {
             /** Value */
             value: string;
         };
+        /**
+         * SetupIdentityKind
+         * @description Executable vs compatibility-only setup identity.
+         * @enum {string}
+         */
+        SetupIdentityKind: "compiled_setup_definition" | "global_setup_template";
         /** SlippagePolicy */
         SlippagePolicy: {
             /** Maximum Bps */
@@ -5184,6 +5361,29 @@ export interface components {
             /** Formula Version */
             formula_version: string;
         };
+        /** VoiceConfig */
+        VoiceConfig: {
+            /** Available */
+            available: boolean;
+            /** Maximum Seconds */
+            maximum_seconds?: number | null;
+            /** Maximum Turns */
+            maximum_turns?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Sample Rate
+             * @default 24000
+             * @constant
+             */
+            sample_rate?: 24000;
+            /**
+             * Transport
+             * @default websocket_pcm24
+             * @constant
+             */
+            transport?: "websocket_pcm24";
+        };
         /** VoiceIoContract */
         VoiceIoContract: {
             /**
@@ -5228,6 +5428,158 @@ export interface components {
             status?: "contract_only";
             /** Transcript */
             transcript?: null;
+        };
+        /** WatcherAssignmentObservation */
+        WatcherAssignmentObservation: {
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /**
+             * Candidate Count
+             * @default 0
+             */
+            candidate_count: number;
+            /** Configuration Revision */
+            configuration_revision: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Reason Code */
+            reason_code: string;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+            /** Status */
+            status: string;
+        };
+        /** WatcherAssignmentRead */
+        WatcherAssignmentRead: {
+            /** Eligible */
+            eligible: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            latest: components["schemas"]["WatcherAssignmentObservation"] | null;
+            /** Monitoring Enabled */
+            monitoring_enabled: boolean;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Reason Code */
+            reason_code: string;
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframes */
+            timeframes: string[];
+            /** Version */
+            version: number;
+            /** Version Content Hash */
+            version_content_hash: string;
+        };
+        /** WatcherAssignmentReplace */
+        WatcherAssignmentReplace: {
+            /** Assignments */
+            assignments: components["schemas"]["WatcherAssignmentWrite"][];
+            /** Request Key */
+            request_key: string;
+            /** Revision */
+            revision: number;
+        };
+        /** WatcherAssignmentVersion */
+        WatcherAssignmentVersion: {
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Strategy Id
+             * Format: uuid
+             */
+            strategy_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Symbol */
+            symbol: string | null;
+            /** Timeframes */
+            timeframes: string[];
+            /** Version */
+            version: number;
+            /** Version Content Hash */
+            version_content_hash: string;
+        };
+        /** WatcherAssignmentWrite */
+        WatcherAssignmentWrite: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Monitoring Enabled */
+            monitoring_enabled: boolean;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Strategy Version Id
+             * Format: uuid
+             */
+            strategy_version_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframes */
+            timeframes: string[];
+        };
+        /** WatcherAssignmentsRead */
+        WatcherAssignmentsRead: {
+            /** Assignments */
+            assignments: components["schemas"]["WatcherAssignmentRead"][];
+            /** Available Versions */
+            available_versions: components["schemas"]["WatcherAssignmentVersion"][];
+            /** Configured */
+            configured: boolean;
+            /**
+             * Max Assignments
+             * @default 25
+             * @constant
+             */
+            max_assignments: 25;
+            /**
+             * Monitoring Only
+             * @default true
+             * @constant
+             */
+            monitoring_only: true;
+            /** Revision */
+            revision: number;
+            /** Symbols */
+            symbols: string[];
         };
         /**
          * MarketType
@@ -6170,6 +6522,68 @@ export interface operations {
             };
         };
     };
+    canonical_candidate_trendpulse_screenings__record_id__candidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    research_tick_experiments_research_tick_post: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentResearchTick"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_strategy_versions_strategies__strategy_id__versions_get: {
         parameters: {
             query?: {
@@ -6220,6 +6634,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperAccountStatus"];
+                };
+            };
+        };
+    };
+    read_watcher_assignments_watcher_assignments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatcherAssignmentsRead"];
+                };
+            };
+        };
+    };
+    replace_watcher_assignments_watcher_assignments_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatcherAssignmentReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatcherAssignmentsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_config_agent_voice_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceConfig"];
                 };
             };
         };
