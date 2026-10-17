@@ -15,6 +15,11 @@ on:
         required: true
         default: true
 
+# Cache saves and artifact uploads use ACTIONS_RUNTIME_TOKEN, not this token.
+# Nothing in this workflow calls the GitHub API, so actions: write is not set.
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
