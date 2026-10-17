@@ -263,6 +263,8 @@ class ApprovalService:
         principal_organization_id: uuid.UUID | None = None,
         principal_user_id: uuid.UUID | None = None,
         channel: AuthorizationChannel = AuthorizationChannel.API,
+        actor_type: str = "USER",
+        audit_metadata: dict[str, object] | None = None,
     ) -> ApprovalRequest:
         row = self._repo.get(approval_id)
         if row is None:
@@ -283,6 +285,7 @@ class ApprovalService:
                 organization_id=row.organization_id,
                 user_id=row.user_id,
                 channel=channel,
+                actor_type=actor_type,
                 assertion=decision.authorization_assertion,
             )
             return self._to_schema(row)
@@ -301,6 +304,7 @@ class ApprovalService:
                 organization_id=row.organization_id,
                 user_id=row.user_id,
                 channel=channel,
+                actor_type=actor_type,
                 assertion=decision.authorization_assertion,
             )
 
@@ -320,19 +324,25 @@ class ApprovalService:
             proposal.status = _proposal_status_for_action(decision.action)
             self._proposals.add(proposal)
 
+        metadata: dict[str, object] = {
+            "action": decision.action.value,
+            "proposal_id": str(row.proposal_id),
+            "revision_id": str(row.plan_revision_id) if row.plan_revision_id else None,
+            "modified_fields": decision.modified_fields or {},
+            "authorization_issued": decision.action is ApprovalAction.APPROVE
+            and row.plan_revision_id is not None,
+            "channel": channel.value,
+            "actor_type": actor_type,
+        }
+        if audit_metadata is not None:
+            metadata["autonomous_approval"] = audit_metadata
         audit_record = self._record_audit(
             AuditEventType.APPROVAL_DECISION,
             organization_id=row.organization_id,
             user_id=row.user_id,
             resource_id=str(row.id),
-            metadata={
-                "action": decision.action.value,
-                "proposal_id": str(row.proposal_id),
-                "revision_id": str(row.plan_revision_id) if row.plan_revision_id else None,
-                "modified_fields": decision.modified_fields or {},
-                "authorization_issued": decision.action is ApprovalAction.APPROVE
-                and row.plan_revision_id is not None,
-            },
+            actor_type=ActorType.SYSTEM if actor_type == "SYSTEM" else ActorType.USER,
+            metadata=metadata,
         )
         if audit_record is not None:
             row.audit_event_id = audit_record.event_id
@@ -347,6 +357,7 @@ class ApprovalService:
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
         channel: AuthorizationChannel,
+        actor_type: str = "USER",
         assertion: ApprovalAuthorizationAssertion | None = None,
         manual_demo_confirmation_hash: str | None = None,
     ) -> ApprovalAuthorization:
@@ -465,7 +476,7 @@ class ApprovalService:
             permission_attestation_version=revision.permission_attestation_version,
             expires_at=expires_at,
             channel=channel,
-            actor_type="USER",
+            actor_type=actor_type,
             actor_id=user_id,
             correlation_id=revision.correlation_id,
             created_at=now,
@@ -536,12 +547,29 @@ class ApprovalService:
         *,
         organization_id: uuid.UUID,
         user_id: uuid.UUID,
+        reason: str | None = None,
     ) -> ApprovalAuthorization:
         row = self._authorizations.get(authorization_id)
         if row is None or row.organization_id != organization_id or row.user_id != user_id:
             raise NotFoundError("Approval authorization not found")
         self._authorizations.revoke_available(authorization_id, at=self._aware(self._clock()))
         self._session.refresh(row)
+        if reason is not None:
+            channel = row.channel
+            self._record_audit(
+                AuditEventType.APPROVAL_DECISION,
+                organization_id=row.organization_id,
+                user_id=row.user_id,
+                resource_id=str(row.id),
+                actor_type=ActorType.SYSTEM if row.actor_type == "SYSTEM" else ActorType.USER,
+                metadata={
+                    "action": "revoke",
+                    "reason": reason,
+                    "authorization_id": str(row.id),
+                    "channel": channel.value if hasattr(channel, "value") else str(channel),
+                    "actor_type": row.actor_type,
+                },
+            )
         return self._authorization_to_schema(row)
 
     def is_authorization_available(
@@ -712,6 +740,9 @@ class ApprovalService:
         event_type: AuditEventType,
         **fields: object,
     ) -> AuditRecord | None:
+        raw_actor = fields.get("actor_type", ActorType.USER)
+        actor = raw_actor if isinstance(raw_actor, ActorType) else ActorType.USER
+        metadata = fields.get("metadata", {})
         return self._audit.record(
             AuditRecordCreate(
                 request_id="approval-api",
@@ -719,10 +750,10 @@ class ApprovalService:
                 event_type=event_type,
                 resource_type="approval",
                 resource_id=str(fields["resource_id"]),
-                organization_id=fields["organization_id"],
-                user_id=fields["user_id"],
-                actor_type=ActorType.USER,
-                metadata=fields.get("metadata", {}),
+                organization_id=fields["organization_id"],  # type: ignore[arg-type]
+                user_id=fields["user_id"],  # type: ignore[arg-type]
+                actor_type=actor,
+                metadata=metadata if isinstance(metadata, dict) else {},
             )
         )
 
